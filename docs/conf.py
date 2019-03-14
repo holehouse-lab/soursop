@@ -20,8 +20,7 @@
 # -- Project information -----------------------------------------------------
 
 project = 'CTraj'
-copyright = ("2019, Alex Holehouse. Project structure based on the "
-             "Computational Molecular Science Python Cookiecutter version 1.0")
+copyright = ("2015-2019, Alex Holehouse (Developed in the Pappu lab)")
 author = 'Alex Holehouse'
 
 # The short X.Y version
@@ -42,6 +41,7 @@ release = ''
 extensions = [
     'sphinx.ext.autodoc',
     'sphinx.ext.mathjax',
+    'sphinx.ext.napoleon',    
 ]
 
 # Add any paths that contain templates here, relative to this directory.
