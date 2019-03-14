@@ -32,13 +32,16 @@ setup(
     # Optional include package data to ship with your package
     # Comment out this line to prevent the files from being packaged with your software
     # Extend/modify the list to include/exclude other items as need be
-    package_data={'CTraj': ["data/*.dat"]
-                  },
+    # > line below modified from default
+    package_data={'CTraj': ['data/dye_libraries/*']},
+    install_requires=[
+        "numpy>=1.12.0","cython","mdtraj>=1.9.1", "pandas>=0.23.0"],
+
 
     # Additional entries you may want simply uncomment the lines you want and fill in the data
-    # author_email='me@place.org',      # Author email
-    # url='http://www.my_package.com',  # Website
-    # install_requires=[],              # Required packages, pulls from pip if needed; do not use for Conda deployment
+    #author_email='alex.holehouse@wustl.edu',      # Author email
+    #url='http://www.my_package.com',              # Website
+
     # platforms=['Linux',
     #            'Mac OS-X',
     #            'Unix',
