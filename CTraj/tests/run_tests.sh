@@ -12,14 +12,12 @@ if [ "/Users/alex/Python/conda/envs/neuron3/bin/pip" != ${which_pip} ]
 then 
     echo "Could not find correct pip..."
     exit 1
-else
-    echo "Found correct pip..."
 fi
 
-
-echo "Uninstalling old CTraj..."
-pip uninstall CTraj
-
-echo "Installing new CTraj..."
-pip install -e .
-
+echo "######################################################"
+echo "#                                                    #"
+echo "#       Running all tests for CTraj....              #"
+echo "#                                                    #"
+echo "######################################################"
+echo ""
+pytest -v

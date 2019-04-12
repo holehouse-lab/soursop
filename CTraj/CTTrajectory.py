@@ -1,3 +1,10 @@
+"""
+CTTrajectory.py
+
+This is where some stuff will be described
+
+"""
+
 ##
 ################################################
 ##  ,-----.,--------.                 ,--.    ##
@@ -21,7 +28,21 @@ from .CTProtein import CTProtein
 from .CTExceptions import CTException
 from . import CTUtils
 
+def testfunct():
+    """
+    This is a test function for documentation - do we build from source?
+    """
+    print('YEAH OK')
+
+
+
+
 class CTTrajectory:
+    """
+    CTrajectory class
+    
+
+    """
 
     #oxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxo
     #
