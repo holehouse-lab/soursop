@@ -2413,8 +2413,11 @@ class CTProtein:
     #    
     def get_internal_scaling_RMS(self, R1=False, R2=False, mode='COM', stride=1, correctOffset=True, weights=False):
         """
+        If :math:`r_{i,j} = \langle \langle \sum \sigma_{1}` equals :math:`\sigma_{2}` then etc, etc.
+
+
         Calculates the averaged internal scaling info for the protein in the simulation in terms of
-        root mean square (i.e. sqrt(<Rij^2>) vs | i-j |.
+        root mean square (i.e. sqrt(<Rij^2>) vs | i - j |.
 
         R1 and R2 define a sub-region to operate over if sub-regional analysis is
         required. When residues are not provided the full protein's internal scaling 
@@ -2424,7 +2427,7 @@ class CTProtein:
 
         Returns two lists of the same length:
 
-        1) sequence separation (|i-j|)
+        1) sequence separation (|i - j|)
 
         2) mean sqrt(<Rij^2>) 
         
