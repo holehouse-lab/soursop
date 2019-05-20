@@ -1,14 +1,13 @@
 CTraj
 ==============================
-[//]: # (Badges)
-[![Travis Build Status](https://travis-ci.org/REPLACE_WITH_OWNER_ACCOUNT/CTraj.png)](https://travis-ci.org/REPLACE_WITH_OWNER_ACCOUNT/CTraj)
-[![codecov](https://codecov.io/gh/REPLACE_WITH_OWNER_ACCOUNT/CTraj/branch/master/graph/badge.svg)](https://codecov.io/gh/REPLACE_WITH_OWNER_ACCOUNT/CTraj/branch/master)
-
 Analysis package for all-atom simulations of proteins, with a specific focus on intrinsically disordered proteins.
 
-### Copyright
+#### Update May 2019
+This is the *development* repository of CTraj and SHOULD NOT be used for production. Seriously, it is being modified constantly and with no building requirements during code pushes. If you want a building copy PLEASE contact Alex directly!
 
-Copyright (c) 2019, Alex Holehouse
+#### Copyright
+
+Copyright (c) 2015-2019, Alex Holehouse
 
 
 #### Acknowledgements

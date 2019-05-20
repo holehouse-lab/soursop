@@ -1,3 +1,9 @@
+"""
+This is the docstring at the top of CTProtein
+
+"""
+
+
 ##
 ################################################
 ##  ,-----.,--------.                 ,--.    ##
@@ -675,7 +681,7 @@ class CTProtein:
 
     # ........................................................................
     #
-    def get_distanceMap(self, weights=False, verbose=True, mode='CA', RMS=False):
+    def get_distanceMap(self, weights=False, verbose=True, mode='CA', RMS=False,stride=1):
         """
         Function to calculate the CA defined distance map for a protein of interest. Note 
         this function doesn't take any arguments and instead will just calculate the complete
@@ -689,6 +695,9 @@ class CTProtein:
         ........................................
         OPTIONS 
         ........................................
+        stride [int] {1}
+        Defines the spacing between frames to compare - i.e. if comparing frame1 to a trajectory we'd compare
+        frame 1 and every stride-th frame
         
         weights [list or array of floats]
         Defines the frame-specific weights if re-weighted analysis is required. This can be 
@@ -711,7 +720,7 @@ class CTProtein:
                         
         """
         
-        weights = self.__check_weights(weights)
+        weights = self.__check_weights(weights, stride)
         
         # get the list of residues which have CA (typically this means we exlcude
         # ACE and NME if they're present, but they may not be                        
@@ -729,7 +738,7 @@ class CTProtein:
 
             # get all CA-CA distances between the residue of index resIndex and every other residue. Note this gives the non-redudant upper 
             # triangle. No need to correct for offset because this was done when we retrived the set of residues with CA
-            full_data = self.calculateAllCAdistances(resIndex, mode=mode, correctOffset=False)    
+            full_data = self.calculateAllCAdistances(resIndex, mode=mode, stride=stride, correctOffset=False)    
 
             # if we want root mean square then NOW square each distances
             if RMS:
@@ -765,7 +774,7 @@ class CTProtein:
 
     # ........................................................................
     #
-    def get_polymer_scaled_distance_map(self, nu=None, A0=None, min_separation=10, mode='fractional-change', weights=False):
+    def get_polymer_scaled_distance_map(self, nu=None, A0=None, min_separation=10, mode='fractional-change', weights=False, stride=1):
         """
         Function that allows for a global assesment of how well all i-j distances conform to standard
         polymer scaling behaviour (i.e. r_ij = A0*|i-j|^{nu}).
@@ -857,7 +866,7 @@ class CTProtein:
 
         # first sanity check mode input
         if mode not in ['fractional-change','scaled', 'signed-fractional-change', 'signed-absolute-change']:
-            raise CTException("mode keyword must be set to one of 'fractional=change' or 'scaled'")
+            raise CTException("mode keyword must be set to one of 'fractional-change', 'scaled', 'signed-fractional-change', or 'signed-absolute-change'")
 
         if min_separation < 1:
             raise CTException("Minimum separation to be used must be greater than 0")
@@ -867,7 +876,7 @@ class CTProtein:
         # If NEITHER provided then do fitting here and now!
         if nu == None and A0 == None:
             print("Fitting data to homopolymer mode...")
-            SE = self.get_scaling_exponent_v2(verbose=False, weights=weights)            
+            SE = self.get_scaling_exponent_v2(verbose=False, weights = weights, stride = stride)
             nu = SE[0]
             A0 = SE[1]
             REDCHI = SE[7]
@@ -923,7 +932,7 @@ class CTProtein:
 
         # first compute and get the distance map (note [0] means we get first element
         # which is mean distance ([1] is STDEV)
-        distance_map = self.get_distanceMap(weights, verbose=False, mode='COM',RMS=True)[0]
+        distance_map = self.get_distanceMap(weights, verbose=False, mode='COM',RMS=True, stride=stride)[0]
 
         # get distance map dimensions (will be a square so just take X-dim)
         dimensions = distance_map.shape[0]
@@ -981,7 +990,9 @@ class CTProtein:
         self.__check_stride(stride)
 
         # Only allow bins to be used if appropriate
-        if (not bins == None) and len(bins) < 2:
+        print('here')
+        print(len(bins))
+        if ( bins is not None) and (len(bins) < 2):
             raise CTException('Bins should be a numpy defined vector of values - arange(0,1,0.01)')
 
         
@@ -1259,7 +1270,6 @@ class CTProtein:
         # SET
         native_state_frame=0
         n_res = self.get_numberOfResidues()
-
 
         # less stringent weights test cos trajectory is one frame too long because we probably loaded the PDB file
         # as a frame
@@ -1575,9 +1585,9 @@ class CTProtein:
 
         # build an empty distance matrix
         if self.n_frames % stride == 0:
-            distance_dims = self.n_frames/stride
+            distance_dims = int(self.n_frames/stride)
         else:
-            distance_dims = (self.n_frames/stride)+1
+            distance_dims = int((self.n_frames/stride))+1
 
         distances = np.zeros((distance_dims, distance_dims))
         
@@ -1607,7 +1617,7 @@ class CTProtein:
 
         # if we're looking at a region further extract out ONLY the atoms
         # associated with that subregion
-        if not region == None:
+        if region is not None:
             selectionatoms = self.__get_selection_atoms(region, backbone)
             subtraj = subtraj.atom_slice(selectionatoms)
                         
@@ -1618,8 +1628,11 @@ class CTProtein:
         cluster_members = []
         cluster_frames = []
 
+        # regardless of how many clusters we *think* we should have, extract the number of labeles
+        # we'll actually have...
+        final_labels = list(set(labels))
         # for each cluster
-        for i in range(1,n_clusters+1):
+        for i in final_labels:
 
             # determine the indices associated with frames which are associated 
             # with the i-th cluster
@@ -1653,6 +1666,7 @@ class CTProtein:
             # to think about how well an RMSD cluster represents those structures
             cluster_distance_matricies.append(cluster_distances)
             
+            print(cluster_distances)
             # we determine the frame closest to the centroid of the cluster
             cluster_centroids.append(np.exp(-1*cluster_distances / cluster_distances.std()).sum(axis=1).argmax())
         
@@ -2815,8 +2829,11 @@ class CTProtein:
 
         # check that the number of points being used makes sense..        
 
-        # note integer math used here to round down...
-        num_subdivisions_for_error = int(self.n_frames)/stride / int(subdivision_batch_size)
+        # note integer math used here to round down - also set 
+        if int(self.n_frames)/stride < int(subdivision_batch_size):
+            num_subdivisions_for_error = int(self.n_frames)/stride
+        num_subdivisions_for_error = int(int(self.n_frames)/stride / int(subdivision_batch_size))
+        print(num_subdivisions_for_error)
         
         seq_sep_vals             = []
         seq_sep_RMS_distance     = []
@@ -3624,8 +3641,78 @@ class CTProtein:
         c = np.corrcoef(local_mean_square, np.power(full_rg,2))[0][1]                
                                             
         return c
+
+    def get_secondary_structure_DSSP(self, R1=False, R2=False, correctOffset=True):
+        """
+        Returns the a 4 by n numpy array inwhich column 1 gives residue number, column 2 is local helicity,  
+        column 3 is local 'extended' (beta strand/sheet) and column 4 is local coil on a per-residue
+        basis.
+
+        Parameter R1 and R2 define a local region if only a sub-region is required.
+
+        Return vector provides normalized secondary structure (between 0 and 1) which reflects
+        the fraction of the simulation each residue is in that particular secondary structure type.
+
+        ........................................
+        OPTIONS 
+        ........................................
+
+        R1 [int] {False}
+        Index value for first residue in the region of interest. If not 
+        provided (False) then first residue is used.
+
+        R1 [int] {False}
+        Index value for last residue in the region of interest. If not
+        provided (False) then last residue is used.
+
+        correctOffset [Bool] {True}
+        Defines if we perform local protein offset correction
+        or not. By default we do, but some internal functions
+        may have already performed the correction and so don't
+        need to perform it again.
+
+        """
+
+        # define R1 and R2 - if offset needed perform, else 
+        # define the first and last residue INCLUDING caps
+        if R1 == False:
+            R1 = 0
+        else:
+            if correctOffset:
+                R1 = self.__get_offset_residue(R1)
+
+        if R2 == False:
+            R2 = self.__num_residues-1
+        else:
+            if correctOffset:
+                R2 = self.__get_offset_residue(R2)
+
+        # switch em around so the A to B syntax makes sense
+        if R1 > R2:
+            tmp = R2
+            R2 = R1
+            R1 = tmp
+
+        # in angstroms
+        dssp_data = md.compute_dssp(self.traj.atom_slice(self.topology.select('resid %i to %i'%(R1, R2))))
         
         
+        C_vector = []
+        E_vector = []
+        H_vector = []
+
+        n_residues = R2-R1 
+        reslist = list(range(R1,R2))
+        n_frames   = self.get_numberOfFrames()
+
+        for i in range(1,n_residues-1):
+            C_vector.append(float(sum(dssp_data.transpose()[i] == 'C'))/n_frames)
+            E_vector.append(float(sum(dssp_data.transpose()[i] == 'E'))/n_frames)
+            H_vector.append(float(sum(dssp_data.transpose()[i] == 'H'))/n_frames)
+
+        return np.array((reslist,H_vector, E_vector, C_vector))
+
+                    
         
 
 

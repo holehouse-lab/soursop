@@ -23,3 +23,7 @@ pip uninstall CTraj
 echo "Installing new CTraj..."
 pip install -e .
 
+echo "Building documentation..."
+cd docs
+make html
+cd .. 

@@ -4,9 +4,9 @@ Analysis package for all-atom simulations of proteins, with a specific focus on 
 
 Handles the primary functions
 """
+from ._version import get_versions
 
-
-def canvas(with_attribution=True):
+def version(with_attribution=True):
     """
     Placeholder function to show example docstring (NumPy format)
 
@@ -23,10 +23,13 @@ def canvas(with_attribution=True):
         Compiled string including quote and optional attribution
     """
 
-    quote = "The code is but a canvas to our imagination."
-    if with_attribution:
-        quote += "\n\t- Adapted from Henry David Thoreau"
-    return quote
+
+    versions = get_versions()
+    __version__ = versions['version']
+    __git_revision__ = versions['full-revisionid']
+    
+    print(__version__)
+    print(__git_revision__)
 
 
 if __name__ == "__main__":
