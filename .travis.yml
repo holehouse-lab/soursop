@@ -42,7 +42,7 @@ install:
 
 
 script:
-  - pytest -v --cov=CTraj CTraj/tests/
+  - pytest -v --cov=camparitraj camparitraj/tests/
 
 notifications:
     email: false
