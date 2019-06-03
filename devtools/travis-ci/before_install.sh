@@ -34,9 +34,13 @@ source ~/.bashrc  # source file to get new commands
 conda config --set always_yes yes
 
 # mdtrak added by ASH to ensure dependencies are met
-conda install conda conda-build jinja2 anaconda-client mdtraj
-
+conda install conda conda-build jinja2 anaconda-client 
 conda update --quiet --all
+
+conda config --add channels conda-forge 
+conda config --set channel_priority strict 
+conda install mdtraj
+
 
 # Restore original directory
 popd
