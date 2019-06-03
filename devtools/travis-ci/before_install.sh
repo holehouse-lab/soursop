@@ -33,6 +33,9 @@ source ~/.bashrc  # source file to get new commands
     
 conda config --set always_yes yes
 conda install conda conda-build jinja2 anaconda-client
+
+# added by ASH to ensure dependencies are met
+conda install mdtraj
 conda update --quiet --all
 
 # Restore original directory
