@@ -1,21 +1,22 @@
 ##
-################################################
-##  ,-----.,--------.                 ,--.    ##
-## '  .--./'--.  .--',--.--. ,--,--.  `--'    ##
-## |  |       |  |   |  .--'' ,-.  |  ,--.    ##
-## '  '--'\   |  |   |  |   \ '-'  |  |  |    ##
-##  `-----'   `--'   `--'    `--`--'.-'  /    ##
-##                                  '---'     ##
-################################################
+
 ##
-## Alex Holehouse (Pappu Lab)
+##                                       _ _              _ 
+##   ___ __ _ _ __ ___  _ __   __ _ _ __(_) |_ _ __ __ _ (_)
+##  / __/ _` | '_ ` _ \| '_ \ / _` | '__| | __| '__/ _` || |
+## | (_| (_| | | | | | | |_) | (_| | |  | | |_| | | (_| || |
+##  \___\__,_|_| |_| |_| .__/ \__,_|_|  |_|\__|_|  \__,_|/ |
+##                     |_|                             |__/ 
+##
+## Alex Holehouse (Pappu Lab and Holehouse Lab)
 ## Simulation analysis package
-## Copyright 2014 - 2018
+## Copyright 2014 - 2019
 ##
+
 import mdtraj as md
 import numpy as np
 import scipy
-from .CTExceptions import CTWarning
+from .ctexceptions import CTWarning
 
 ### CTPRE contains all the functionality associated with calculating
 ### PRE profiles.
@@ -101,10 +102,10 @@ class CTPRE:
         
         # set the INEPT delay value and the backbone amide transverse relaxation rate which
         # is used explicitly later
-        self.t_delay = float(t_delay) # in ms - INDEPT delay
-        self.R_2D = float(R_2D) # in Hz - backbone amide transverse relaxation rate
-        self.tau_c = tau_c # in ns - effecive correlation time
-        self.W_H   = W_H # in Hz - Proton Larmor frequency in the magnet
+        self.t_delay = float(t_delay)   # in ms - INDEPT delay
+        self.R_2D = float(R_2D)         # in Hz - backbone amide transverse relaxation rate
+        self.tau_c = tau_c              # in ns - effecive correlation time
+        self.W_H   = W_H                # in Hz - Proton Larmor frequency in the magnet
 
         # ------------------------------------------
         # sanity checks to warn if any of the input values seem dratsically wrong. NOTE that these won't block the analysis but will

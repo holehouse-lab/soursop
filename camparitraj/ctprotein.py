@@ -1,22 +1,20 @@
 """
-This is the docstring at the top of CTProtein
+This is the docstring at the top of ctprotein
 
 """
 
-
 ##
-################################################
-##  ,-----.,--------.                 ,--.    ##
-## '  .--./'--.  .--',--.--. ,--,--.  `--'    ##
-## |  |       |  |   |  .--'' ,-.  |  ,--.    ##
-## '  '--'\   |  |   |  |   \ '-'  |  |  |    ##
-##  `-----'   `--'   `--'    `--`--'.-'  /    ##
-##                                  '---'     ##
-################################################
+##                                       _ _              _ 
+##   ___ __ _ _ __ ___  _ __   __ _ _ __(_) |_ _ __ __ _ (_)
+##  / __/ _` | '_ ` _ \| '_ \ / _` | '__| | __| '__/ _` || |
+## | (_| (_| | | | | | | |_) | (_| | |  | | |_| | | (_| || |
+##  \___\__,_|_| |_| |_| .__/ \__,_|_|  |_|\__|_|  \__,_|/ |
+##                     |_|                             |__/ 
 ##
-## Alex Holehouse (Pappu Lab)
+##
+## Alex Holehouse (Pappu Lab and Holehouse Lab)
 ## Simulation analysis package
-## Copyright 2014 - 2018
+## Copyright 2014 - 2019
 ##
 
 import mdtraj as md
@@ -27,11 +25,11 @@ from scipy import stats
 import scipy.optimize as SPO
 from numpy.random import choice
 
-from .CONFIGS import DEBUGGING
-from .CTData import THREE_TO_ONE, DEFAULT_SIDECHAIN_VECTOR_ATOMS
-from .CTExceptions import CTException
-from . import CTMutualInformation
-from . import CTTools
+from .configs import DEBUGGING
+from .ctdata import THREE_TO_ONE, DEFAULT_SIDECHAIN_VECTOR_ATOMS
+from .ctexceptions import CTException
+from . import ctmutualinformation
+from . import cttools
 
 import scipy.cluster.hierarchy
 
@@ -941,7 +939,7 @@ class CTProtein:
             raise CTException('The minimum separation is shorter than the chain length')
 
         # compute expected distance given the standard polymer scaling model
-        expected_distances = CTTools.powermodel(list(range(0,dimensions)), nu, A0)
+        expected_distances = cttools.powermodel(list(range(0,dimensions)), nu, A0)
 
         # initialize the return matrix and then populate for distances that are
         # above the minimum threshold. We only populate upper right triangle
@@ -2653,7 +2651,7 @@ class CTProtein:
                 idx = np.random.permutation(list(range(0,len(tmp))))
             
                 # split shuffled indices into $num_subdivisions_for_error sized chunks
-                subdivided_idx = CTTools.chunks(idx, subdivision_size)
+                subdivided_idx = cttools.chunks(idx, subdivision_size)
                         
                 # finally subselect each of the randomly selected indicies 
                 RMS_local   = []
@@ -2671,7 +2669,7 @@ class CTProtein:
         seq_sep_vals = seq_sep_vals[inter_residue_min:-end_effect]
         seq_sep_RMS_distance = seq_sep_RMS_distance[inter_residue_min:-end_effect]
 
-        OF = SPO.curve_fit(CTTools.powermodel, seq_sep_vals, seq_sep_RMS_distance,[0.5,2])
+        OF = SPO.curve_fit(cttools.powermodel, seq_sep_vals, seq_sep_RMS_distance,[0.5,2])
 
         nu_best = OF[0][0]
         R0_best = OF[0][1]
@@ -2682,7 +2680,7 @@ class CTProtein:
         R0_sub = []
         for i in range(0, num_subdivisions_for_error):
             
-            OF = SPO.curve_fit(CTTools.powermodel, seq_sep_vals, subselected[i][inter_residue_min:-end_effect], [0.5,2])
+            OF = SPO.curve_fit(cttools.powermodel, seq_sep_vals, subselected[i][inter_residue_min:-end_effect], [0.5,2])
             nu_sub.append(OF[0][0])
             R0_sub.append(OF[0][1])
 
@@ -2690,11 +2688,11 @@ class CTProtein:
             nu_sub.append(np.nan)
             R0_sub.append(np.nan)
             
-        errors = seq_sep_RMS_distance - CTTools.powermodel(seq_sep_vals, nu_best, R0_best)        
+        errors = seq_sep_RMS_distance - cttools.powermodel(seq_sep_vals, nu_best, R0_best)        
         root_mean_squared_error = np.sqrt(np.sum(np.power(errors,2))/len(errors))    
-        chi_squared = np.sum(np.power(errors,2) / CTTools.powermodel(seq_sep_vals, nu_best, R0_best))
+        chi_squared = np.sum(np.power(errors,2) / cttools.powermodel(seq_sep_vals, nu_best, R0_best))
                         
-        return [nu_best, R0_best, min(nu_sub), max(nu_sub), min(R0_sub), max(R0_sub), root_mean_squared_error, chi_squared, np.vstack((seq_sep_vals, seq_sep_RMS_distance, CTTools.powermodel(seq_sep_vals, nu_best, R0_best)))]
+        return [nu_best, R0_best, min(nu_sub), max(nu_sub), min(R0_sub), max(R0_sub), root_mean_squared_error, chi_squared, np.vstack((seq_sep_vals, seq_sep_RMS_distance, cttools.powermodel(seq_sep_vals, nu_best, R0_best)))]
 
 
 
@@ -2884,7 +2882,7 @@ class CTProtein:
                 idx = np.random.permutation(list(range(0,len(tmp))))
             
                 # split shuffled indices into $num_subdivisions_for_error sized chunks
-                subdivided_idx = CTTools.chunks(idx, subdivision_size)
+                subdivided_idx = cttools.chunks(idx, subdivision_size)
                         
                 # finally subselect each of the randomly selected indicies 
                 RMS_local   = []
@@ -2910,7 +2908,7 @@ class CTProtein:
 
         logspaced_idx = []
         for i in range(0,num_fitting_points):
-            [local_ix,_] = CTTools.find_nearest(integer_vals, i) 
+            [local_ix,_] = cttools.find_nearest(integer_vals, i) 
             if local_ix in logspaced_idx:
                 continue
             else:
@@ -2967,7 +2965,7 @@ class CTProtein:
             R0_sub.append(np.nan)
 
 
-        return [nu_best, R0_best, min(nu_sub), max(nu_sub), min(R0_sub), max(R0_sub),  reduced_chi_squared_fitting, reduced_chi_squared_all, np.vstack((np.array(fitting_separation),np.array(fitting_distances))), np.vstack((seq_sep_vals, seq_sep_RMS_distance, CTTools.powermodel(seq_sep_vals, nu_best, R0_best)))]
+        return [nu_best, R0_best, min(nu_sub), max(nu_sub), min(R0_sub), max(R0_sub),  reduced_chi_squared_fitting, reduced_chi_squared_all, np.vstack((np.array(fitting_separation),np.array(fitting_distances))), np.vstack((seq_sep_vals, seq_sep_RMS_distance, cttools.powermodel(seq_sep_vals, nu_best, R0_best)))]
 
 
 
@@ -3287,7 +3285,7 @@ class CTProtein:
 
         if sidechain_atom_1 == 'default':
             resname_1 = self.get_aminoAcidSequence(numbered=False)[R1]                        
-            resname_1 = CTTools.fix_histadine_name(resname_1)
+            resname_1 = cttools.fix_histadine_name(resname_1)
 
             try:
                 sidechain_atom_1 = DEFAULT_SIDECHAIN_VECTOR_ATOMS[resname_1]
@@ -3300,7 +3298,7 @@ class CTProtein:
 
         if sidechain_atom_2 == 'default':
             resname_2 = self.get_aminoAcidSequence(numbered=False)[R2]                        
-            resname_2 = CTTools.fix_histadine_name(resname_2)
+            resname_2 = cttools.fix_histadine_name(resname_2)
 
             try:
                 sidechain_atom_2 = DEFAULT_SIDECHAIN_VECTOR_ATOMS[resname_2]
@@ -3435,7 +3433,7 @@ class CTProtein:
 
                 X = np.transpose(angles[1])[j]
                 Y = np.transpose(angles[1])[i]
-                MI = CTMutualInformation.calc_MI(X,Y, bins, weights)
+                MI = ctmutualinformation.calc_MI(X,Y, bins, weights)
 
                 MI_mat[i,j] = MI
                 MI_mat[j,i] = MI

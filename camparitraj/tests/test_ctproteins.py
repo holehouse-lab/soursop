@@ -1,18 +1,24 @@
 """
-Unit and regression test for the CTraj package.
+Unit and regression test for the camparitraj package.
 """
 
 # Import package, test suite, and other packages as needed
-import CTraj
+import camparitraj
 import pytest
 import sys
-from CTraj import CTTrajectory
+from camparitraj import cttrajectory
 
+NTL9_FILES=['ntl9.pdb','ntl9.xtc']
 
-NTL9_FILES=['test_data/ntl9.pdb','test_data/ntl9.xtc']
+test_data_dir = camparitraj.get_data('test_data')
 
-CO = CTTrajectory.CTTrajectory(NTL9_FILES[1], NTL9_FILES[0])
+CO = cttrajectory.CTTrajectory("%s/%s"%(test_data_dir, NTL9_FILES[1]), "%s/%s"%(test_data_dir, NTL9_FILES[0])) 
 NTL9_CP = CO.proteinTrajectoryList[0]    
+
+#@pytest.fixture()
+#def ntl9_setup(request):
+    
+
 
 def test_code_coverage():
 
@@ -86,27 +92,11 @@ def test_code_coverage():
 
     a = NTL9_CP.get_interResidue_atomic_distance(2,10)
     a = NTL9_CP.get_interResidue_atomic_distance(2,10, A1='CB')
-    """
-    a = NTL9_CP.
-    a = NTL9_CP.
-    a = NTL9_CP.
-    a = NTL9_CP.
-    a = NTL9_CP.
-    a = NTL9_CP.
-    a = NTL9_CP.
-    a = NTL9_CP.
-    a = NTL9_CP.
-    a = NTL9_CP.
-    a = NTL9_CP.
-    a = NTL9_CP.
-    a = NTL9_CP.
-    a = NTL9_CP.
-    """
 
 
 def test_CTraj_imported():
     """Sample test, will always pass so long as import statement worked"""
-    assert "CTraj" in sys.modules
+    assert "camparitraj" in sys.modules
 
 
 def test_DSSP():

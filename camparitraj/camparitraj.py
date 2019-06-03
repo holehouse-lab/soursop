@@ -1,9 +1,20 @@
 """
-CTraj.py
-Analysis package for all-atom simulations of proteins, with a specific focus on intrinsically disordered proteins.
+camparitraj module
 
-Handles the primary functions
 """
+##
+##                                       _ _              _ 
+##   ___ __ _ _ __ ___  _ __   __ _ _ __(_) |_ _ __ __ _ (_)
+##  / __/ _` | '_ ` _ \| '_ \ / _` | '__| | __| '__/ _` || |
+## | (_| (_| | | | | | | |_) | (_| | |  | | |_| | | (_| || |
+##  \___\__,_|_| |_| |_| .__/ \__,_|_|  |_|\__|_|  \__,_|/ |
+##                     |_|                             |__/ 
+##
+## Alex Holehouse (Pappu Lab and Holehouse Lab)
+## Simulation analysis package
+## Copyright 2014 - 2019
+##
+
 from ._version import get_versions
 
 def version(with_attribution=True):
@@ -34,4 +45,4 @@ def version(with_attribution=True):
 
 if __name__ == "__main__":
     # Do something if this file is invoked on its own
-    print(canvas())
+    pass

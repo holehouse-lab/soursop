@@ -9,7 +9,7 @@ if "%SPHINXBUILD%" == "" (
 )
 set SOURCEDIR=.
 set BUILDDIR=_build
-set SPHINXPROJ=CTraj
+set SPHINXPROJ=camparitraj
 
 if "%1" == "" goto help
 

@@ -1,9 +1,9 @@
-.. CTraj documentation master file, created by
+.. camparitraj documentation master file, created by
    sphinx-quickstart on Thu Mar 15 13:55:56 2018.
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-Welcome to CTraj's documentation!
+Welcome to camparitraj's documentation!
 =========================================================
 
 .. toctree::
@@ -11,9 +11,8 @@ Welcome to CTraj's documentation!
    :caption: Contents:
    
    usage/quickstart
-   modules/molssi_math
-   modules/CTTrajectory
-   modules/CTProtein
+   modules/cttrajectory
+   modules/ctprotein
 
 
 

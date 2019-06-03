@@ -1,29 +1,34 @@
+"""
+ctmutualinformation contains all the functions associated with computing things related to mutual
+information. This file is not a class, but represents a set of stand alone functions, rather than 
+including this function in any one other class.
+"""
+
+
 ##
-################################################
-##  ,-----.,--------.                 ,--.    ##
-## '  .--./'--.  .--',--.--. ,--,--.  `--'    ##
-## |  |       |  |   |  .--'' ,-.  |  ,--.    ##
-## '  '--'\   |  |   |  |   \ '-'  |  |  |    ##
-##  `-----'   `--'   `--'    `--`--'.-'  /    ##
-##                                  '---'     ##
-################################################
+##                                       _ _              _ 
+##   ___ __ _ _ __ ___  _ __   __ _ _ __(_) |_ _ __ __ _ (_)
+##  / __/ _` | '_ ` _ \| '_ \ / _` | '__| | __| '__/ _` || |
+## | (_| (_| | | | | | | |_) | (_| | |  | | |_| | | (_| || |
+##  \___\__,_|_| |_| |_| .__/ \__,_|_|  |_|\__|_|  \__,_|/ |
+##                     |_|                             |__/ 
 ##
-## Alex Holehouse (Pappu Lab)
+## Alex Holehouse (Pappu Lab and Holehouse Lab)
 ## Simulation analysis package
-## Copyright 2014 - 2018
+## Copyright 2014 - 2019
 ##
+
+
 import mdtraj as md
 import numpy as np
 import scipy
-from .CTExceptions import CTWarning
+from .ctexceptions import CTWarning
 
-### CTMutualInformation contains all the functions
-### associated with computing things related to mutual
-### information. This file is not a class, but represents
-### a set of stand alone functions, rather than including this
-### function in any one other class.
-###
 
+
+
+# ........................................................................
+#
 def calc_MI(X,Y,bins, weights=False):
     """
     Calculate the mutual information given two observables, X and Y, 
@@ -57,6 +62,8 @@ def calc_MI(X,Y,bins, weights=False):
 
 
 
+# ........................................................................
+#
 def shan_entropy(c):
     """
     Calculate the shannon entropy of a distribution

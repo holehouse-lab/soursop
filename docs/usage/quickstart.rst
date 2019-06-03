@@ -1,14 +1,14 @@
-CTraj Installation
+camparitraj Installation
 =========================================================
 
-To install CTraj during development run.
+To install camparitraj during development run.
 
 ``pip install .``
 
 Dependencies
 ************************
 
-``CTraj`` has a number of standard dependencies that we suggest should be installed in the following order.
+``camparitraj`` has a number of standard dependencies that we suggest should be installed in the following order.
 
 ``numpy`` - core numerical computing algorithms
 ``scipy`` - core scientific computing algorithms

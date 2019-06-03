@@ -1,12 +1,12 @@
 
-CTTrajectory module
+cttrajectory module
 =========================================================
 
-This is where the CTTrajectory shinanigans occurs
+This is where the cttrajectory shinanigans occurs
 
-.. automodule:: CTraj.CTTrajectory
+.. automodule:: camparitraj.cttrajectory
 .. autofunction:: testfunct
-.. autoclass:: CTTrajectory
+.. autoclass:: cttrajectory
     :members:
 
         .. automethod:: __init__

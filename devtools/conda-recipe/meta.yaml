@@ -1,5 +1,5 @@
 package:
-  name: CTraj
+  name: camparitraj
   version: "0.0.0"
 
 source:
@@ -20,7 +20,7 @@ test:
   requires:
     - pytest
   imports:
-    - CTraj
+    - camparitraj
 
 about:
   home: add_url_here

@@ -1,32 +1,31 @@
 """
-CTTrajectory.py
+cttrajectory.py
 
 This is where some stuff will be described
 
 """
 
 ##
-################################################
-##  ,-----.,--------.                 ,--.    ##
-## '  .--./'--.  .--',--.--. ,--,--.  `--'    ##
-## |  |       |  |   |  .--'' ,-.  |  ,--.    ##
-## '  '--'\   |  |   |  |   \ '-'  |  |  |    ##
-##  `-----'   `--'   `--'    `--`--'.-'  /    ##
-##                                  '---'     ##
-################################################
+##                                       _ _              _ 
+##   ___ __ _ _ __ ___  _ __   __ _ _ __(_) |_ _ __ __ _ (_)
+##  / __/ _` | '_ ` _ \| '_ \ / _` | '__| | __| '__/ _` || |
+## | (_| (_| | | | | | | |_) | (_| | |  | | |_| | | (_| || |
+##  \___\__,_|_| |_| |_| .__/ \__,_|_|  |_|\__|_|  \__,_|/ |
+##                     |_|                             |__/ 
+##
 ##
 ## Alex Holehouse (Pappu Lab)
 ## Simulation analysis package
-## Copyright 2014 - 2018
+## Copyright 2014 - 2019
 ##
 
 import mdtraj as md
 import numpy as np
-from .CONFIGS import *
+from .configs import *
 
-from .CTProtein import CTProtein
-from .CTExceptions import CTException
-from . import CTUtils
+from .ctprotein import CTProtein
+from .ctexceptions import CTException
+from . import ctutils
 
 def testfunct():
     """
@@ -39,7 +38,7 @@ def testfunct():
 
 class CTTrajectory:
     """
-    CTrajectory class
+    CTrajectory class that holds a single simulation trajectory object. 
     
 
     """
@@ -121,8 +120,8 @@ class CTTrajectory:
 
 
         try:
-            CTUtils.mkl_set_num_threads(MAXCORES)
-            print("MKL will use %i threads" % (CTUtils.mkl_get_max_threads()))
+            ctutils.mkl_set_num_threads(MAXCORES)
+            print("MKL will use %i threads" % (ctutils.mkl_get_max_threads()))
         except Exception as e:
             print("MKL libraries not available [%s]" % str(e))
             pass

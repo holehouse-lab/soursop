@@ -1,5 +1,5 @@
 """
-CTraj
+camparitraj
 Analysis package for all-atom simulations of proteins, with a specific focus on intrinsically disordered proteins.
 """
 from setuptools import setup
@@ -16,7 +16,7 @@ except:
 
 setup(
     # Self-descriptive entries which should always be present
-    name='CTraj',
+    name='camparitraj',
     author='Alex Holehouse',
     author_email='alex.holehouse@wustl.edu',
     description=short_description[0],
@@ -27,13 +27,13 @@ setup(
     license='LGPLv3',
 
     # Which Python importable modules should be included when your package is installed
-    packages=['CTraj', "CTraj.tests"],
+    packages=['camparitraj', "camparitraj.tests"],
 
     # Optional include package data to ship with your package
     # Comment out this line to prevent the files from being packaged with your software
     # Extend/modify the list to include/exclude other items as need be
     # > line below modified from default
-    package_data={'CTraj': ['data/dye_libraries/*']},
+    package_data={'camparitraj': ['data/*']},
     install_requires=[
         "numpy>=1.12.0","cython","mdtraj>=1.9.1", "pandas>=0.23.0"],
 

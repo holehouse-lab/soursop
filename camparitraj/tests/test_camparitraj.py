@@ -1,12 +1,12 @@
 """
-Unit and regression test for the CTraj package.
+Unit and regression test for the camparitraj package.
 """
 
 # Import package, test suite, and other packages as needed
-import CTraj
+import camparitraj
 import pytest
 import sys
 
-def test_CTraj_imported():
+def test_camparitraj_imported():
     """Sample test, will always pass so long as import statement worked"""
-    assert "CTraj" in sys.modules
+    assert "camparitraj" in sys.modules
