@@ -5,7 +5,7 @@ ctprotein module
 This is where the cttrajectory shinanigans occurs. Maybe we reference [BiDB79]_ yeah
 
 .. automodule:: camparitraj.ctprotein
-.. autoclass:: ctprotein
+.. autoclass:: CTProtein
     :members:
 
         .. automethod:: __init__

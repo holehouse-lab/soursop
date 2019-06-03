@@ -1,4 +1,4 @@
-camparitraj Installation
+Installation
 =========================================================
 
 To install camparitraj during development run.
@@ -12,11 +12,9 @@ Dependencies
 
 ``numpy`` - core numerical computing algorithms
 ``scipy`` - core scientific computing algorithms
-``pandas`` - core data structure (required by MDTraj but not always included as a dependency)
-``mdtraj`` - underlying trajectory reading and representation is done by MDTraj
+``pandas`` - core data structure (required by ``mdtraj`` but not always included as a dependency)
+``mdtraj`` - underlying trajectory reading and representation is done by ``mdtraj``
+
+If installed from source, these are included in the dependency tree defined in ``setup.py`` so in principle should not cause any issues.
 
 
-
-Other stuff
---------------------------
-Here's where I'll include other information

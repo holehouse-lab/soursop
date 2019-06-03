@@ -70,8 +70,7 @@ def test_code_coverage():
     a = NTL9_CP.get_Q(stride=2)
     a = NTL9_CP.get_Q(stride=2, protein_average=False)
     a = NTL9_CP.get_Q(stride=2, protein_average=False, region=[10,20])
-    a = NTL9_CP.get_Q(stride=2, protein_average=False, region=[10,20], correctOffset=False
-)
+    a = NTL9_CP.get_Q(stride=2, protein_average=False, region=[10,20], correctOffset=False)
 
     a = NTL9_CP.get_contact_map()
     a = NTL9_CP.get_contact_map(distance_thresh=2)

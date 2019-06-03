@@ -3,48 +3,34 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-Welcome to camparitraj's documentation!
+Welcome to the CAMPARITraj docs!
 =========================================================
+**CAMPARITraj** is a Python analysis package for the analysis of all-atom simulations of unfolded/disordered proteins. It provides a wide range of functionalities that may not be of use for folded proteins, but provide important insight into simulations of intrinsically disordered proteins. 
+
+**CAMPARITraj** was built with simulations from the CAMPARI simulation engine in mind, but has been succesfully tested on a wide-range of trajectories generated from different software packages. It utilizes the ``mdtraj`` (`http://mdtraj.org <http://mdtraj.org/>`_.) backend for trajectory reading and representation, providing effectively an additional layer of analysis utilities on top of **mdtraj**.
+
 
 .. toctree::
-   :maxdepth: 5
+   :maxdepth: 1
    :caption: Contents:
    
    usage/quickstart
+   usage/examples
    modules/cttrajectory
    modules/ctprotein
 
 
 
-
- 
-
-
-Indices and tables
-==================
-
-* :ref:`genindex`
-* :ref:`modindex`
-* :ref:`search`
-
-Quickstart yo! This is what is up!
-=========================================================
-
-To do a developmental install, type
+Quickstart!
+==============
+*Update: May 2019*
+**CAMPARITraj** is currently still being finalized, so we do not currently recommend installation directly from the GitHub repository as tests, final code tweaks, and even major changes to the code-base are occurring constantly. However, in principle, assuming **camparitraj** is building, once downloaded from GitHub it can be installed via
 
 ``pip install .``
 
-Dependencies
-************************
-
-You need to install ``numpy``
+We plan to release **CAMPARITraj** over ``conda-forge`` once it has finalized and all tests are building. For more information see the installation page.
 
 
-Subheader
---------------------------
-Sample subheader
-
-
-
-
-
+About
+========
+**CAMPARITraj** is built and maintained by `Alex Holehouse <https://holehouselab.com/>`_. It's development was supported financially and intelluctually by the  `Molecular Sciences Software Institute (MOLSSI) <https://molssi.org/>`_.
