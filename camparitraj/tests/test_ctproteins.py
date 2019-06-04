@@ -9,17 +9,21 @@ import sys
 from camparitraj import cttrajectory
 
 NTL9_FILES=['ntl9.pdb','ntl9.xtc']
+GS6_FILES=['gs6.pdb','gs6.xtc']
 
 test_data_dir = camparitraj.get_data('test_data')
 
-CO = cttrajectory.CTTrajectory("%s/%s"%(test_data_dir, NTL9_FILES[1]), "%s/%s"%(test_data_dir, NTL9_FILES[0])) 
-NTL9_CP = CO.proteinTrajectoryList[0]    
+NTL9_CO = cttrajectory.CTTrajectory("%s/%s"%(test_data_dir, NTL9_FILES[1]), "%s/%s"%(test_data_dir, NTL9_FILES[0])) 
+NTL9_CP = NTL9_CO.proteinTrajectoryList[0]    
+
+GS6_CO = cttrajectory.CTTrajectory("%s/%s"%(test_data_dir, GS6_FILES[1]), "%s/%s"%(test_data_dir, GS6_FILES[0])) 
+GS6_CP = GS6_CO.proteinTrajectoryList[0]    
 
 #@pytest.fixture()
 #def ntl9_setup(request):
     
 
-
+"""
 def test_code_coverage():
 
     NTL9_CP.print_residues()
@@ -91,6 +95,14 @@ def test_code_coverage():
 
     a = NTL9_CP.get_interResidue_atomic_distance(2,10)
     a = NTL9_CP.get_interResidue_atomic_distance(2,10, A1='CB')
+"""
+
+def test_get_radius_of_gyration():    
+    """
+
+    """
+    assert (GS6_CP.get_radius_of_gyration()[0] - 5.728453763896514) < 0.0001
+    
 
 
 def test_CTraj_imported():
