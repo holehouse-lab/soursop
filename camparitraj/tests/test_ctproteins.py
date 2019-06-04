@@ -8,7 +8,7 @@ import camparitraj
 import pytest
 import sys
 from camparitraj import cttrajectory
-
+"""
 NTL9_FILES=['ntl9.pdb','ntl9.xtc']
 GS6_FILES=['gs6.pdb','gs6.xtc']
 
@@ -19,7 +19,7 @@ NTL9_CP = NTL9_CO.proteinTrajectoryList[0]
 
 GS6_CO = cttrajectory.CTTrajectory("%s/%s"%(test_data_dir, GS6_FILES[1]), "%s/%s"%(test_data_dir, GS6_FILES[0])) 
 GS6_CP = GS6_CO.proteinTrajectoryList[0]    
-
+"""
 #@pytest.fixture()
 #def ntl9_setup(request):
     
@@ -98,19 +98,19 @@ def test_code_coverage():
     a = NTL9_CP.get_interResidue_atomic_distance(2,10, A1='CB')
 """
 
-def test_get_radius_of_gyration():    
+def test_get_radius_of_gyration(GS6_CP):    
 
     assert len(GS6_CP.get_radius_of_gyration()) == 5
     assert abs(GS6_CP.get_radius_of_gyration()[0] - 5.728453763896514) < 0.0001
     assert abs(GS6_CP.get_radius_of_gyration(R1=1,R2=3)[0] - 2.8815625777553278) < 0.0001
 
-def test_get_t():    
+def test_get_t(GS6_CP):    
 
     assert len(GS6_CP.get_t()) == 5
     assert abs(GS6_CP.get_t()[0] - 0.30286034750848245) < 0.0001
     assert abs(GS6_CP.get_t(R1=1,R2=3)[0] - 0.0766270900235029) < 0.0001
 
-def test_get_internal_scaling():    
+def test_get_internal_scaling(GS6_CP):    
 
     assert len(GS6_CP.get_internal_scaling()[0]) == 6
     assert abs(np.mean(GS6_CP.get_internal_scaling()[1][1]) - 3.784701967415692) < 0.0001
@@ -118,10 +118,17 @@ def test_get_internal_scaling():
     assert abs(np.mean(GS6_CP.get_internal_scaling(R1=1,R2=4)[1][1]) - 3.7353248) < 0.001
 
 
-def test_get_internal_scaling_RMS():    
+def test_get_internal_scaling_RMS(GS6_CP):    
 
     assert len(GS6_CP.get_internal_scaling_RMS()[0]) == 6
-    print( np.mean(GS6_CP.get_internal_scaling_RMS()[1][1]))
+    assert abs(np.mean(GS6_CP.get_internal_scaling_RMS()[1][1]) - 3.793829294427209) < 0.0001
+    assert abs(np.mean(GS6_CP.get_internal_scaling_RMS()[1][2]) - 6.578195001335268) < 0.0001
+    assert abs(np.mean(GS6_CP.get_internal_scaling_RMS(R1=1,R2=4)[1][1]) - 3.7455646317574534) < 0.001
+
+
+def test_get_internal_scaling_RMS(GS6_CP):    
+
+    assert len(GS6_CP.get_internal_scaling_RMS()[0]) == 6
     assert abs(np.mean(GS6_CP.get_internal_scaling_RMS()[1][1]) - 3.793829294427209) < 0.0001
     assert abs(np.mean(GS6_CP.get_internal_scaling_RMS()[1][2]) - 6.578195001335268) < 0.0001
     assert abs(np.mean(GS6_CP.get_internal_scaling_RMS(R1=1,R2=4)[1][1]) - 3.7455646317574534) < 0.001
@@ -137,7 +144,7 @@ def test_camparitraj_imported():
     assert "camparitraj" in sys.modules
 
 
-def test_DSSP():
+def test_DSSP(NTL9_CP):
     SS = NTL9_CP.get_secondary_structure_DSSP()
     print(SS[0])
     
