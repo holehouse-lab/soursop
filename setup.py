@@ -2,6 +2,7 @@
 camparitraj
 Analysis package for all-atom simulations of proteins, with a specific focus on intrinsically disordered proteins.
 """
+import setuptools
 from setuptools import setup
 import versioneer
 
@@ -33,7 +34,13 @@ setup(
     # Comment out this line to prevent the files from being packaged with your software
     # Extend/modify the list to include/exclude other items as need be
     # > line below modified from default
-    package_data={'camparitraj': ['data/*']},
+
+    # line here means we include the files defined in MANIFEST.in - the package_data
+    # line below is not sufficient to do this
+    include_package_data=True,    
+    package_data={'camparitraj': ['data/'], 'camparitraj': ['data/test_data/']},    
+
+    # dependencies camparitraj requires
     install_requires=[
         "numpy>=1.12.0","cython","mdtraj>=1.9.1", "pandas>=0.23.0"],
 

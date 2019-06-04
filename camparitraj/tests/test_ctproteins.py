@@ -132,11 +132,6 @@ def test_get_internal_scaling_RMS(GS6_CP):
     assert abs(np.mean(GS6_CP.get_internal_scaling_RMS()[1][1]) - 3.793829294427209) < 0.0001
     assert abs(np.mean(GS6_CP.get_internal_scaling_RMS()[1][2]) - 6.578195001335268) < 0.0001
     assert abs(np.mean(GS6_CP.get_internal_scaling_RMS(R1=1,R2=4)[1][1]) - 3.7455646317574534) < 0.001
-    
-    
-
-
-    
 
 
 def test_camparitraj_imported():
