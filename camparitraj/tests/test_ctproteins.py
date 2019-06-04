@@ -3,6 +3,7 @@ Unit and regression test for the camparitraj package.
 """
 
 # Import package, test suite, and other packages as needed
+import numpy as np
 import camparitraj
 import pytest
 import sys
@@ -98,14 +99,40 @@ def test_code_coverage():
 """
 
 def test_get_radius_of_gyration():    
-    """
 
-    """
-    assert (GS6_CP.get_radius_of_gyration()[0] - 5.728453763896514) < 0.0001
+    assert len(GS6_CP.get_radius_of_gyration()) == 5
+    assert abs(GS6_CP.get_radius_of_gyration()[0] - 5.728453763896514) < 0.0001
+    assert abs(GS6_CP.get_radius_of_gyration(R1=1,R2=3)[0] - 2.8815625777553278) < 0.0001
+
+def test_get_t():    
+
+    assert len(GS6_CP.get_t()) == 5
+    assert abs(GS6_CP.get_t()[0] - 0.30286034750848245) < 0.0001
+    assert abs(GS6_CP.get_t(R1=1,R2=3)[0] - 0.0766270900235029) < 0.0001
+
+def test_get_internal_scaling():    
+
+    assert len(GS6_CP.get_internal_scaling()[0]) == 6
+    assert abs(np.mean(GS6_CP.get_internal_scaling()[1][1]) - 3.784701967415692) < 0.0001
+    assert abs(np.mean(GS6_CP.get_internal_scaling()[1][2]) - 6.524909331438218) < 0.0001
+    assert abs(np.mean(GS6_CP.get_internal_scaling(R1=1,R2=4)[1][1]) - 3.7353248) < 0.001
+
+
+def test_get_internal_scaling_RMS():    
+
+    assert len(GS6_CP.get_internal_scaling_RMS()[0]) == 6
+    print( np.mean(GS6_CP.get_internal_scaling_RMS()[1][1]))
+    assert abs(np.mean(GS6_CP.get_internal_scaling_RMS()[1][1]) - 3.793829294427209) < 0.0001
+    assert abs(np.mean(GS6_CP.get_internal_scaling_RMS()[1][2]) - 6.578195001335268) < 0.0001
+    assert abs(np.mean(GS6_CP.get_internal_scaling_RMS(R1=1,R2=4)[1][1]) - 3.7455646317574534) < 0.001
+    
     
 
 
-def test_CTraj_imported():
+    
+
+
+def test_camparitraj_imported():
     """Sample test, will always pass so long as import statement worked"""
     assert "camparitraj" in sys.modules
 

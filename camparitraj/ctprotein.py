@@ -1867,7 +1867,6 @@ class CTProtein:
             R2 = self.__get_offset_residue(R2)
 
         try:
-
             # if atom mode was used
             if mode == 'atom':
                 if A1 == 'CA' and A2 == 'CA':
@@ -1919,9 +1918,7 @@ class CTProtein:
                 print(e)
                 raise CTException('Your current version of mdtraj does not support [%s] - please update mdtraj to 1.8.0 or later to facilitate support. Alternatively this may be because residue %i or %i is not parsed correctly by mdtraj' % (mode(), R1, R2)) 
 
-            
-            
-        
+                        
         # note 10* to get Angstroms
         return distances
         
@@ -2347,6 +2344,9 @@ class CTProtein:
 
         # check weights are correct
         weights = self.__check_weights(weights, stride)
+
+        # check stride is ok
+        self.__check_stride(stride)
 
         R1_org = R1
         R2_org = R2
@@ -2831,7 +2831,6 @@ class CTProtein:
         if int(self.n_frames)/stride < int(subdivision_batch_size):
             num_subdivisions_for_error = int(self.n_frames)/stride
         num_subdivisions_for_error = int(int(self.n_frames)/stride / int(subdivision_batch_size))
-        print(num_subdivisions_for_error)
         
         seq_sep_vals             = []
         seq_sep_RMS_distance     = []
