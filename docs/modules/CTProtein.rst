@@ -2,7 +2,7 @@
 ctprotein module
 =========================================================
 
-This is where the cttrajectory shinanigans occurs. Maybe we reference [BiDB79]_ yeah
+This is where the ctprotein shinanigans occurs. Maybe we reference [BiDB79]_ yeah
 
 .. automodule:: camparitraj.ctprotein
 .. autoclass:: CTProtein
