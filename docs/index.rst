@@ -5,9 +5,13 @@
 
 Welcome to the CAMPARITraj docs!
 =========================================================
-**CAMPARITraj** is a Python analysis package for the analysis of all-atom simulations of unfolded/disordered proteins. It provides a wide range of functionalities that may not be of use for folded proteins, but provide important insight into simulations of intrinsically disordered proteins. 
+*Last updated: June 5th 2019*
 
-**CAMPARITraj** was built with simulations from the CAMPARI simulation engine in mind, but has been succesfully tested on a wide-range of trajectories generated from different software packages. It utilizes the ``mdtraj`` (`http://mdtraj.org <http://mdtraj.org/>`_.) backend for trajectory reading and representation, providing effectively an additional layer of analysis utilities on top of **mdtraj**.
+**CAMPARITraj** is a Python package for the analysis of all-atom simulations of unfolded/disordered proteins. It provides a wide range of functionalities that may not be of use for folded proteins, but provide important insight into simulations of intrinsically disordered proteins. *CAMPARITraj* was formerly known as *CTraj*, and includes all the original functionality therein. 
+
+**CAMPARITraj** was built for the analysis of simulations from the CAMPARI simulation engine in mind. However, it has been succesfully tested on a wide-range of trajectories generated from different software packages. It utilizes the ``mdtraj`` (`http://mdtraj.org <http://mdtraj.org/>`_.) backend for trajectory reading and representation, providing effectively an additional layer of analysis utilities on top of ``mdtraj``.
+
+This documentation is currently being generated as we finalize **CAMPARITraj**. 
 
 
 .. toctree::
