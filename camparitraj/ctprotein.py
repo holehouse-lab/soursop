@@ -3639,6 +3639,9 @@ class CTProtein:
                                             
         return c
 
+    # ........................................................................
+    #
+    #
     def get_secondary_structure_DSSP(self, R1=False, R2=False, correctOffset=True):
         """
         Returns the a 4 by n numpy array inwhich column 1 gives residue number, column 2 is local helicity,  
@@ -3710,6 +3713,17 @@ class CTProtein:
         return np.array((reslist,H_vector, E_vector, C_vector))
 
                     
+
+    # ........................................................................
+    #
+    #
+    def get_persistence_length(self):
+        """
+        Returns the a 4 by n numpy array inwhich column 1 gives residue number, column 2 is local helicity,  
+        """
+
+        pass
+
         
 
 

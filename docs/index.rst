@@ -22,7 +22,7 @@ This documentation is currently being generated as we finalize **CAMPARITraj**.
    usage/examples
    modules/cttrajectory
    modules/ctprotein
-
+   modules/ctnmr
 
 
 Quickstart!
