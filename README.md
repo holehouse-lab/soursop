@@ -7,6 +7,8 @@ CAMPARITraj
 
 Analysis package for all-atom simulations of disordered and unfolded proteins. 
 
+CAMPARITraj was fully developed in the Pappu Lab (http://pappulab.wustl.edu) but is maintained by the Holehouse lab (http://holehouselab.com).
+
 #### Update May 2019
 This is the *development* repository of CAMPARITraj and SHOULD NOT be used for production. Seriously, it is being modified constantly and with no building requirements during code pushes. If you want a building copy PLEASE contact Alex directly! [last touched June 24th 2019].
 
