@@ -8,21 +8,6 @@ import camparitraj
 import pytest
 import sys
 from camparitraj import cttrajectory
-"""
-NTL9_FILES=['ntl9.pdb','ntl9.xtc']
-GS6_FILES=['gs6.pdb','gs6.xtc']
-
-test_data_dir = camparitraj.get_data('test_data')
-
-NTL9_CO = cttrajectory.CTTrajectory("%s/%s"%(test_data_dir, NTL9_FILES[1]), "%s/%s"%(test_data_dir, NTL9_FILES[0])) 
-NTL9_CP = NTL9_CO.proteinTrajectoryList[0]    
-
-GS6_CO = cttrajectory.CTTrajectory("%s/%s"%(test_data_dir, GS6_FILES[1]), "%s/%s"%(test_data_dir, GS6_FILES[0])) 
-GS6_CP = GS6_CO.proteinTrajectoryList[0]    
-"""
-#@pytest.fixture()
-#def ntl9_setup(request):
-    
 
 """
 def test_code_coverage():

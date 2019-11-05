@@ -30,6 +30,9 @@ from .ctdata import THREE_TO_ONE, DEFAULT_SIDECHAIN_VECTOR_ATOMS
 from .ctexceptions import CTException
 from . import ctmutualinformation
 from . import cttools
+from . import ctpolymer
+
+from . _internal_data import BBSEG2
 
 import scipy.cluster.hierarchy
 
@@ -3653,23 +3656,36 @@ class CTProtein:
         Return vector provides normalized secondary structure (between 0 and 1) which reflects
         the fraction of the simulation each residue is in that particular secondary structure type.
 
-        ........................................
-        OPTIONS 
-        ........................................
+        Parameters
+        .......... 
 
-        R1 [int] {False}
-        Index value for first residue in the region of interest. If not 
-        provided (False) then first residue is used.
+        R1 : int 
+             Default value is False. Defines the value for first residue in the region of 
+             interest. If not provided (False) then first residue is used.
+              
 
-        R1 [int] {False}
-        Index value for last residue in the region of interest. If not
-        provided (False) then last residue is used.
+        R2 : int
+             Default value is False. Defines the value for last residue in the region of 
+             interest. If not provided (False) then last residue is used.
+             
 
-        correctOffset [Bool] {True}
-        Defines if we perform local protein offset correction
-        or not. By default we do, but some internal functions
-        may have already performed the correction and so don't
-        need to perform it again.
+        correctOffset : Bool
+             Defines if we perform local protein offset correction or not. By default we do, 
+             but some internal functions may have already performed the correction and so don't
+             need to perform it again. If you're calling this function you can probably ignore
+             this variable.
+
+        Returns
+        .......
+        
+        ddsp_vector : np.array
+             A 4xn numpy array (where n is the number of residues) in which column 1 defines the
+             residue index and column 2-4 defines the fractional occupancy of helical (H), 
+             extended (E) (beta-like) and coil (C) states. Note the three classifications will
+             sum to 1 (within numerical precision).
+
+        
+        
 
         """
 
@@ -3712,18 +3728,233 @@ class CTProtein:
 
         return np.array((reslist,H_vector, E_vector, C_vector))
 
+
+    # ........................................................................
+    #
+    #
+    def get_secondary_structure_BBSEG(self, R1=False, R2=False, correctOffset=True):
+        """      
+        Returns a dictionary where eack key-value pair is keyed by a BBSEG classification
+        type (0-9) and each value is a vector showing the fraction of time each residue
+        is in that particular BBSEG type.
+
+        BBSEG classification types are listed below
+
+        0 - unclassified
+        1 - beta (turn/sheet)
+        2 - PII (polyproline type II helix)
+        3 - Unusual region
+        4 - Right handed alpha helix
+        5 - Inverse C7 Equatorial (gamma-prime turn)
+        6 - Classic C7 Equatorial  (gamma turn)
+        7 - Helix with 7 Residues per Turn
+        8 - Left handed alpha helix
+        
+        Parameters R1 and R2 are optional and allow a local sub-region to be defined.
+
+        The return dictionary provides a classification vector for each of the 9 possible
+        types of classification (note 0 = unclassified).
+
+        
+        Parameters
+        .......... 
+
+        R1 : int 
+             Default value is False. Defines the value for first residue in the region of 
+             interest. If not provided (False) then first residue is used.
+              
+
+        R2 : int
+             Default value is False. Defines the value for last residue in the region of 
+             interest. If not provided (False) then last residue is used.
+             
+
+        correctOffset : Bool
+             Defines if we perform local protein offset correction or not. By default we do, 
+             but some internal functions may have already performed the correction and so don't
+             need to perform it again. If you're calling this function you can probably ignore
+             this variable.
+
+        Returns
+        .......
+        
+        return_bbseg : dict
+             Dictionary of 9 key-value pairs where keys are integers 0-8 and values are 
+             numpy arrays showing the fractional occupancy of each of the distinct types 
+             of defined secondary structure. Note the three classifications will sum to
+             1 (within numerical precision).
+
+        """
+
+        # define R1 and R2 - if offset needed perform, else 
+        # define the first and last residue INCLUDING caps
+        if R1 == False:
+            R1 = 0
+        else:
+            if correctOffset:
+                R1 = self.__get_offset_residue(R1)
+
+        if R2 == False:
+            R2 = self.__num_residues-1
+        else:
+            if correctOffset:
+                R2 = self.__get_offset_residue(R2)
+
+        # switch em around so the A to B syntax makes sense
+        if R1 > R2:
+            tmp = R2
+            R2 = R1
+            R1 = tmp
+
+        # extract the phi/psi angles in degrees
+        phi_data = np.degrees(md.compute_phi(self.traj.atom_slice(self.topology.select('resid %i to %i'%(R1, R2))))[1])
+        psi_data = np.degrees(md.compute_psi(self.traj.atom_slice(self.topology.select('resid %i to %i'%(R1, R2))))[1])
+
+        # extract the relevant information (note shape of phi_data and psi_data will be identical)
+        shape_info = np.shape(phi_data)
+        all_classes=[]
+
+        # for each frame iterate through and classify each residue, building a shape_info
+        # sized matrix where each elements reflects the BBSEG classification of that residue
+        # in a given frame
+        for f in range(0, shape_info[0]):
+            all_classes.append(self.__phi_psi_bbseg(phi_data[f], psi_data[f]))
+
+        # convert to a numpy array
+        all_classes = np.array(all_classes)
+
+        # finally cycle through each BBSEG classification type and average 
+        # over each frame (shape_info[0] is number of frames)
+        return_bbseg = {}
+        for c in range(0,9):
+            return_bbseg[c] = list(np.sum((all_classes == c)*1,0)/shape_info[0])
+
+        return return_bbseg
+        
+
+    def __phi_psi_bbseg(self, phi_vector, psi_vector):
+        """
+        Internal function that takes two equally-matched phi and psi angle vectors and
+        based on the pairwise combination classified each pair of elements using the
+        BBSEG2 definition. Definition was generated from the BBSEG2 file distributed
+        with CAMPARI, and is encoded and stored in the _internal_data module.
+
+        NOTE that because this is an internal function we do not double check that the
+        phi_vector and psi_vectors are of the same length, but this is critical, so
+        if this function is being called make sure this is true!
+
+        Parameters
+        ...........
+        phi_vector :   iterable (list or numpy vector)
+             ordered list of phi angles for a specific residue
+
+        psi_vector :   iterable (list or numpy vector)
+            ordered list of psu angles for a specific residue
+         
+
+        Returns
+        .......
+
+        classes : list
+             A list of length equal to phi_vector and psi_vector that 
+             classifies each pair of phi/psi angles using the BBSEG2
+             definition 
+        """
+
+        classes = []
+        for i in range(len(phi_vector)):
+            phi = phi_vector[i]
+            psi = psi_vector[i]
+            classes.append(BBSEG2[phi-(phi%10)][psi-(psi%10)])
+
+        return classes
+            
+
+    def get_overlap_concentration(self):
+        return ctpolymer.get_overlap_concentration(np.mean(self.get_radius_of_gyration()))
+        
                     
 
     # ........................................................................
     #
     #
-    def get_persistence_length(self):
+    def get_angle_decay(self, atom1='C', atom2='N', return_full_matrix=False):
+                    
         """
         Returns the a 4 by n numpy array inwhich column 1 gives residue number, column 2 is local helicity,  
+
+        No checking of atom1 and atom2...
         """
 
-        pass
+        # first compute all the C-N vector for each residue
 
+        CN_vectors = []
+        CN_lengths = [] 
+        for i in self._CTProtein__residues_with_CA:
+
+            # this extracts the C->N vector for each frame for each residue
+            value = np.squeeze(self.traj.atom_slice(self._CTProtein__residue_atom_lookup(i,atom1)).xyz) - np.squeeze(self.traj.atom_slice(self._CTProtein__residue_atom_lookup(i,atom2)).xyz)
+
+            # CN_vectors becomes a list where each element is [3 x nframes] array where 3 is the x/y/z vector coordinates
+            CN_vectors.append(value)
+
+            # CN_lengths extracts the ||v|| length of each vector (should be basically the same)
+            CN_lengths.append(np.linalg.norm(value,axis=1))
+
+        # calculate the number of residues for which we have C->N vectors 
+        npos = len(CN_vectors)
+
+        # initialize an empty dictionary - the keys for this are i-j sequence separation, 
+        # and values are the cos(theta) angle between pairs of vectors
+        all_vals={}
+        for i in range(1, npos):
+            all_vals[i] = []
+
+        # precompute 
+        length_multiplier = {}
+        for i1 in range(0, npos-1):
+            length_multiplier[i1] = {}
+            for j1 in range(i1+1, npos):
+                length_multiplier[i1][j1] = CN_lengths[i1]*CN_lengths[j1]
+                        
+        # we then cycle over the non-redudant set of pairwise residues in the protein
+        for i1 in range(0, npos-1):
+            for j1 in range(i1+1, npos):
+
+                # for each frame calculate (u . v) / (||u|| * ||v||)
+                # where u and v are vectors and "." is the dot product between each pair. We're only calculating PAIR-WISE dot product
+                # of each [x,y,z] with [x,y,z] vector, so doing np.sum(Matrix*matrix) is SO SO SO much faster than anything else. We 
+                # also take the average to avoid storing a ton of numbers and generating these giant vectors
+                    
+                all_vals[j1-i1].append(np.mean(np.sum(CN_vectors[i1]*CN_vectors[j1],axis=1)/length_multiplier[i1][j1]))
+
+        return_matrix = []
+        return_matrix.append([0,1.0,0.0])
+        for k in all_vals:
+            return_matrix.append([k, np.mean(all_vals[k]), np.std(all_vals[k])])
+             
+        # if we want the nres by nres matrix with specific decay <cos(omega)> for each specific pairwise
+        # residue-residue set
+        if return_full_matrix:
+
+            full_matrix = np.zeros((len(return_matrix),len(return_matrix)))
+
+            # for 0 to the number of residues (i.e. each row in the [nres x nres] matrix
+            for i in range(0, len(return_matrix)):
+
+                # set the column selector (c) to zero
+                c=0
+                # iterate through 
+                for j in range(0, len(all_vals[i])):
+                    full_matrix[i,c] = all_vals[i][j]
+
+                print(full_matrix)
+                for j in range(len(all_vals[i]), len(return_matrix)):
+                    full_matrix[i,c] = 0.0
+
+            return (return_matrix, full_matrix)
+        else:
+            return return_matrix
         
 
 
