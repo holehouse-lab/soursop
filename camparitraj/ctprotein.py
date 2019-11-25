@@ -3872,13 +3872,12 @@ class CTProtein:
             fixed_psi = psi-(psi%10)
 
             # following corrections for edge cases if we hit 
-            """
-            if fixed_phi == 180:
-                fixed_phi = 170
+            if fixed_phi == 180.0:
+                fixed_phi = 170.0
 
-            if fixed_psi == 180:
-                fixed_psi = 170
-            """
+            if fixed_psi == 180.0:
+                fixed_psi = 170.0
+
 
             classes.append(BBSEG2[fixed_phi][fixed_psi])
 
