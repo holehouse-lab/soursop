@@ -127,5 +127,33 @@ def test_camparitraj_imported():
 def test_DSSP(NTL9_CP):
     SS = NTL9_CP.get_secondary_structure_DSSP()
     print(SS[0])
+
+
+def test_BBSEG(NTL9_CP):
+    SS = NTL9_CP.get_secondary_structure_BBSEG()
+    print(SS[0])
     
+    
+
+def test_phi_psi_bbseg(NTL9_CP):
+    """
+    Test that ensures our representation of the BBSEG2 matrix
+    reproduces the version from CAMPARI
+
+    """
+
+    # read in BBSEG file
+    bbseg_file = camparitraj.get_data('bbseg2.dat')
+    with open(bbseg_file,'r') as fh:
+        content = fh.readlines()
+    
+    idx=0
+    for psi in range(179,-180, -10):
+
+        local = ''
+        for phi in range(-179,180, 10):            
+            local = local + '%i ' %(NTL9_CP._CTProtein__phi_psi_bbseg([phi],[psi])[0])
+
+        assert(content[idx].strip() == local.strip())
+        idx=idx+1
     

@@ -3683,10 +3683,7 @@ class CTProtein:
              residue index and column 2-4 defines the fractional occupancy of helical (H), 
              extended (E) (beta-like) and coil (C) states. Note the three classifications will
              sum to 1 (within numerical precision).
-
-        
-        
-
+               
         """
 
         # define R1 and R2 - if offset needed perform, else 
@@ -3711,8 +3708,7 @@ class CTProtein:
 
         # in angstroms
         dssp_data = md.compute_dssp(self.traj.atom_slice(self.topology.select('resid %i to %i'%(R1, R2))))
-        
-        
+                
         C_vector = []
         E_vector = []
         H_vector = []
@@ -3721,10 +3717,12 @@ class CTProtein:
         reslist = list(range(R1,R2))
         n_frames   = self.get_numberOfFrames()
 
+        
         for i in range(1,n_residues-1):
             C_vector.append(float(sum(dssp_data.transpose()[i] == 'C'))/n_frames)
             E_vector.append(float(sum(dssp_data.transpose()[i] == 'E'))/n_frames)
             H_vector.append(float(sum(dssp_data.transpose()[i] == 'H'))/n_frames)
+                
 
         return np.array((reslist,H_vector, E_vector, C_vector))
 
@@ -3811,6 +3809,7 @@ class CTProtein:
         psi_data = np.degrees(md.compute_psi(self.traj.atom_slice(self.topology.select('resid %i to %i'%(R1, R2))))[1])
 
         # extract the relevant information (note shape of phi_data and psi_data will be identical)
+        # shape info here is (number_of_frames, number_of_residues) sized
         shape_info = np.shape(phi_data)
         all_classes=[]
 
@@ -3818,6 +3817,9 @@ class CTProtein:
         # sized matrix where each elements reflects the BBSEG classification of that residue
         # in a given frame
         for f in range(0, shape_info[0]):
+
+            # so each step through the loop we're passing two vectors, each of which 
+            # is nres residues long
             all_classes.append(self.__phi_psi_bbseg(phi_data[f], psi_data[f]))
 
         # convert to a numpy array
@@ -3865,12 +3867,39 @@ class CTProtein:
         for i in range(len(phi_vector)):
             phi = phi_vector[i]
             psi = psi_vector[i]
-            classes.append(BBSEG2[phi-(phi%10)][psi-(psi%10)])
+
+            fixed_phi = phi-(phi%10)
+            fixed_psi = psi-(psi%10)
+
+            # following corrections for edge cases if we hit 
+            """
+            if fixed_phi == 180:
+                fixed_phi = 170
+
+            if fixed_psi == 180:
+                fixed_psi = 170
+            """
+
+            classes.append(BBSEG2[fixed_phi][fixed_psi])
 
         return classes
             
 
     def get_overlap_concentration(self):
+
+        """
+        Returns the overlap concentration for the chain.
+
+        The overlap concentration reflects the concentration at which a flexible
+        polymer begins to 'collide' in trans with other polymers - i.e. the 
+        concentration at which the chains begin to overlap.
+
+        Returns
+        -------
+        float 
+            Molar concentration for the overlap concentration
+        """
+
         return ctpolymer.get_overlap_concentration(np.mean(self.get_radius_of_gyration()))
         
                     
@@ -3881,7 +3910,7 @@ class CTProtein:
     def get_angle_decay(self, atom1='C', atom2='N', return_full_matrix=False):
                     
         """
-        Returns the a 4 by n numpy array inwhich column 1 gives residue number, column 2 is local helicity,  
+        Returns the a 4 by n numpy array in which column 1 gives residue number, column 2 is local helicity,  
 
         No checking of atom1 and atom2...
         """
@@ -3943,12 +3972,11 @@ class CTProtein:
             for i in range(0, len(return_matrix)):
 
                 # set the column selector (c) to zero
-                c=0
+                c = 0
                 # iterate through 
                 for j in range(0, len(all_vals[i])):
                     full_matrix[i,c] = all_vals[i][j]
 
-                print(full_matrix)
                 for j in range(len(all_vals[i]), len(return_matrix)):
                     full_matrix[i,c] = 0.0
 
