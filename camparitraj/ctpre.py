@@ -28,8 +28,8 @@ from .ctexceptions import CTWarning
 
 original_K = 1.2300e-32       # K constant in cm6*s-2
 K_IN_NM6   = original_K*1e42  # K constant in nm6 s-2
-W_H        = 267530000        # Proton Larmor frequency
-W_H_SQUARED = W_H * W_H 
+#W_H        = 267530000        # Proton Larmor frequency
+#W_H_SQUARED = W_H * W_H 
 
 class CTPRE:
     """
@@ -61,7 +61,7 @@ class CTPRE:
 
     # ........................................................................
     #                 
-    def __init__(self, CTProteinObject, tau_c, t_delay, R_2D, W_h):
+    def __init__(self, CTProteinObject, tau_c, t_delay, R_2D, W_H):
         """
         Initialization function for creating a CTPRE object. The resulting object can
         then be used to calculate PRE profiles from the underlying ensemble. This
@@ -94,6 +94,8 @@ class CTPRE:
         Is the proton Larmor frequency, which is typically the "MHz" value associated with the magnet, 
         given in Hz. For examle, a 600 MHz magnet would use the value 600000000.
 
+        (Note that the proton Larmor frequency at 1 Tesla = 267530000 per second per Tesla).
+
         """
                 
         # NOTE: NO CHANGES SHOULD BE MADE TO THE CTPO by the object - this should be treated 
@@ -119,7 +121,8 @@ class CTPRE:
         if tau_c < 0.01 or tau_c > 100:
             CTWarning("WARNING: The value of tau_c (effective correlation time) is far from the normal expected value of ~5 (t_delay = %4.4e) - recal this is in units of ns" %(self.tau_c))
 
-        if W_H < 100000000 or tau_c > 2000000000:
+        # if Larmor frequency less than 100 MhZ or above 2 GHz assume something is wrong
+        if W_H < 50000000 or tau_c > 2000000000:
             CTWarning("WARNING: The value of W_h (proton Larmor frequency) is far from the normal expected value of ~600 000 000 - recal this value should be provided in Herz" %(self.W_H))
 
         # # convert tau_c to seconds and calculate tau_c squared
@@ -128,7 +131,8 @@ class CTPRE:
         
         # compute the prefactor term which will be used when computing the PRE dependent relaxation profile
         # by the generate_PRE_profile function
-        PREFACTOR = (3 * tau_c)/(1 + W_H_SQUARED* tau_c_squared)
+        W_H_SQUARED = W_H*W_H
+        PREFACTOR = (3 * tau_c)/(1 + W_H_SQUARED * tau_c_squared)
         PREFACTOR = (4*tau_c + PREFACTOR)
         self.PREFACTOR = PREFACTOR * K_IN_NM6
 
