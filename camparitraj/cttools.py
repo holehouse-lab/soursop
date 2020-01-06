@@ -22,7 +22,8 @@ import numpy as np
 def chunks(l, n):
     """Yield successive n-sized chunks from l."""
 
-    maxval = len(l) - len(l)%n
+
+    maxval = int(round(len(l) - len(l)%n))
 
     for i in range(0, maxval, n):
         yield l[i:i + n]

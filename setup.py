@@ -25,10 +25,11 @@ setup(
     long_description_content_type="text/markdown",
     version=versioneer.get_version(),
     cmdclass=versioneer.get_cmdclass(),
+    scripts=['scripts/ctanalyzer'],
     license='LGPLv3',
 
     # Which Python importable modules should be included when your package is installed
-    packages=['camparitraj', "camparitraj.tests"],
+    packages=['camparitraj', "camparitraj.tests", "camparitraj.ctanalyzer"],
 
     # Optional include package data to ship with your package
     # Comment out this line to prevent the files from being packaged with your software

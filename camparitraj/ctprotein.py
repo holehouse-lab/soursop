@@ -2606,7 +2606,7 @@ class CTProtein:
         max_separation = (last-first)+1
 
         # note integer math used here to round down...
-        num_subdivisions_for_error = int(self.n_frames) / int(subdivision_batch_size)
+        num_subdivisions_for_error = int(self.n_frames / subdivision_batch_size)
         
         seq_sep_vals             = []
         seq_sep_RMS_distance     = []
@@ -2648,7 +2648,7 @@ class CTProtein:
             seq_sep_RSTDS_distance.append(np.sqrt(np.std(tmp*tmp)))
 
             if num_subdivisions_for_error > 0:
-                subdivision_size=len(tmp)/int(num_subdivisions_for_error)
+                subdivision_size = int(len(tmp)/num_subdivisions_for_error)
 
                 # get shuffled indices
                 idx = np.random.permutation(list(range(0,len(tmp))))
@@ -2830,11 +2830,16 @@ class CTProtein:
 
         # check that the number of points being used makes sense..        
 
+        # This section determines the number of subdivisions performed for error 
+        # bootstrapping. If we have fewer frames than we can divide the data into
+        # then we just use each frame individually (although now error bootstrapping
+        # is probably meaningless!
         # note integer math used here to round down - also set 
-        if int(self.n_frames)/stride < int(subdivision_batch_size):
-            num_subdivisions_for_error = int(self.n_frames)/stride
-        num_subdivisions_for_error = int(int(self.n_frames)/stride / int(subdivision_batch_size))
-        
+        if int(self.n_frames/stride) < int(subdivision_batch_size):        
+            num_subdivisions_for_error = int(self.n_frames/stride)
+        else:
+            num_subdivisions_for_error = int(int(self.n_frames/stride) / subdivision_batch_size)
+                
         seq_sep_vals             = []
         seq_sep_RMS_distance     = []
         seq_sep_RMS_var_distance     = []
@@ -2843,6 +2848,7 @@ class CTProtein:
         
         # for each possible sequence separation  (|i-j| value)
         for seq_sep in range(1, max_separation):
+
             if verbose:
                 print("Internal Scaling - on sequence separation %i of %i" %(seq_sep, max_separation))
 
@@ -2878,36 +2884,45 @@ class CTProtein:
 
             if num_subdivisions_for_error > 0:
 
-                subdivision_size=len(tmp)/int(num_subdivisions_for_error)
+                # note we cast this to an int to ensure subdivision_size is always
+                # the value added to RMS_local_append is always the same, because
+                # len(tmp) will vary with sequence separation. Basically this means
+                # we take ALL the data and subidivided it into num_subdivisions_for_error
+                # chunks and then use this for error calculations
+                subdivision_size = int(len(tmp)/num_subdivisions_for_error)
 
                 # get shuffled indices
                 idx = np.random.permutation(list(range(0,len(tmp))))
             
                 # split shuffled indices into $num_subdivisions_for_error sized chunks
+                
                 subdivided_idx = cttools.chunks(idx, subdivision_size)
                         
                 # finally subselect each of the randomly selected indicies 
                 RMS_local   = []
             
                 for idx_set in subdivided_idx:
+                    
                     # subselect a random set of distances and compute RMS
                     RMS_local.append(np.sqrt(np.mean(tmp[idx_set]*tmp[idx_set])))
             
                 # add distribution of values for this sequence sep
                 seq_sep_subsampled_distances.append(RMS_local)
-       
+
         # now sub-select the bit of the curve we actually want for the separation, distance, and distance variance data
         # note we are RE DEFINING these three variables here
         seq_sep_vals = seq_sep_vals[inter_residue_min:-end_effect]
         seq_sep_RMS_distance = seq_sep_RMS_distance[inter_residue_min:-end_effect]
         seq_sep_RMS_var_distance = seq_sep_RMS_var_distance[inter_residue_min:-end_effect]
                 
-        ## next find indices for evenly spaced points in logspace
+        ## next find indices for evenly spaced points in logspace. This whole sectino
+        # leads to the identification of the indices in logspaced_idx, which are the
+        # list indices that will given evenly spaced points when plotted in log space 
         y_data = np.log(seq_sep_vals)
         y_data_offset = y_data - y_data[0]
         interval = y_data_offset[-1]/num_fitting_points
         integer_vals = y_data_offset/interval
-
+        
         logspaced_idx = []
         for i in range(0,num_fitting_points):
             [local_ix,_] = cttools.find_nearest(integer_vals, i) 
@@ -2916,12 +2931,14 @@ class CTProtein:
             else:
                 logspaced_idx.append(local_ix)
 
+        # finally using those evenly-spaced log indices we extract out new lists
+        # that have values which will be evenly spaced in logspace. Cool.
         fitting_separation = [seq_sep_vals[i] for i in logspaced_idx]
         fitting_distances  = [seq_sep_RMS_distance[i] for i in logspaced_idx]
         fitting_variance   = [seq_sep_RMS_var_distance[i] for i in logspaced_idx]
 
+        # fit to a log/log model and extract params
         out = np.polyfit(np.log(fitting_separation), np.log(fitting_distances), 1)
-
         nu_best = out[0]
         R0_best = np.exp(out[1])
 
@@ -2949,8 +2966,9 @@ class CTProtein:
             
         ## >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
         ### Finally run the subselection protocol to subsampled
+
         subselected = np.array(seq_sep_subsampled_distances).transpose()
- 
+        
         nu_sub = []
         R0_sub = []
         for i in range(0, num_subdivisions_for_error):
