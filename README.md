@@ -16,7 +16,7 @@ This is the *development* repository of CAMPARITraj and SHOULD NOT be used for p
 Copyright (c) 2015-2019, Alex Holehouse. This is a MolSSI-sponsored project.
 
 #### Authors (alphabetical order)
-Alex Holehouse, Jared Lalamnsingh, Alex Keeley, Kiersten Ruff
+Alex Holehouse, Jared Lalmansingh, Alex Keeley, Kiersten Ruff
 
 #### Acknowledgements
 Project based on the
