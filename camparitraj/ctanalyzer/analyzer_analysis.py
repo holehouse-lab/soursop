@@ -83,17 +83,19 @@ def run_analytical_frc(CP, outdir,count=False):
 
     # end_to_end
     [a,b] = AFRC.get_re_distribution()
-    np.savetxt('AFRC_end_to_end_distribution.csv',np.array((a,b)).transpose())
+    np.savetxt('%s/AFRC_end_to_end_distribution.csv'%(outdir),np.array((a,b)).transpose())
+
     re = AFRC.sample_re_distribution(n=count)
-    np.savetxt('AFRC_end_to_end.csv',re)
+    np.savetxt('%s/AFRC_end_to_end.csv'%(outdir),re)
 
     [a,b] = AFRC.get_rg_distribution()    
-    np.savetxt('AFRC_rg_distribution.csv',np.array((a,b)).transpose())
+    np.savetxt('%s/AFRC_rg_distribution.csv'%(outdir),np.array((a,b)).transpose())
+
     rg = AFRC.sample_rg_distribution(n=count)
-    np.savetxt('AFRC_RG.csv',rg)
+    np.savetxt('%s/AFRC_RG.csv'%(outdir),rg)
 
     dm = AFRC.get_distance_map()
-    np.savetxt('AFRC_distance_map.csv',dm)
+    np.savetxt('%s/AFRC_distance_map.csv'%(outdir),dm)
 
 
 
@@ -105,8 +107,8 @@ def run_internal_scaling(CP, outdir):
 
 def run_contact_map(CP, outdir, d_thresh):
     cmap_full = CP.get_contact_map(distance_thresh=d_thresh)
-    np.savetxt('contact_map_%3.3f.csv'%(d_thresh),cmap_full[0])
-    np.savetxt('contact_order_%3.3f.csv'%(d_thresh),cmap_full[1])
+    np.savetxt('%s/contact_map_%3.3f.csv'%(outdir, d_thresh),cmap_full[0])
+    np.savetxt('%s/contact_order_%3.3f.csv'%(outdir, d_thresh),cmap_full[1])
 
 
 def run_RMS_internal_scaling(CP, outdir):
@@ -121,7 +123,7 @@ def run_fractal_deviation(CP, outdir, stride):
 
 def run_Q_analysis(CP, outdir):
     Q_TUPLE =  CP.get_Q(stride=1, protein_average=False)
-    with open('Q_res_by_res.txt', 'w') as fh:
+    with open('%s/Q_res_by_res.txt'%(outdir), 'w') as fh:
         for i in Q_TUPLE[3]: 
             fh.write("%s, %3.3f\n" % (i[3:], np.mean(Q_TUPLE[2][i])))
 
