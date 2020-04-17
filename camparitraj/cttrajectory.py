@@ -119,12 +119,14 @@ class CTTrajectory:
         self.num_proteins = len(self.proteinTrajectoryList)
 
 
+        """
         try:
             ctutils.mkl_set_num_threads(MAXCORES)
             print("MKL will use %i threads" % (ctutils.mkl_get_max_threads()))
         except Exception as e:
             print("MKL libraries not available [%s]" % str(e))
             pass
+        """
 
 
 
