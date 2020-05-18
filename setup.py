@@ -27,6 +27,7 @@ setup(
     cmdclass=versioneer.get_cmdclass(),
     scripts=['scripts/ctanalyzer'],
     license='LGPLv3',
+    url='https://github.com/holehouse-lab/camparitraj',
 
     # Which Python importable modules should be included when your package is installed
     packages=['camparitraj', "camparitraj.tests", "camparitraj.ctanalyzer"],
@@ -43,7 +44,11 @@ setup(
 
     # dependencies camparitraj requires
     install_requires=[
-        "numpy>=1.12.0","cython","mdtraj>=1.9.1", "pandas>=0.23.0"],
+        "numpy>=1.12.0",
+        "cython",
+        "mdtraj>=1.9.1",
+        "pandas>=0.23.0"
+    ],
 
 
     # Additional entries you may want simply uncomment the lines you want and fill in the data

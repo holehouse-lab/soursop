@@ -14,6 +14,16 @@ configs contain all global configuration.
 ## Simulation analysis package
 ## Copyright 2014 - 2019
 ##
+import multiprocessing as mp
+import platform
+import tempfile
 
-DEBUGGING=False
 
+MAXCORES = mp.cpu_count()  # Added to resolve a reference with `cttrajectory.CTTrajectory.__init__`
+DEBUGGING = False
+
+
+# See: https://stackoverflow.com/questions/847850/cross-platform-way-of-getting-temp-directory-in-python
+TMP_DIR = tempfile.gettempdir()
+if platform.system().lower() == 'darwin':
+    TMP_DIR = '/tmp'

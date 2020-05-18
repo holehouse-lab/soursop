@@ -32,8 +32,15 @@ def test_validate_tests(GS6_CO, NTL9_CO):
     assert hashlib.sha1(str(NTL9_CO.traj.xyz).encode('utf-8')).hexdigest() == 'fa3214bfa20c767c7463b4f787057a2ab7f44361'
 
 
+def test_read_in_trajectory(GS6_CO, NTL9_CO):
+    """
+    This function tests whether we can access the underlying `mdtraj` trajectory, and that it has been properly loaded
+    by checking the values of the attributes.
+    """
+    assert GS6_CO.traj.n_frames == 5
+    assert GS6_CO.traj.n_atoms == 66
+    assert GS6_CO.traj.n_residues == 8
 
-
-def test_read_in_trajectory(GS6_CO):        
-    assert len(GS6_CO.traj) == 5
-
+    assert NTL9_CO.traj.n_frames == 10
+    assert NTL9_CO.traj.n_atoms == 908
+    assert NTL9_CO.traj.n_residues == 56

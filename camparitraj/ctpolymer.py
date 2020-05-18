@@ -1,3 +1,5 @@
+import numpy as np
+
 
 def get_overlap_concentration(rg):
     """
@@ -29,7 +31,7 @@ def get_overlap_concentration(rg):
     rg = rg*1e-10
         
     # get volume in m3
-    v_m3=((4/3)*np.pi*np.power(rg,3))
+    v_m3=((4/3)*np.pi*np.power(rg, 3))
     
     # get volume in liters
     v_l = v_m3*1000
