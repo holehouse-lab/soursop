@@ -35,7 +35,7 @@ def chunks(l, n):
 
     maxval = int(round(len(l) - len(l)%n))
 
-    for i in range(0, maxval, n):
+    for i in range(0, maxval, int(n)):
         yield l[i:i + n]
 
 
