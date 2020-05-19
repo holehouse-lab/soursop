@@ -20,5 +20,6 @@ _ROOT = os.path.abspath(os.path.dirname(__file__))
 def get_data(path):
     return os.path.join(_ROOT, 'data', path)
 
+
 def get_version():
-    return "%s - %s" % (str(__version__), str(_git_revision))
+    return "%s - %s" % (str(__version__), str(__git_revision__))

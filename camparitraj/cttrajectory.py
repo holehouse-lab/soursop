@@ -54,43 +54,41 @@ class CTTrajectory:
         your trajectory automatically, which lets you ask questions about the
         protein only (i.e. without salt ions getting in the way).
         
-        Note that by default the mechanism by which induvidual proteins are 
+        Note that by default the mechanism by which individual proteins are
         identified is by cycling through the unique chains and determining 
         if they are protein or not. You can also provide manual grouping
         via the protein_grouping option, which lets you define which
-        residues should make up an induvidual protein. This can be useful
+        residues should make up an individual protein. This can be useful
         if you have multiple proteins associated with the same chain, which
         happens in CAMPARI if you have more than 26 separate chains (i.e.
         every protein after the 26th is the 'Z' chain).
                
-        ..................................................................
-        Arguments and options:
-        ..................................................................
+        Parameters
+        ----------
         
-        trajectory_filename [string] 
-        Filename which contains the trajectory file of interest. Normally 
-        this is __traj.xtc or __traj.dcd 
-        
+        trajectory_filename : str
+            Filename which contains the trajectory file of interest. Normally \
+            this is `__traj.xtc` or `__traj.dcd`.
 
-        pdb_filename [string]
-        Filename which contains the pdb file associated with the trajectory
-        of interest. Normally this is __START.pdb
+        pdb_filename : str
+            Filename which contains the pdb file associated with the trajectory \
+            of interest. Normally this is `__START.pdb`.
 
-        protein_grouping [list of lists of ints] {None}
-        Lets you manually define protein groups to be considered independently        
+        protein_grouping : list of lists of ints, default=None
+            Lets you manually define protein groups to be considered independently.
 
-        pdblead [Bool] {False}
-        Lets you set the PDB file (which is normally ONLY used as a topology
-        file) to be the first frame of the trajectory. This is useful when 
-        the first PDB file holds some specific reference information which 
-        you want to use (e.g. RMSD or Q).
+        pdblead : bool, default=False
+            Lets you set the PDB file (which is normally ONLY used as a topology \
+            file) to be the first frame of the trajectory. This is useful when \
+            the first PDB file holds some specific reference information which \
+            you want to use (e.g. RMSD or Q).
 
-        TRJ [MDTraj trajectory] {None}
-        It is sometimes useful to re-defined a trajectory and create a new CTTraj
-        object from that trajectory. This could be done by writing that new trajectory
-        to file, but this is extremely slow due to the I/O impact of reading/writing
-        from disk. If an mdtraj trajectory objected is passed, this is used as the
-        new trajectory from which the CTTrajectory object is constructed.
+        TRJ : MDTraj trajectory, default=None
+            It is sometimes useful to re-defined a trajectory and create a new CTTraj \
+            object from that trajectory. This could be done by writing that new trajectory \
+            to file, but this is extremely slow due to the I/O impact of reading/writing \
+            from disk. If an mdtraj trajectory objected is passed, this is used as the \
+            new trajectory from which the CTTrajectory object is constructed.
                 
         """
 
@@ -125,9 +123,7 @@ class CTTrajectory:
             print("MKL will use %i threads" % (ctutils.mkl_get_max_threads()))
         except Exception as e:
             print("MKL libraries not available [%s]" % str(e))
-            pass
         """
-
 
 
 
@@ -140,7 +136,7 @@ class CTTrajectory:
         Internal function which parses and reads in a CAMPARI trajectory
 
         Read a trajectory file. This was separated out into its own
-        function incase we want to add additional sanity checks during 
+        function in case we want to add additional sanity checks during
         the file loading.
 
         Notably older versions of CAMPARI mess up the unitcell length
@@ -308,7 +304,7 @@ class CTTrajectory:
         Function which returns a list of mdtraj trajectory objects corresponding 
         to each protein where we *explicitly* define the residues in each protein.
 
-        Unlike the __get_proteins() function, which doesn't require any manual
+        Unlike the `__get_proteins()` function, which doesn't require any manual
         input in identifying the proteins, here we provide a list of groups, where 
         each group is the set of residues associated with a protein.
 
@@ -380,23 +376,29 @@ class CTTrajectory:
         between the complete set of intra-residue distances in a single protein molecule.
 
         This explicitly defines the non-redundant map, so you only get a matrix with one
-        half filled in. 
+        half filled in.
 
-        ..................................................................
-        Return values
-        ..................................................................
-        (distanceMap, STDMap)
-        
-        distanceMap [numpy matrix]
-        Is an [n x m] matrix where n and m are the number of proteinID1 residues
-        and proteinID2 residues. Each position in the matrix corresponds to the 
-        mean distance between those two residues over the course of the simulation
+        Parameters
+        ----------
 
-        stdMap [numpy matrix]
-        Is an [n x m] matrix where n and m are the number of proteinID1 residues
-        and proteinID2 residues. Each position in the matrix corresponds to the 
-        standard devaiation associated with the distances between those two 
-        residues        
+        proteinID : int
+            The ID of the protein being considered, where the ID is the proteins position in the
+            `self.proteinTrajectoryList` list
+
+        Returns
+        -------
+        tuple : tuple containing `distanceMap` and `STDMap`
+
+        distanceMap : numpy matrix
+            Is an [n x m] matrix where n and m are the number of proteinID1 residues
+            and proteinID2 residues. Each position in the matrix corresponds to the
+            mean distance between those two residues over the course of the simulation.
+
+        stdMap : numpy matrix
+            Is an [n x m] matrix where n and m are the number of proteinID1 residues
+            and proteinID2 residues. Each position in the matrix corresponds to the
+            standard devaiation associated with the distances between those two
+            residues.
         """
 
         return(self.proteinTrajectoryList[proteinID].get_distanceMap())
@@ -414,21 +416,31 @@ class CTTrajectory:
         This explicitly defines the non-redundant map, so you only get a matrix with one
         half filled in. 
 
-        ..................................................................
-        Return values
-        ..................................................................
-        (distanceMap, STDMap)
-        
-        distanceMap [numpy matrix]
-        Is an [n x m] matrix where n and m are the number of proteinID1 residues
-        and proteinID2 residues. Each position in the matrix corresponds to the 
-        mean distance between those two residues over the course of the simulation
+        Parameters
+        ----------
 
-        stdMap [numpy matrix]
-        Is an [n x m] matrix where n and m are the number of proteinID1 residues
-        and proteinID2 residues. Each position in the matrix corresponds to the 
-        standard devaiation associated with the distances between those two 
-        residues        
+        proteinID : int
+            The ID of the protein being considered, where the ID is the proteins position in the
+            `self.proteinTrajectoryList` list
+
+        filename : str
+            Filename which your file should be saved to (.csv extension is added automatically).
+
+
+        Returns
+        -------
+        tuple : tuple containing `distanceMap` and `STDMap`
+
+        distanceMap : numpy matrix
+            Is an [n x m] matrix where n and m are the number of proteinID1 residues
+            and proteinID2 residues. Each position in the matrix corresponds to the
+            mean distance between those two residues over the course of the simulation.
+
+        stdMap : numpy matrix
+            Is an [n x m] matrix where n and m are the number of proteinID1 residues
+            and proteinID2 residues. Each position in the matrix corresponds to the
+            standard devaiation associated with the distances between those two
+            residues.
         """
 
         (distanceMap, stdMap) = self.get_distanceMap(proteinID)
@@ -442,58 +454,59 @@ class CTTrajectory:
     #
     def get_intraChainDistanceMap(self, proteinID1, proteinID2, resID1=None, resID2=None):
         """        
-        Function which returns two matrices with the mean and standard devaition distances
+        Function which returns two matrices with the mean and standard deviation distances
         between the residues in resID1 from proteinID1 and resID2 from proteinID2
 
         This computes the (full) intramolecular distance map, where the "distancemap"
         function computes the intermolecular distance map.
 
-        Obviously this only makes sense if your system has two seperate protein objects
-        defined, but in principle the output from
+        Obviously this only makes sense if your system has two separate protein objects
+        defined, but in principle the output from:
 
-        intracChainDistanceMap(0,0)
+            `intracChainDistanceMap(0,0)`
 
-        would be the same as
+        would be the same as:
         
-        distanceMap(0)
+            `distanceMap(0)`
 
         This is actually a useful sanity check!
         
-        ..................................................................
-        Arguments and options:
-        ..................................................................
+        Parameters
+        ----------
 
-        proteinID1 [int] 
-        The ID of the first protein of the two being considered, where the ID
-        is the proteins position in the self.proteinTrajectoryList list
+        proteinID1 : int
+            The ID of the first protein of the two being considered, where the ID is the proteins position in the
+            `self.proteinTrajectoryList` list.
 
-        proteinID2 [int]
-        The ID of the second protein of the two being considered, where the ID
-        is the proteins position in the self.proteinTrajectoryList list
+        proteinID2 : int
+            The ID of the second protein of the two being considered, where the ID is the proteins position in the
+            `self.proteinTrajectoryList` list
 
-        resID1 [list of integers] None
-        Is the list of residues from protein 1 we're considering. If no option is
-        provided assume we're using all of the residues in protein 1
+        filename : str
+            Filename which your file should be saved to (.csv extension is added automatically).
 
-        resID2 [list of integers] None
-        Is the list of residues from protein 2 we're considering. If no option is
-        provided assume we're using all of the residues in protein 2
+        resID1 : list of integers, default=None
+            Is the list of residues from protein 1 we're considering. If no option is provided assume we're using all
+            of the residues in protein 1.
 
-        ..................................................................
-        Return values
-        ..................................................................
-        (distanceMap, STDMap)
-        
-        distanceMap [numpy matrix]
-        Is an [n x m] matrix where n and m are the number of proteinID1 residues
-        and proteinID2 residues. Each position in the matrix corresponds to the 
-        mean distance between those two residues over the course of the simulation
+        resID2 : list of integers, default=None
+            Is the list of residues from protein 2 we're considering. If no option is provided assume we're using all
+            of the residues in protein 2.
 
-        stdMap [numpy matrix]
-        Is an [n x m] matrix where n and m are the number of proteinID1 residues
-        and proteinID2 residues. Each position in the matrix corresponds to the 
-        standard devaiation associated with the distances between those two 
-        residues
+        Returns
+        -------
+        tuple : tuple containing `distanceMap` and `STDMap`
+
+        distanceMap : numpy matrix
+            Is an [n x m] matrix where n and m are the number of proteinID1 residues
+            and proteinID2 residues. Each position in the matrix corresponds to the
+            mean distance between those two residues over the course of the simulation.
+
+        stdMap : numpy matrix
+            Is an [n x m] matrix where n and m are the number of proteinID1 residues
+            and proteinID2 residues. Each position in the matrix corresponds to the
+            standard devaiation associated with the distances between those two
+            residues.
 
         
         """
@@ -570,50 +583,45 @@ class CTTrajectory:
 
         Distance is returned in Angstroms.
 
-        ........................................
-        OPTIONS 
-        ........................................
-        R1 [int]
-        Residue index of first residue
+        Parameters
+        ----------
+        R1 : int
+            Residue index of first residue
 
-        R2 [int] 
-        Residue index of second residue
+        R2 : int
+            Residue index of second residue
 
-        A1 [string] {CA}
-        Atom name of the atom in R1 we're looking at
+        A1 : str, default='CA'
+            Atom name of the atom in R1 we're looking at
 
-        A2 [string {CA}
-        Atom name of the atom in R2 we're looking at
+        A2 : str, default='CA'
+            Atom name of the atom in R2 we're looking at
 
-        stride [int] {1}     
-        Defines the spacing betwen frames to compare with - i.e. take every $stride-th frame.
-        Setting stride=1 would mean every frame is used, which would mean you're doing an
-        all vs. all comparions, which would be ideal BUT may be slow.
+        stride : int, default=1
+            Defines the spacing between frames to compare with - i.e. take every $stride-th frame.
+            Setting `stride=1` would mean every frame is used, which would mean you're doing an
+            all vs. all comparisons, which would be ideal BUT may be slow.
 
-        mode [string] {'atom'}
-        Mode allows the user to define differnet modes for computing atomic distance. The
-        default is 'atom' whereby a pair of atoms (A1 and A2) are provided. Other options
-        are detailed below and are identical to those offered by mdtraj in compute_contacts
-        
-        'ca' - same as setting 'atom' and A1='CA' and A2='CA', this uses the C-alpha atoms
-        
-        'closest' - closest atom associated with each of the residues, i.e. the is the point
-                    of closest approach between the two residues 
+        mode : str, default='atom'
+            Mode allows the user to define different modes for computing atomic distance.
 
-        'closest-heavy' - same as closest, except only non-hydrogen atoms are considered
+            The default is 'atom' whereby a pair of atoms (A1 and A2) are provided. Other options
+            are detailed below and are identical to those offered by mdtraj in compute_contacts.
 
-        'sidechain' - closest atom where that atom is in the sidechain. Note this requires
-                      mdtraj version 1.8.0 or higher.
+            + `'ca'` - same as setting `'atom'` and `A1='CA'` and `A2='CA'`, this uses the C-alpha atoms.
+            + `'closest'` - closest atom associated with each of the residues, i.e. the is the point \
+                            of closest approach between the two residues.
+            + `'closest-heavy'` - same as `'closest'`, except only non-hydrogen atoms are considered.
+            + `'sidechain'` - closest atom where that atom is in the sidechain. Note this requires \
+                              mdtraj version 1.8.0 or higher.
+            + `'sidechain-heavy'` - closest atom where that atom is in the sidechain and is heavy. \
+                                    Note this requires mdtraj version 1.8.0 or higher.
 
-        'sidechain-heavy' - closest atom where that atom is in the sidechain and is heavy. 
-                            Note this requires mdtraj version 1.8.0 or higher.
-
-        correctOffset [Bool] {True}
-        Defines if we perform local protein offset correction
-        or not. By default we do, but some internal functions
-        may have already performed the correction and so don't
-        need to perform it again.
-
+        correctOffset : bool, default=True
+            Defines if we perform local protein offset correction
+            or not. By default we do, but some internal functions
+            may have already performed the correction and so don't
+            need to perform it again.
         """
 
         # check mode keyword is valid
@@ -663,7 +671,6 @@ class CTTrajectory:
 
 
                     distances = 10*np.sqrt(np.square(np.transpose(COM_1)[0] - np.transpose(COM_2)[0]) + np.square(np.transpose(COM_1)[1] - np.transpose(COM_2)[1])+np.square(np.transpose(COM_1)[2] - np.transpose(COM_2)[2]))
-                
 
         except IndexError as e:
             
@@ -675,8 +682,7 @@ class CTTrajectory:
             print(e)
             raise e
 
-
-  # parse any of the allowed modes in compute_contacts (see http://mdtraj.org/1.8.0/api/generated/mdtraj.compute_contacts.html
+        # parse any of the allowed modes in compute_contacts (see http://mdtraj.org/1.8.0/api/generated/mdtraj.compute_contacts.html
         # for more details!)
         if mode == 'closest' or mode == 'ca' or mode == 'closest-heavy' or mode == 'sidechain' or mode == 'sidechain-heavy':
             if float(stride) != float(1): 
@@ -703,61 +709,58 @@ class CTTrajectory:
     def export_intraChainDistanceMap(self, proteinID1, proteinID2, filename, resID1=None, resID2=None):
         """        
         Function which writes an intrachain distance map to a CSV file. Note this distanceMap is not
-        returned, but can be generated by the .get_intrachainDistanceMap() function
+        returned, but can be generated by the `.get_intrachainDistanceMap()` function.
 
         This computes the (full) intramolecular distance map, where the "distancemap"
         function computes the intermolecular distance map.
 
         Obviously this only makes sense if your system has two seperate protein objects
-        defined, but in principle the output from
+        defined, but in principle the output from:
 
-        get_intracChainDistanceMap(0,0)
+            `get_intracChainDistanceMap(0,0)`
 
-        would be the same as
+        would be the same as:
         
-        get_distanceMap(0)
+            `get_distanceMap(0)`
 
         This is actually a useful sanity check!
         
-        ..................................................................
-        Arguments and options:
-        ..................................................................
+        Parameters
+        ----------
 
-        proteinID1 [int] 
-        The ID of the first protein of the two being considered, where the ID
-        is the proteins position in the self.proteinTrajectoryList list
+        proteinID1 : int
+            The ID of the first protein of the two being considered, where the ID is the proteins position in the
+            `self.proteinTrajectoryList` list.
 
-        proteinID2 [int]
-        The ID of the second protein of the two being considered, where the ID
-        is the proteins position in the self.proteinTrajectoryList list
+        proteinID2 : int
+            The ID of the second protein of the two being considered, where the ID is the proteins position in the
+            `self.proteinTrajectoryList` list
 
-        filename [string]
-        Filename which your file should be saved to (.csv extension is added
-        automatically)
+        filename : str
+            Filename which your file should be saved to (.csv extension is added automatically).
 
-        resID1 [list of integers] None
-        Is the list of residues from protein 1 we're considering. If no option is
-        provided assume we're using all of the residues in protein 1
+        resID1 : list of integers, default=None
+            Is the list of residues from protein 1 we're considering. If no option is provided assume we're using all
+            of the residues in protein 1.
 
-        resID2 [list of integers] None
-        Is the list of residues from protein 2 we're considering. If no option is
-        provided assume we're using all of the residues in protein 2
+        resID2 : list of integers, default=None
+            Is the list of residues from protein 2 we're considering. If no option is provided assume we're using all
+            of the residues in protein 2.
 
-        ..................................................................
-        Return values
-        ..................................................................
-        (distanceMap, STDMap)
+        Returns
+        -------
+        tuple : tuple containing `distanceMap` and `STDMap`
         
-        distanceMap [numpy matrix]
-        Is an [n x m] matrix where n and m are the number of proteinID1 residues
-        and proteinID2 residues. Each position in the matrix corresponds to the 
-        mean distance between those two residues over the course of the simulation
+        distanceMap : numpy matrix
+            Is an [n x m] matrix where n and m are the number of proteinID1 residues
+            and proteinID2 residues. Each position in the matrix corresponds to the
+            mean distance between those two residues over the course of the simulation.
 
-        stdMap [numpy matrix]
-        Is an [n x m] matrix where n and m are the number of proteinID1 residues
-        and proteinID2 residues. Each position in the matrix corresponds to the 
-        standard devaiation associated with the distances between those two 
-        residues
+        stdMap : numpy matrix
+            Is an [n x m] matrix where n and m are the number of proteinID1 residues
+            and proteinID2 residues. Each position in the matrix corresponds to the
+            standard devaiation associated with the distances between those two
+            residues.
 
         
         """
@@ -770,7 +773,7 @@ class CTTrajectory:
     #oxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxo
     #
     #
-    def export_samplingGoodness(self, proteinID1, filename, fragmentSize=10, stride=500,bins=None):
+    def export_samplingGoodness(self, proteinID1, filename, fragmentSize=10, stride=500, bins=None):
         """        
         Write a samplingGoodness vector to file.
 
@@ -782,48 +785,42 @@ class CTTrajectory:
 
         Some comments on the parameters:
         
-        stride:
-        The Sigma Vector is calulated by
+        `stride` - The Sigma Vector is calculated by:
 
-        1) Begining at the N-terminus, defining a window of n residues
-        2) The RMSD between every kth frame and everyt other frame is determine
-        for the window. The coarseness of the trajectory (i.e. what value k is) 
-        is defined manually
-        3) The sliding window moves one residue and the analysis is repeated
+        1. Beginning at the N-terminus, defining a window of n residues.
+        2. The RMSD between every kth frame and every other frame is determine for the window. The coarseness of the \
+        trajectory (i.e. what value k is) is defined manually.
+        3. The sliding window moves one residue and the analysis is repeated.
         
-        
-        ..................................................................
-        Arguments and options:
-        ..................................................................
+        Parameters
+        ----------
 
-        proteinID1 [int] 
-        The ID of the protein to be assessed
+        proteinID1 : int
+            The ID of the protein to be assessed (zero-indexed).
 
-        filename [string]
-        Filename which your file should be saved to (.csv extension is added
-        automatically)
+        filename : str
+            Filename which your file should be saved to (.csv extension is added automatically)
 
-        fragmentSize [int] 10
-        Size of the window over which conformations are examined. Default is 10.
-        Note that RMSD has unpleasant scaling properties, such that larger windows
-        may be less useful. We are concerened primarily with local conformational
-        behaviour as global properties do not pertain to an IDP.
+        fragmentSize : int, default=10
+            Size of the window over which conformations are examined. Default is 10.
+            Note that RMSD has unpleasant scaling properties, such that larger windows
+            may be less useful. We are concerned primarily with local conformational
+            behaviour as global properties do not pertain to an IDP.
 
-        stride [int] 500
-        The Sigma vector is calculated over an all.vs.all for each frame of the
-        trajectory. This becomes computationally too expensive when larger trajectories
-        are involved, so the stride defines the granularity used in
-        one of the dimensions. For more information see the main description above.
+        stride : int, default=500
+            The Sigma vector is calculated over an all.vs.all for each frame of the
+            trajectory. This becomes computationally too expensive when larger trajectories
+            are involved, so the stride defines the granularity used in
+            one of the dimensions. For more information see the main description above.
 
         
-        ..................................................................
-        Return values
-        ..................................................................
-        3
+        Returns
+        -------
+        tuple : tuple containing `meanData`, and `stdData`. Histogrammed data is only included when `bins` is not None.
         
         """
         # Only allow bins to be used if appropriate
-        if (not bins == None) and len(bins) < 2:
+        if bins is not None and len(bins) < 2:
             raise CTException('Bins should be a numpy defined vector of values - arange(0,1,0.01)')
 
 
@@ -848,22 +845,22 @@ class CTTrajectory:
             for j in range(0, n_frames, stride):
                 tmp.extend(protein.get_RMSD(j,-1,region=[i-(fragmentSize-1),i]))
                 
-            if not bins == None:
+            if bins is not None:
                 (b,c)=np.histogram(tmp,bins)
                 histo.append(b)
                                 
             meanData.append(np.mean(tmp))
             stdData.append(np.std(tmp))
 
-        if not bins == None:
+        if bins is not None:
             np.savetxt('%s_mean_S_vector.csv' % filename, meanData, delimiter=',')
             np.savetxt('%s_std_S_vector.csv' % filename, stdData, delimiter=',')
             np.savetxt('%s_distribution_S_vector.csv' % filename, np.array(histo), delimiter=',')
             return (meanData, stdData, histo)
             
         else:
-            np.savetxt('mean_S_vector.csv',meanData,delimiter=',')
-            np.savetxt('std_S_vector.csv', stdData,delimiter=',')
+            np.savetxt('%s_mean_S_vector.csv' % filename, meanData, delimiter=',')
+            np.savetxt('%s_std_S_vector.csv' % filename, stdData, delimiter=',')
 
             return (meanData, stdData)
 
@@ -880,31 +877,27 @@ class CTTrajectory:
         polypeptide chain. This makes it very easy to determine where you see local collapse 
         vs. local expansion.
                 
-        ..................................................................
-        Arguments and options:
-        ..................................................................
+        Parameters
+        ----------
 
-        proteinID1 [int] 
-        The ID of the protein to be assessed
+        proteinID1 : int
+            The ID of the protein to be assessed
 
-        filename [string]
-        Filename which your file should be saved to (.csv extension is added
-        automatically)
+        filename : str
+            Filename which your file should be saved to (.csv extension is added automatically)
 
-        windowSize [int] 10
-        Size of the window over which conformations are examined. Default is 10.
+        windowSize : int, default=10
+            Size of the window over which conformations are examined. Default is 10.
 
-        bins 
-        a range of values (np.arange or list) spanning histogram bins.
-        
-        ..................................................................
-        Return values
-        ..................................................................
-        3
-        
+        bins : np.arange or list
+            A range of values (np.arange or list) spanning histogram bins. Default is np.arange(0, 10, 0.1).
+
+        Returns
+        -------
+        tuple : tuple containing `meanData`, and `stdData`. Histogrammed data is only included when `bins` is not None.
         """
         # Only allow bins to be used if appropriate
-        if (not bins == None) and len(bins) < 2:
+        if bins is not None and len(bins) < 2:
             raise CTException('Bins should be a numpy defined vector of values - arange(0,1,0.01)')
 
 
@@ -927,24 +920,24 @@ class CTTrajectory:
 
             # get radius of gyration (now by default is in Angstroms
             # - in previous versions we performed a conversion here)
-            tmp = protein.get_radius_of_gyration(i-(windowSize-1),i)
+            tmp = protein.get_radius_of_gyration(i-(windowSize-1), i)
                 
-            if not bins == None:
-                (b,c)=np.histogram(tmp,bins)
+            if bins is not None:
+                (b, c) = np.histogram(tmp, bins)
                 histo.append(b)
                                 
             meanData.append(np.mean(tmp))
             stdData.append(np.std(tmp))
 
-        if not bins == None:
+        if bins is not None:
             np.savetxt('%s_mean_collapse_vector.csv' % filename, meanData, delimiter=',')
             np.savetxt('%s_std_collapse_vector.csv' % filename, stdData, delimiter=',')
             np.savetxt('%s_distribution_collapse_vector.csv' % filename, np.array(histo), delimiter=',')
             return (meanData, stdData, histo)
             
         else:
-            np.savetxt('mean_collapse_vector.csv',meanData,delimiter=',')
-            np.savetxt('std_collapse_vector.csv', stdData,delimiter=',')
+            np.savetxt('%s_mean_collapse_vector.csv' % filename, meanData, delimiter=',')
+            np.savetxt('%s_std_collapse_vector.csv' % filename, stdData, delimiter=',')
 
             return (meanData, stdData)
 

@@ -77,7 +77,7 @@ class CTProtein:
 
     # ........................................................................
     #
-    def __init__(self, traj, atom_offset, residue_offset):     
+    def __init__(self, traj, atom_offset, residue_offset):
 
         
         # set the trajectory object for easy access

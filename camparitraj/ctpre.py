@@ -67,34 +67,27 @@ class CTPRE:
         then be used to calculate PRE profiles from the underlying ensemble. This
         calculation is extremely fast.
 
-        ........................................
-        OPTIONS 
-        ........................................
-        keyword [type] {default} 
-        Description
-        ........................................
-        
-        CTProteinObject [CTProtein-derived object]  
-        CTProtein object extracted from a CTTraj objected. The CTProtein object is the main object
-        that most protein-based analysis is performed over in CTraj
+        CTProteinObject : CTProtein-derived object
+            CTProtein object extracted from a CTTraj objected. The CTProtein object is the main object
+            that most protein-based analysis is performed over in CTraj.
 
-        tau_c [float]
-        tau_c is the effective correlation time, measured in nanoseconds, which is typically between
-        1 and 30 
+        tau_c : float
+            tau_c is the effective correlation time, measured in nanoseconds, which is typically between
+            1 and 30.
 
-        t_delay  [float]
-        Total duration of the INEPT delays from the PRE experiment, as measured in ms. This will
+        t_delay : float
+            Total duration of the INEPT delays from the PRE experiment, as measured in ms. This will
         depend on the pulse sequence used, but is typically around 1-30 ms for HSQC.
 
-        R_2D [float]
-        Is the transverse relaxation rate of the backbone amide protons in the diamagnetic form
-        of the protein, measured in Herz (i.e. 'per second'). A value of around 10 might be expected.
+        R_2D : float
+            Is the transverse relaxation rate of the backbone amide protons in the diamagnetic form
+            of the protein, measured in Herz (i.e. 'per second'). A value of around 10 might be expected.
 
-        W_H [float]
-        Is the proton Larmor frequency, which is typically the "MHz" value associated with the magnet, 
-        given in Hz. For examle, a 600 MHz magnet would use the value 600000000.
+        W_H : float
+            Is the proton Larmor frequency, which is typically the "MHz" value associated with the magnet,
+            given in Hz. For examle, a 600 MHz magnet would use the value 600000000.
 
-        (Note that the proton Larmor frequency at 1 Tesla = 267530000 per second per Tesla).
+            (Note that the proton Larmor frequency at 1 Tesla = 267530000 per second per Tesla).
 
         """
                 
@@ -165,10 +158,13 @@ class CTPRE:
 
         This function is extremely fast (sub 10 seconds on a ~6000 frame ensemble).
 
-        RETURN:
-
+        Returns
+        -------
         Returns a 2 place tuple - tuple position 0 is the PRE intensity profile and tuple position 1 is the PRE H1 relaxatation
         profile.
+
+        References
+        ----------
 
         [1] Meng, W., Lyle, N., Luan, B., Raleigh, D.P., and Pappu, R.V. (2013). Experiments and simulations show how long-range 
         contacts can form in expanded unfolded proteins with negligible secondary structure. 
@@ -176,27 +172,21 @@ class CTPRE:
         [2] Das, R.K., Huang, Y., Phillips, A.H., Kriwacki, R.W., and Pappu, R.V. (2016). Cryptic sequence features within the 
         disordered protein p27Kip1 regulate cell cycle signaling. Proc. Natl. Acad. Sci. U. S. A. 113, 5616- 5621.
                
-        ........................................
-        OPTIONS 
-        ........................................
-        keyword [type] {default} 
-        Description
-        ........................................
-        
-        label_position [int]
-        Position in the sequence at which the spin-label is located. Should ideally contain a CB atom (i.e. not be be glycine), 
-        else the label atom must be set to 'CA' see below.        
+        Parameters
+        ----------
 
-        spin_label_atom [string] {'CB'}
-        Name of the atom upon which the spin label is located. Should really be CB but may be changed if a residue lacks a CB atom 
-        (e.g. a glycine is in the place of the Cys nitroxide spin labeled residue). Ideally
+        label_position : int
+            Position in the sequence at which the spin-label is located. Should ideally contain a CB atom (i.e. not be be glycine),
+            else the label atom must be set to 'CA' see below.
 
-        target_relaxation_atom [string] {'N'}
-        Name of the atom where relaxation is being performed. This should be 'N' (backbone amide) as that's how this approach is 
-        parameterized - highly recommended that this isn't changed. If it is changed the method will look for an atom of this name
-        in every residue. Again, it is STRONGLY recommended this isn't changed
+        spin_label_atom : str, default='CB'
+            Name of the atom upon which the spin label is located. Should really be CB but may be changed if a residue lacks a CB atom
+            (e.g. a glycine is in the place of the Cys nitroxide spin labeled residue). Ideally
 
-
+        target_relaxation_atom : str, default='N'
+            Name of the atom where relaxation is being performed. This should be 'N' (backbone amide) as that's how this approach is
+            parameterized - highly recommended that this isn't changed. If it is changed the method will look for an atom of this name
+            in every residue. Again, it is STRONGLY recommended this isn't changed.
         """
         
         # get index value of all residues 
