@@ -1187,7 +1187,7 @@ class CTProtein:
         selectionatoms = self.__get_selection_atoms(region=region, backbone=backbone, correctOffset=correctOffset)
             
         # set the reference trajectory we're working with
-        ref    = self.traj
+        ref = self.traj
 
         # if a second frame number was provided with which we're going to work with
         if frame2 > -1 and isinstance( frame2, int ):            
