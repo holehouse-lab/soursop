@@ -22,6 +22,7 @@ This is where some stuff will be described
 import mdtraj as md
 import numpy as np
 from .configs import *
+from .ctdata  import ALL_VALID_RESIDUE_NAMES
 
 from .ctprotein import CTProtein
 from .ctexceptions import CTException
@@ -242,8 +243,9 @@ class CTTrajectory:
         for chain in topology.chains:
 
             # if the first residue in the chain is protein
-            # TO DO - make this work with FOR/NH caps
-            if chain.residue(0).is_protein:
+            # note that a formic acid cap ('FOR') is not recognized as protein
+            # so we include an edgecase here for that
+            if chain.residue(0).name in ALL_VALID_RESIDUE_NAMES:
 
                 # intialize an empty list of atoms
                 atoms = []

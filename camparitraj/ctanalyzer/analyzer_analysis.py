@@ -317,7 +317,8 @@ def run_SASA(CP, outdir, stride2use, probe_radius=0.14):
 
         
 
-def run_DSSP_analysis(CP, outdir):
+def run_DSSP_analysis_OLD(CP, outdir):
+
     dssp_data = md.compute_dssp(CP.traj)
     C_vector = []
     E_vector = []
@@ -334,6 +335,15 @@ def run_DSSP_analysis(CP, outdir):
     np.savetxt('%s/DSSP_H.csv'%(outdir), np.array(H_vector), delimiter=', ')
     np.savetxt('%s/DSSP_E.csv'%(outdir), np.array(E_vector), delimiter=', ')
     np.savetxt('%s/DSSP_C.csv'%(outdir), np.array(C_vector), delimiter=', ')
+
+
+def run_DSSP_analysis(CP, outdir):
+
+    dssp_out = CP.get_secondary_structure_DSSP()
+        
+    np.savetxt('%s/DSSP_H.csv'%(outdir), dssp_out[1], delimiter=', ')
+    np.savetxt('%s/DSSP_E.csv'%(outdir), dssp_out[2], delimiter=', ')
+    np.savetxt('%s/DSSP_C.csv'%(outdir), dssp_out[3], delimiter=', ')
 
 
 def run_BBSEG_analysis(CP, outdir):
