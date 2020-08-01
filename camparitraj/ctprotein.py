@@ -518,18 +518,30 @@ class CTProtein:
 
     # ........................................................................
     #
-    def print_residues(self):
+    def print_residues(self, silent=False):
         """
         Function to help determine the mapping of residue ID to PDB residue value. 
         Prints the mapping between resid and PDB residue, and returns this information
-        in a list
+        in a list.
+        
+        Returns a list of lists, where each list element is itself a list of two elements,
+        index position and the resname-resid from the PDB file
+        
+
+        Parameters
+        ----------
+        silent : Bool
+            If set to true, print_residues does not print out to screen but still
+            returns the list of lists
+
 
         """
 
         AA = self.get_aminoAcidSequence()
         return_list = []
         for i in range(0, len(AA)):
-            print("%i --> %s" %(i, AA[i]))
+            if silent is False:
+                print("%i --> %s" %(i, AA[i]))
             return_list.append([i,AA[i]])
         return return_list
 
@@ -3873,11 +3885,11 @@ class CTProtein:
         E_vector = []
         H_vector = []
 
-        n_residues = R2_real - R1_real
-        reslist    = list(range(R1_real, R2_real))
+        # note the + 1 because the R1 and R2 positions are INCLUSIVE whereas  
+        reslist    = list(range(R1_real, R2_real+1))
         n_frames   = self.get_numberOfFrames()
         
-        for i in range(n_residues):
+        for i in range(len(reslist)):
             C_vector.append(float(sum(dssp_data.transpose()[i] == 'C'))/n_frames)
             E_vector.append(float(sum(dssp_data.transpose()[i] == 'E'))/n_frames)
             H_vector.append(float(sum(dssp_data.transpose()[i] == 'H'))/n_frames)

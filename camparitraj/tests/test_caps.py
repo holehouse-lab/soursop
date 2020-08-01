@@ -35,7 +35,7 @@ def test_cap_DSSP():
     for CN in CAPNAMES:
         CT = cttrajectory.CTTrajectory("%s/cap_tests/%s.pdb"%(test_data_dir, CN), "%s/cap_tests/%s.pdb"%(test_data_dir, CN))
         for CP in CT.proteinTrajectoryList:
-            assert len(CP.get_secondary_structure_DSSP()[0]) == 5
+            assert len(CP.get_secondary_structure_DSSP()[0]) == 6
                 
 
 def test_cap_BBSEG():
@@ -46,5 +46,5 @@ def test_cap_BBSEG():
     for CN in CAPNAMES:
         CT = cttrajectory.CTTrajectory("%s/cap_tests/%s.pdb"%(test_data_dir, CN), "%s/cap_tests/%s.pdb"%(test_data_dir, CN))
         for CP in CT.proteinTrajectoryList:
-            assert len(CP.get_secondary_structure_DSSP()[0]) == 5
+            assert len(CP.get_secondary_structure_DSSP()[0]) == 6
                 
