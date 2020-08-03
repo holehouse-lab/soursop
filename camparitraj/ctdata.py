@@ -88,3 +88,6 @@ DEFAULT_SIDECHAIN_VECTOR_ATOMS = {'ALA': 'CB',
                                   'TYR': 'CZ',
                                   'ACE': 'ERROR',
                                   'NME': 'ERROR'}
+
+# list of valid residue names as supported by CAMPARI
+ALL_VALID_RESIDUE_NAMES = ['ALA','CYS','ASP','ASH','GLU','GLU','PHE','GLY','HIE','HIS','HID','HIP','ILE','LYS','LYD','MET','ASN','PRO','GLN','ARG','SER', 'THR','VAL','TRP','TYR','AIB', 'ABA','NVA','NLE', 'ORN', 'DAB','PTR', 'TPO','SEP', 'KAC', 'KM1', 'KM2' 'KM3', 'ACE','NME', 'FOR', 'NH2']

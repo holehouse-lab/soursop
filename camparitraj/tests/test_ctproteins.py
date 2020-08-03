@@ -9,8 +9,8 @@ import pytest
 import sys
 from camparitraj import cttrajectory
 
-"""
-def test_code_coverage():
+
+def test_code_coverage(NTL9_CP):
 
     NTL9_CP.print_residues()
     a = NTL9_CP.get_residue_index_list()
@@ -81,7 +81,8 @@ def test_code_coverage():
 
     a = NTL9_CP.get_interResidue_atomic_distance(2,10)
     a = NTL9_CP.get_interResidue_atomic_distance(2,10, A1='CB')
-"""
+    a = NTL9_CP.get_angle_decay()
+
 
 def test_get_radius_of_gyration(GS6_CP):    
 

@@ -22,6 +22,7 @@ This is where some stuff will be described
 import mdtraj as md
 import numpy as np
 from .configs import *
+from .ctdata  import ALL_VALID_RESIDUE_NAMES
 
 from .ctprotein import CTProtein
 from .ctexceptions import CTException
@@ -242,8 +243,9 @@ class CTTrajectory:
         for chain in topology.chains:
 
             # if the first residue in the chain is protein
-            # TO DO - make this work with FOR/NH caps
-            if chain.residue(0).is_protein:
+            # note that a formic acid cap ('FOR') is not recognized as protein
+            # so we include an edgecase here for that
+            if chain.residue(0).name in ALL_VALID_RESIDUE_NAMES:
 
                 # intialize an empty list of atoms
                 atoms = []
@@ -768,101 +770,6 @@ class CTTrajectory:
         (distanceMap, stdMap) = self.get_intraChainDistanceMap(proteinID1, proteinID2, resID1, resID2)
         np.savetxt("%s.csv"%filename, distanceMap, delimiter=",", fmt="%.4e")
         print("Export complete!")
-
-
-    #oxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxo
-    #
-    #
-    def export_samplingGoodness(self, proteinID1, filename, fragmentSize=10, stride=500, bins=None):
-        """        
-        Write a samplingGoodness vector to file.
-
-        Sampling goodness calculates a trajectory's Sigma^n vector, where n defines the windowsize.
-        The Sigma vector provides an intuitive way to examine a vectorial profile to describe the
-        sampling associated with a protein. This is well suited for IDPs, where good sampling is
-        expected to correspond to a significant amount of heterogeneity. The Sigma vector helps 
-        identify regions along the protein sequence where sampling may be poor. 
-
-        Some comments on the parameters:
-        
-        `stride` - The Sigma Vector is calculated by:
-
-        1. Beginning at the N-terminus, defining a window of n residues.
-        2. The RMSD between every kth frame and every other frame is determine for the window. The coarseness of the \
-        trajectory (i.e. what value k is) is defined manually.
-        3. The sliding window moves one residue and the analysis is repeated.
-        
-        Parameters
-        ----------
-
-        proteinID1 : int
-            The ID of the protein to be assessed (zero-indexed).
-
-        filename : str
-            Filename which your file should be saved to (.csv extension is added automatically)
-
-        fragmentSize : int, default=10
-            Size of the window over which conformations are examined. Default is 10.
-            Note that RMSD has unpleasant scaling properties, such that larger windows
-            may be less useful. We are concerned primarily with local conformational
-            behaviour as global properties do not pertain to an IDP.
-
-        stride : int, default=500
-            The Sigma vector is calculated over an all.vs.all for each frame of the
-            trajectory. This becomes computationally too expensive when larger trajectories
-            are involved, so the stride defines the granularity used in
-            one of the dimensions. For more information see the main description above.
-
-        
-        Returns
-        -------
-        tuple : tuple containing `meanData`, and `stdData`. Histogrammed data is only included when `bins` is not None.
-        
-        """
-        # Only allow bins to be used if appropriate
-        if bins is not None and len(bins) < 2:
-            raise CTException('Bins should be a numpy defined vector of values - arange(0,1,0.01)')
-
-
-        protein = self.proteinTrajectoryList[proteinID1]        
-        n_residues = protein.get_numberOfResidues()
-        n_frames   = protein.get_numberOfFrames()
-        
-        # check the window is an appropriate size
-        if fragmentSize > n_residues:
-            raise CTException('fragmentSize is larger than the number of residues')
-
-        if stride > n_frames:
-            raise CTException('stride is larger than the number of frames')
-
-        meanData = []
-        stdData  = []
-        histo    = []
-        for i in range(fragmentSize-1,n_residues):
-            tmp = []
-            print("On range %i" % i)
-
-            for j in range(0, n_frames, stride):
-                tmp.extend(protein.get_RMSD(j,-1,region=[i-(fragmentSize-1),i]))
-                
-            if bins is not None:
-                (b,c)=np.histogram(tmp,bins)
-                histo.append(b)
-                                
-            meanData.append(np.mean(tmp))
-            stdData.append(np.std(tmp))
-
-        if bins is not None:
-            np.savetxt('%s_mean_S_vector.csv' % filename, meanData, delimiter=',')
-            np.savetxt('%s_std_S_vector.csv' % filename, stdData, delimiter=',')
-            np.savetxt('%s_distribution_S_vector.csv' % filename, np.array(histo), delimiter=',')
-            return (meanData, stdData, histo)
-            
-        else:
-            np.savetxt('%s_mean_S_vector.csv' % filename, meanData, delimiter=',')
-            np.savetxt('%s_std_S_vector.csv' % filename, stdData, delimiter=',')
-
-            return (meanData, stdData)
 
 
 

@@ -26,7 +26,7 @@ import scipy.optimize as SPO
 from numpy.random import choice
 
 from .configs import DEBUGGING
-from .ctdata import THREE_TO_ONE, DEFAULT_SIDECHAIN_VECTOR_ATOMS
+from .ctdata import THREE_TO_ONE, DEFAULT_SIDECHAIN_VECTOR_ATOMS, ALL_VALID_RESIDUE_NAMES
 from .ctexceptions import CTException
 from . import ctmutualinformation
 from . import cttools
@@ -109,10 +109,29 @@ class CTProtein:
         self.__residue_index_list = None
         self.__CA_residue_atom    = {}
         self.__residue_atom_table = {}
-        self.__residues_with_CA   = self.__get_residues_with_CA()
+
+        (res_CA, idx_CA) = self.__get_residues_with_CA()
+
+        # define if caps are present or not 
+        if 0 in idx_CA:
+            self.ncap = False
+        else:
+            self.ncap = True
+
+        if (self.__num_residues - 1) in idx_CA:
+            self.ccap = False
+        else:
+            self.ccap = True
+
+            
+
+        self.__residues_with_CA   = res_CA
+        self.__idx_with_CA   = idx_CA
+        
         self.__residue_COM        = {}
+        
 
-
+        
     # ........................................................................
     #
     def __check_weights(self, weights, stride=None):
@@ -146,11 +165,87 @@ class CTProtein:
 
     # ........................................................................
     #
+    def __get_first_and_last(self, R1, R2, withCA=False):
+        """
+        Function which returns first and last residue for a range, correcting for the residue
+        offset problem. The returned tup
+
+        Parameters
+        --------------
+        R1 : int or False
+            First residue in range - can be an integer (assumes first residue in chain indexed at 0). 
+            If False assume we start at 0.
+            
+
+        R2 : int or False
+            Last residue in range - can be an integer (assumes first residue in chain indexed at 0).
+            If False assumes we're using the whole chain.
+
+        withCA : Bool
+            Flag which, if true, and R1 or R2 are false selects R1/R2 values that contain a CA, which basically
+            means caps are dealt with here if present
+
+        Returns
+        -------------
+        tuple:
+
+            Returns a tuple with three positions:
+            [0] = R1 with relevant offsets applid (int)
+            [1] = R2 with relevant offsets applid (int)
+            [2] = String that can be passed directly to topology select to extract the atoms associated 
+                  with these positions
+
+        """
+
+        # first define as if we're starting from first and last residue with/without caps
+        if R1 == False:
+            if withCA:
+                if self.ncap:
+                    R1 = 1
+                else:
+                    R1 = 0
+            else:
+                R1 = 0
+
+        if R2 == False:
+            if withCA:
+                if self.ccap:
+                    R2 = self.__num_residues - 2
+                else:
+                    R2 = self.__num_residues - 1
+            else:
+                R2 = self.__num_residues - 1
+
+        # then apply the systematic offset
+        R1 = R1 + self.residue_offset
+        R2 = R2 + self.residue_offset
+
+        # finally flip around if R1 is larger than R2
+        if R1 > R2:
+            tmp = R2
+            R2 = R1
+            R1 = tmp
+
+        return (R1, R2, "resid %i to %i" %(R1,R2))
+        
+
+    # ........................................................................
+    #
     def __get_offset_residue(self, R1):
         """
         Returns the true residue index (TRI) for this protein by taking into
         account the residue offset. Checks the residue first to ensure a valid
         residue has been passed.
+
+        Parameters
+        -----------
+
+        TO DO
+
+        Returns
+        --------
+
+        TO DO
 
         """
         self.__check_single_residue(R1)
@@ -161,7 +256,17 @@ class CTProtein:
     #
     def __check_stride(self, stride):
         """
-        Checks that a passed stride doesn't break everything
+        Checks that a passed stride value doesn't break everything. 
+
+        Parameters
+        ----------
+
+        TO DO
+
+        Returns
+        -----------
+
+        TO DO
 
         """
         if stride > self.get_numberOfFrames():
@@ -175,6 +280,17 @@ class CTProtein:
         Internal function that checks that a single residue provided makes sense in the context of
         this protein. NOTE this checks BEFORE an offset is applied (i.e. we assume once a residue
         offset has been made that the resid's validity has been established).
+
+        Parameters
+        ----------
+
+        TO DO
+
+        Returns
+        -----------
+
+        TO DO
+
 
         """
 
@@ -190,12 +306,32 @@ class CTProtein:
 
     # ........................................................................
     #
-    def __check_contains_CA(self, R1, R1_org=None):
+    def __check_contains_CA(self, R1, R1_org=None, has_correctOffset=True):
         """
         Function which checks if residue R1 (which is the residue AFTER an offset correction has 
         been applied) contains a C-alpha atom.
 
+        Parameters
+        ----------
+
+        TO DO
+
+        Returns
+        -----------
+
+        TO DO
+
+
         """
+        exception_message  = ''
+
+        if has_correctOffset is False:
+            if R1 not in self.__idx_with_CA:
+                raise CTException("Residue index %i (where first residue = 0) lacks a C-alpha carbon" % (R1))
+            return
+                
+
+
         if R1 not in self.__residues_with_CA:
             
             if R1_org:            
@@ -211,13 +347,24 @@ class CTProtein:
         """
         Internal function which returns a subtrajectory. Expects
         traj to be an mdtraj trajectory object and stride to be a value
+
+        Parameters
+        ----------
+
+        TO DO
+
+        Returns
+        -----------
+
+        TO DO
+
               
         """
 
         stride = int(stride)
         self.__check_stride(stride)
         
-        if stride ==1:
+        if stride == 1:
             return traj
         else:                                    
             return traj.slice(list(range(0, self.n_frames, stride)))            
@@ -230,24 +377,41 @@ class CTProtein:
         Internal function which should only be needed during initialization. Defines the 
         list of residues where CA atoms are present. This list is then assigned to the
         object variable self.__residues_with_CA
+
+        Parameters
+        ----------
+
+        TO DO
+
+        Returns
+        -----------
+
+        TO DO
+
               
         """
         
         residuesWithCA = []
+        idxWithCA = []
 
+        idx = -1
         for res in self.topology.residues:
+            idx = idx + 1
             try:
                 self.get_CAindex(res.index, correctOffset=False)
 
                 # if we could get a CA then append this residue index
                 residuesWithCA.append(res.index)
+                idxWithCA.append(idx)
 
             except CTException:
                 continue
 
-        return residuesWithCA
+        return (residuesWithCA, idxWithCA)
 
 
+    # ........................................................................
+    #
     def __residue_atom_lookup(self, resid, atomname=None):
         """
         Memoisation function to lookup the atomic index of a specific residues atom. Originally I'd assumed
@@ -354,18 +518,30 @@ class CTProtein:
 
     # ........................................................................
     #
-    def print_residues(self):
+    def print_residues(self, silent=False):
         """
         Function to help determine the mapping of residue ID to PDB residue value. 
         Prints the mapping between resid and PDB residue, and returns this information
-        in a list
+        in a list.
+        
+        Returns a list of lists, where each list element is itself a list of two elements,
+        index position and the resname-resid from the PDB file
+        
+
+        Parameters
+        ----------
+        silent : Bool
+            If set to true, print_residues does not print out to screen but still
+            returns the list of lists
+
 
         """
 
         AA = self.get_aminoAcidSequence()
         return_list = []
         for i in range(0, len(AA)):
-            print("%i --> %s" %(i, AA[i]))
+            if silent is False:
+                print("%i --> %s" %(i, AA[i]))
             return_list.append([i,AA[i]])
         return return_list
 
@@ -1187,7 +1363,7 @@ class CTProtein:
         selectionatoms = self.__get_selection_atoms(region=region, backbone=backbone, correctOffset=correctOffset)
             
         # set the reference trajectory we're working with
-        ref    = self.traj
+        ref = self.traj
 
         # if a second frame number was provided with which we're going to work with
         if frame2 > -1 and isinstance( frame2, int ):            
@@ -2124,10 +2300,9 @@ class CTProtein:
         if mode not in ['CA', 'COM']:
             raise CTException("End-to-end distance analysis requires that 'mode' is set to one of 'CA' (alpha carbon) or 'COM' (center of mass). mode was set to [%s]" % str(mode))
 
-        # determine 
-        IDX_list = self.__get_residues_with_CA()
-        start = IDX_list[0]
-        end = IDX_list[-1]
+        # extract first and last residue AFTER offset correction (i.e. residue number from original PDB file) 
+        start = self.__residues_with_CA[0]
+        end = self.__residues_with_CA[-1]
 
         if mode == 'CA':
             distance = self.get_interResidue_atomic_distance(start, end, stride=1, correctOffset=False)
@@ -2173,15 +2348,15 @@ class CTProtein:
         # define the first and last residue INCLUDING caps
         if R1 == False:
             R1 = 0
-        else:
-            if correctOffset:
-                R1 = self.__get_offset_residue(R1)
+
+        if correctOffset:
+            R1 = self.__get_offset_residue(R1)
 
         if R2 == False:
             R2 = self.__num_residues-1
-        else:
-            if correctOffset:
-                R2 = self.__get_offset_residue(R2)
+
+        if correctOffset:
+            R2 = self.__get_offset_residue(R2)
 
         # switch em around so the A to B syntax makes sense
         if R1 > R2:
@@ -2303,7 +2478,8 @@ class CTProtein:
         driving forces and mechanisms for protein aggregation - Highlight Issue: Protein Folding. 
         Arch. Biochem. Biophys. 469, 132-141.
 
-        * The exclusion of the caps is different to CAMPARI, which includes the caps, if present.
+        * The exclusion of the caps is different to how this is calculated in CAMPARI, 
+        which includes the caps, if present.
 
         ........................................
         OPTIONS 
@@ -2351,36 +2527,24 @@ class CTProtein:
         # check stride is ok
         self.__check_stride(stride)
 
-        R1_org = R1
-        R2_org = R2
-
+        # check mode is OK
         if mode not in ['CA', 'COM']:
             raise CTException("Internal scaling analysis requires that 'mode' is set to one of 'CA' (alpha carbon) or 'COM' (center of mass). mode was set to [%s]" % str(mode))
 
-        # define R1 and R2 - if offset needed perform, else 
-        # define the first and last residue excluding caps
-        if R1 == False:
-            R1 = self.__residues_with_CA[0]
-        else:
-            if correctOffset:
-                R1 = self.__get_offset_residue(R1)
 
-        if R2 == False:
-            R2 = self.__residues_with_CA[-1]
-        else:
-            if correctOffset:
-                R2 = self.__get_offset_residue(R2)
+        # process the R1/R2 to set the position after offset correction
+        out =  self.__get_first_and_last(R1,R2, withCA = True)
+        R1 = out[0]
+        R2 = out[1]
 
-        # switch em around so the A to B syntax makes sense
-        if R1 > R2:
-            tmp = R2
-            R2 = R1
-            R1 = tmp
-
-        self.__check_contains_CA(R1, R1_org)
-        self.__check_contains_CA(R2, R2_org)
+        # check the R1/R2 positions contina a CA (not R1 and R2 here are after
+        # offset has been applied. This throws an exception if no CA
+        self.__check_contains_CA(R1)
+        self.__check_contains_CA(R2)
         
-        max_seq_sep = (R2-R1)+1
+        max_seq_sep = (R2 - R1) + 1
+
+        # if chain is too short...
         if max_seq_sep < 1:
             return ([], [])
 
@@ -3057,14 +3221,17 @@ class CTProtein:
             # get all reas
             all_areas = basis[0]*100
             all_atoms = list(basis[1])
-            CA_res = self.__get_residues_with_CA()
+
+            # note these CA resids are after offset correction has been applied. NOTE we need to
+            # check if the atom selection here works for multichain protein systems
+            # TODO
+            CA_res = self.__residues_with_CA
             
             # for each residue with a CA atom...
             residue_SASA=[]
             for i in CA_res:
                 
                 # get the atomic indices 
-                # TODO - check this works on multiprotein system..
                 if passed_mode == 'sidechain':
                     # for some reason 'sidechain' selection includes the backbone hydrogen atoms??!?!
                     relevant_atom_idx = self.topology.select('resid %i and %s and (not name H HA HA2 HA3)' % (i,passed_mode)) #+ self.atom_offset ???
@@ -3140,7 +3307,6 @@ class CTProtein:
     # ........................................................................
     #
     #
-
     def get_site_accessibility(self, input_list, probe_radius=0.14, stride=20, mode='residue_type'):
         """
         Function to compute site/residue type accessibility. This can be done using one of two modes.
@@ -3179,13 +3345,10 @@ class CTProtein:
         # if we're in 'residue_type' mode
         if mode.lower() == 'residue_type':
 
-            # set the list of valid residues to the 20 AAs + the caps
-            ALL_VALID=list(THREE_TO_ONE.keys())
-            ALL_VALID.extend(['ACE','NME'])
-            
+            # set the list of valid residues to the 20 AAs + the caps            
             for res in input_list:
-                if res not in ALL_VALID:
-                    raise CTException("Error: Tried to use get_site_accessibility in 'residue_type' mode but residue %s not found in list of valid residues %s" % (res, str(ALL_VALID)))
+                if res not in ALL_VALID_RESIDUE_NAMES:
+                    raise CTException("Error: Tried to use get_site_accessibility in 'residue_type' mode but residue %s not found in list of valid residues %s" % (res, str(ALL_VALID_RESIDUE_NAMES)))
 
         # if we're in resid mode
         elif mode.lower() == 'resid':
@@ -3193,7 +3356,7 @@ class CTProtein:
             offset_input_idx=[]
 
             for res in input_list:
-                R1=int(res)
+                R1 = int(res)
 
                 # check residue makes sense and then calculate the offset
                 self.__check_single_residue(R1)
@@ -3488,35 +3651,39 @@ class CTProtein:
               deviation makes the assumption that the distribution is Gaussian which may or may
               not be true.
 
-        ........................................
-        OPTIONS 
-        ........................................
-
-        mode [string] {'CA'}
-        String, must be one of either 'CA' or 'COM'.
-        'CA' = alpha carbon
-        'COM' = center of mass (associated withe the residue) 
+        Parameters
+        ---------------
+        mode : str
+            String, must be one of either 'CA' or 'COM'.
+            'CA' = alpha carbon
+            'COM' = center of mass (associated withe the residue) 
+            Default = 'COM'
         
-        stride [int] {20}
-        Defines the spacing between frames for calculating the ensemble
-        average. As stride gets larger this analysis gets slower.
-        It is worth experimenting with to see how the results
-        change as a function of stride, but in theory the accuracy should
-        remain fixed but precision improved as stride is reduced.        
+        stride : int
+            Defines the spacing between frames for calculating the ensemble
+            average. As stride gets larger this analysis gets slower.
+            It is worth experimenting with to see how the results change
+            as a function of stride, but in theory the accuracy should
+            remain fixed but precision improved as stride is reduced.
+            Default = 20
 
-        n_cycles [int] {100}
-        Number of times, for each number of pairs, we re-select a different
-        set of paris to use. This depends (weakly) on the number of residues,
-        but we do not recommend a value < 50. For larger proteins this number
-        should be increased. Again, it's worth examining how your results
-        chain as a function of n_cycles to determine the optimal tradeoff
-        between speed and precision.
+        n_cycles : int
+            Number of times, for each number of pairs, we re-select a different
+            set of paris to use. This depends (weakly) on the number of residues,
+            but we do not recommend a value < 50. For larger proteins this number
+            should be increased. Again, it's worth examining how your results
+            chain as a function of n_cycles to determine the optimal tradeoff
+            between speed and precision. Default = 100
 
-        max_num_pairs [int} {10}
-        The maximum number of pairs to be consider for correlation analysis.
-        In general we've found above 10-20 the average correlation tends to 
-        plateau towards 1 (note it will NEVER be 1) so 1-20 is a reasonable
-        set to use.
+        max_num_pairs : int
+            The maximum number of pairs to be consider for correlation analysis.
+            In general we've found above 10-20 the average correlation tends to 
+            plateau towards 1 (note it will NEVER be 1) so 1-20 is a reasonable
+            set to use. Default  = 10
+
+        weights : Bool
+            Flag that indicates if frame weights should be used or not. Default
+            = False.
 
         """
         
@@ -3525,19 +3692,18 @@ class CTProtein:
         if mode not in ['CA', 'COM']:
             raise CTException("The variable 'mode' must be set to one of 'CA' (alpha carbon) or 'COM' (center of mass). mode was set to [%s]" % str(mode))
 
-        # determine 
-        IDX_list = self.__get_residues_with_CA()
-        start = IDX_list[0]
-        end = IDX_list[-1]
-        num_residues = end-start
+
+        # note start and end here are after offset correction
+        start = self.__residues_with_CA[0] 
+        end = self.__residues_with_CA[-1]
     
         FIRST_CHECK=True
-        print("Precomputing distances...")
 
         # start with a sequence separation of 1
-        for seq_sep in range(1, num_residues):
+        for seq_sep in range(1, self.__num_residues):
             print("On sequence separation %i" % (seq_sep)) 
-            for pos in range(start, end-seq_sep):
+
+            for pos in range(start, end - seq_sep):
 
                 # define the two positions
                 A = pos
@@ -3553,7 +3719,7 @@ class CTProtein:
 
                 if FIRST_CHECK:
                     all_distances = distance
-                    FIRST_CHECK=False
+                    FIRST_CHECK = False
                 else:
                     all_distances = np.vstack((all_distances,distance))
 
@@ -3686,12 +3852,12 @@ class CTProtein:
              Default value is False. Defines the value for last residue in the region of 
              interest. If not provided (False) then last residue is used.
              
-
         correctOffset : Bool
              Defines if we perform local protein offset correction or not. By default we do, 
              but some internal functions may have already performed the correction and so don't
              need to perform it again. If you're calling this function you can probably ignore
              this variable.
+
 
         Returns
         .......
@@ -3704,45 +3870,32 @@ class CTProtein:
                
         """
 
-        # define R1 and R2 - if offset needed perform, else 
-        # define the first and last residue INCLUDING caps
-        if R1 == False:
-            R1 = 0
-        else:
-            if correctOffset:
-                R1 = self.__get_offset_residue(R1)
+        # build R1/R2 values
+        out = self.__get_first_and_last(R1, R2, withCA=True)
+        R1_real = out[0]
+        R2_real = out[1]
 
-        if R2 == False:
-            R2 = self.__num_residues-1
-        else:
-            if correctOffset:
-                R2 = self.__get_offset_residue(R2)
+        # select the relevant subtrajectory (out[2] is the 'resid %i to %i' where %i and %i are R1 and R2)
+        ats = self.traj.atom_slice(self.topology.select('%s' % out[2]))
 
-        # switch em around so the A to B syntax makes sense
-        if R1 > R2:
-            tmp = R2
-            R2 = R1
-            R1 = tmp
-
-        # in angstroms
-        dssp_data = md.compute_dssp(self.traj.atom_slice(self.topology.select('resid %i to %i'%(R1, R2))))
+        # compute DSSP over the selected subtrajectory 
+        dssp_data = md.compute_dssp(ats)
                 
         C_vector = []
         E_vector = []
         H_vector = []
 
-        n_residues = R2-R1 
-        reslist = list(range(R1,R2))
+        # note the + 1 because the R1 and R2 positions are INCLUSIVE whereas  
+        reslist    = list(range(R1_real, R2_real+1))
         n_frames   = self.get_numberOfFrames()
-
         
-        for i in range(1,n_residues-1):
+        for i in range(len(reslist)):
             C_vector.append(float(sum(dssp_data.transpose()[i] == 'C'))/n_frames)
             E_vector.append(float(sum(dssp_data.transpose()[i] == 'E'))/n_frames)
             H_vector.append(float(sum(dssp_data.transpose()[i] == 'H'))/n_frames)
                 
 
-        return np.array((reslist,H_vector, E_vector, C_vector))
+        return np.array((reslist, H_vector, E_vector, C_vector))
 
 
     # ........................................................................
@@ -3802,34 +3955,17 @@ class CTProtein:
 
         """
 
-        # define R1 and R2 - if offset needed perform, else 
-        # define the first and last residue INCLUDING caps
-        if R1 == False:
-            R1 = 0
-        else:
-            if correctOffset:
-                R1 = self.__get_offset_residue(R1)
-
-        if R2 == False:
-            R2 = self.__num_residues-1
-        else:
-            if correctOffset:
-                R2 = self.__get_offset_residue(R2)
-
-        # switch em around so the A to B syntax makes sense
-        if R1 > R2:
-            tmp = R2
-            R2 = R1
-            R1 = tmp
+        # build R1/R2 values
+        out = self.__get_first_and_last(R1, R2, withCA=True)
 
         # extract the phi/psi angles in degrees
-        phi_data = np.degrees(md.compute_phi(self.traj.atom_slice(self.topology.select('resid %i to %i'%(R1, R2))))[1])
-        psi_data = np.degrees(md.compute_psi(self.traj.atom_slice(self.topology.select('resid %i to %i'%(R1, R2))))[1])
+        phi_data = np.degrees(md.compute_phi(self.traj.atom_slice(self.topology.select('%s'%(out[2]))))[1])
+        psi_data = np.degrees(md.compute_psi(self.traj.atom_slice(self.topology.select('%s'%(out[2]))))[1])
 
         # extract the relevant information (note shape of phi_data and psi_data will be identical)
         # shape info here is (number_of_frames, number_of_residues) sized
         shape_info = np.shape(phi_data)
-        all_classes=[]
+        all_classes = []
 
         # for each frame iterate through and classify each residue, building a shape_info
         # sized matrix where each elements reflects the BBSEG classification of that residue
@@ -3850,8 +3986,10 @@ class CTProtein:
             return_bbseg[c] = list(np.sum((all_classes == c)*1,0)/shape_info[0])
 
         return return_bbseg
-        
-
+     
+   
+    # ........................................................................
+    #
     def __phi_psi_bbseg(self, phi_vector, psi_vector):
         """
         Internal function that takes two equally-matched phi and psi angle vectors and
@@ -3871,7 +4009,6 @@ class CTProtein:
         psi_vector :   iterable (list or numpy vector)
             ordered list of psu angles for a specific residue
          
-
         Returns
         .......
 
@@ -3882,6 +4019,7 @@ class CTProtein:
         """
 
         classes = []
+
         for i in range(len(phi_vector)):
             phi = phi_vector[i]
             psi = psi_vector[i]
@@ -3895,13 +4033,15 @@ class CTProtein:
 
             if fixed_psi == 180.0:
                 fixed_psi = 170.0
-
-
+                
+            # classify the phi/psi values in terms of BBSEG values
             classes.append(BBSEG2[fixed_phi][fixed_psi])
 
         return classes
-            
 
+            
+    # ........................................................................
+    #
     def get_overlap_concentration(self):
 
         """
@@ -3936,10 +4076,10 @@ class CTProtein:
 
         CN_vectors = []
         CN_lengths = [] 
-        for i in self._CTProtein__residues_with_CA:
+        for i in self.__residues_with_CA:
 
             # this extracts the C->N vector for each frame for each residue
-            value = np.squeeze(self.traj.atom_slice(self._CTProtein__residue_atom_lookup(i,atom1)).xyz) - np.squeeze(self.traj.atom_slice(self._CTProtein__residue_atom_lookup(i,atom2)).xyz)
+            value = np.squeeze(self.traj.atom_slice(self.__residue_atom_lookup(i, atom1)).xyz) - np.squeeze(self.traj.atom_slice(self.__residue_atom_lookup(i, atom2)).xyz)
 
             # CN_vectors becomes a list where each element is [3 x nframes] array where 3 is the x/y/z vector coordinates
             CN_vectors.append(value)
