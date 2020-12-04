@@ -1167,8 +1167,6 @@ class CTProtein:
         self.__check_stride(stride)
 
         # Only allow bins to be used if appropriate
-        print('here')
-        print(len(bins))
         if ( bins is not None) and (len(bins) < 2):
             raise CTException('Bins should be a numpy defined vector of values - arange(0,1,0.01)')
 
@@ -1843,7 +1841,6 @@ class CTProtein:
             # to think about how well an RMSD cluster represents those structures
             cluster_distance_matricies.append(cluster_distances)
             
-            print(cluster_distances)
             # we determine the frame closest to the centroid of the cluster
             cluster_centroids.append(np.exp(-1*cluster_distances / cluster_distances.std()).sum(axis=1).argmax())
         
