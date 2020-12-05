@@ -35,14 +35,36 @@ release = ''
 #
 # needs_sphinx = '1.0'
 
+# See: https://www.sphinx-doc.org/en/master/usage/extensions/autodoc.html
+autodoc_default_options = {
+    # 'members': True,
+    #'undoc-members': True,
+    'private-members': True,
+    #'special-members': True,
+    #'inherited-members': True,
+    #'show-inheritance': True
+}
+
+autosummary_generate = True
+
 # Add any Sphinx extension module names here, as strings. They can be
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
 extensions = [
+#    'numpydoc', # automatically includes `sphinx.ext.autosummary`
     'sphinx.ext.autodoc',
     'sphinx.ext.mathjax',
+    'sphinx.ext.viewcode',
     'sphinx.ext.napoleon',    
 ]
+
+
+mathjax_config = {
+    'extensions': ['tex2jax.js'],
+    'jax': ['input/TeX', 'output/HTML-CSS'],
+}
+
+
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']
