@@ -42,18 +42,19 @@ class CTProtein:
     CTProtein objects are initialized with a trajectory subset that contains only the atoms 
     a specific, single protein. This means that a CTProtein object allows operations to 
     performed on a single protein. A single trajectory may have multiple proteins in it.
-    indexing with a protein object assumes that the protein is indexed from 0 to n,
-    n is the number of residues. This is an important idea to emphasize - it means that
-    you (the user) will need to determine the correct residue index for a region of interest
-    being examined. The region will NOT (necessarily) correspond to the residue index in
-    the PDB file used.
+    indexing with a protein object assumes that the protein is indexed from 0 to `n`,
+    `n` is the number of residues. 
+    
+    **This is an important idea to emphasize - it means that you (the user) will need to determine 
+    the correct residue index for a region of interest being examined. The region will NOT 
+    (necessarily) correspond to the residue index in the PDB file used.**
 
-    To make this easier the function .print_residues() will print the mapping of residue 
+    To make this easier the function `CTProtein.print_residues()` will print the mapping of residue 
     index to residue name and residue number. 
 
     To re-iterate:
 
-    Residue number is the number of the residue in the PDB file.
+    **Residue number is the number of the residue in the PDB file.**
 
     Residue index is the index value associated with a residue in a specific protein
     and will always begin from 0 - note this will include the peptide caps (ACE/NME)
@@ -78,7 +79,31 @@ class CTProtein:
     # ........................................................................
     #
     def __init__(self, traj, atom_offset, residue_offset):
+        """
+        Initialize a CTProtein object instance using trajectory information, and information
+        about offsets.
 
+        Parameters
+        ----------
+        traj: `cttrajectory.CTTrajectory`
+            An instance of a system's trajectory populated via `cttrajectory.CTTrajectory`.
+
+        atom_offset: int
+            The index at which the first atom (index 0) in the `CTProtein` object is defined.
+
+        residue_offset: int
+            Similar to `atom_offset`, this is the residue index which will serve as the marker
+            for residue index 0.
+
+            The residue offset operation is performed by the `__get_offset_residue` fuction.
+            For ANY function where a specific residue is supplied there must also be the
+            option to perform this offset or not (i.e. each public facing function
+            should be able to stand alone and not rely on an offset being performed
+            by another function) BUT the option to perform the offseting provided so it
+            in functions that call other functions which can perform the offset it will
+            only need to be performed once.
+
+        """
         
         # set the trajectory object for easy access
         self.traj     = traj
@@ -139,9 +164,21 @@ class CTProtein:
         Function that checks a passed weights-array is usable and matches the number of frames
         (avoids a lot of heartache when something breaks deep inside the code).
 
-        NOTE this also typecasts weights to a np.array which allows them to be indexed directly
-        using a list of values
+        NOTE: This also typecasts weights to a `numpy.array` which allows them to be indexed directly
+        using a list of values.
 
+        Parameters
+        ----------
+        weights : array_like
+            An `numpy.array` object that corresponds to the number of frames within an input trajectory.
+        stride : {None}, optional
+            The stepsize used when iterating across the frames. A value of `None` will set the step
+            size to 0.
+
+        Returns
+        -------
+        numpy.array
+            An `np.array` object containing trajectory frames selected per `stride` number of frames.
         """
 
         if weights is not False:
@@ -171,29 +208,27 @@ class CTProtein:
         offset problem. The returned tup
 
         Parameters
-        --------------
-        R1 : int or False
+        ----------
+        R1 : int or False {False}
             First residue in range - can be an integer (assumes first residue in chain indexed at 0). 
-            If False assume we start at 0.
-            
-
-        R2 : int or False
+            If `False` assume we start at 0.
+        
+        R2 : int or False {False}
             Last residue in range - can be an integer (assumes first residue in chain indexed at 0).
-            If False assumes we're using the whole chain.
+            If `False` assumes we're using the whole chain.
 
-        withCA : Bool
-            Flag which, if true, and R1 or R2 are false selects R1/R2 values that contain a CA, which basically
-            means caps are dealt with here if present
+        withCA : bool {False}
+            Flag which, if `True` and R1 or R2 are `False`, selects R1/R2 values that contain a CA, which basically
+            means caps are dealt with here if present.
 
         Returns
-        -------------
+        -------
         tuple:
-
             Returns a tuple with three positions:
-            [0] = R1 with relevant offsets applid (int)
-            [1] = R2 with relevant offsets applid (int)
-            [2] = String that can be passed directly to topology select to extract the atoms associated 
-                  with these positions
+        
+            - [0] = R1 with relevant offsets applid (`int`).
+            - [1] = R2 with relevant offsets applid (`int`).
+            - [2] = String that can be passed directly to topology select to extract the atoms associated with these positions.
 
         """
 
@@ -239,13 +274,19 @@ class CTProtein:
 
         Parameters
         -----------
-
-        TO DO
+        R1: int
+            The zero-indexed input residue offset (`int`). This value is
+            examined by `__check_single_residue()`.
 
         Returns
         --------
+        TRI: int
+            The updated index which reflects the input offset to determine 
+            the **true** starting residue index.
 
-        TO DO
+        See Also
+        --------
+        __check_single_residue
 
         """
         self.__check_single_residue(R1)
@@ -256,17 +297,21 @@ class CTProtein:
     #
     def __check_stride(self, stride):
         """
-        Checks that a passed stride value doesn't break everything. 
+        Checks that a passed stride value doesn't break everything. Returns `None`
+        or raises a `CTException`.
 
         Parameters
         ----------
 
-        TO DO
+        stride: int
+            The non-zero number of steps to perform while iterating across a
+            trajectory.
 
-        Returns
-        -----------
-
-        TO DO
+        Raises
+        ------
+        CTException
+            When the stride is larger than the number of available frames in the
+            trajectory.
 
         """
         if stride > self.get_numberOfFrames():
@@ -281,16 +326,18 @@ class CTProtein:
         this protein. NOTE this checks BEFORE an offset is applied (i.e. we assume once a residue
         offset has been made that the resid's validity has been established).
 
+        Returns `None` or raises a `CTException`.
+
         Parameters
         ----------
+        R1: int
+            The zero-indexed residue index (`int`) whose index is checked and validated.
 
-        TO DO
-
-        Returns
-        -----------
-
-        TO DO
-
+        Raises
+        ------
+        CTException
+            When the residue ID is greater than the chain length, or when the distances explored
+            are greater than the chain size.
 
         """
 
@@ -311,16 +358,22 @@ class CTProtein:
         Function which checks if residue R1 (which is the residue AFTER an offset correction has 
         been applied) contains a C-alpha atom.
 
+        Returns `None` or raises a `CTException`.
+
         Parameters
         ----------
+        R1: int
+            The zero-indexed residue index (`int`) whose index is checked and validated.
 
-        TO DO
+        R1_org: int or None {None}
 
-        Returns
-        -----------
 
-        TO DO
-
+        Raises
+        ------
+        CTException
+            When the `CTProtein` has an uncorrected offset and residue `R1` lacks a C-alpha atom. Or, when
+            the offset residue `R1_org` which maps to `R1` lacks a C-alpha. And, when the offset converted
+            residue lacks a C-alpha atom.
 
         """
         exception_message  = ''
@@ -346,18 +399,23 @@ class CTProtein:
     def __get_subtrajectory(self, traj, stride):
         """
         Internal function which returns a subtrajectory. Expects
-        traj to be an mdtraj trajectory object and stride to be a value
+        `traj` to be an `mdtraj` trajectory object and `stride` to be an `int`.
 
         Parameters
         ----------
+        traj: mdtraj.Trajectory
+            An instance of an `mdtraj.Trajectory` which is non-empty - i.e. contains
+            at least 1 frame.
 
-        TO DO
+        stride: int
+            The non-zero number of steps to perform while iterating across the input
+            trajectory, `traj`.
 
         Returns
         -----------
-
-        TO DO
-
+        mdtraj.Trajectory
+            A sliced trajectory which contains the frames selected every `stride` step
+            from the input trajectory, `traj`.
               
         """
 
@@ -376,18 +434,15 @@ class CTProtein:
         """
         Internal function which should only be needed during initialization. Defines the 
         list of residues where CA atoms are present. This list is then assigned to the
-        object variable self.__residues_with_CA
-
-        Parameters
-        ----------
-
-        TO DO
+        object variable `self.__residues_with_CA`
 
         Returns
         -----------
+        tuple
+            A 2-tuple that is comprised of lists:
 
-        TO DO
-
+            - [0] := The list of residue indices which contain C-alpha atoms selected from the topology.
+            - [1] := The list of zero-indexed residue indices which contain C-alpha atoms.
               
         """
         
@@ -415,11 +470,26 @@ class CTProtein:
     def __residue_atom_lookup(self, resid, atomname=None):
         """
         Memoisation function to lookup the atomic index of a specific residues atom. Originally I'd assumed
-        the underlying MDTraj topology.select() operation was basically a lookup, BUT it turns out it's 
-        actually _really_ expensive, so this method converts atom/residue lookup information into a 
+        the underlying MDTraj `topology.select()` operation was basically a lookup, BUT it turns out it's 
+        actually *really* expensive, so this method converts atom/residue lookup information into a 
         dynamic O(1) operation, greatly improving the performance of a number of different methods
-        in the processes 
+        in the processes.
 
+        Parameters
+        ----------
+        resid: int
+            The residue index to lookup. This index must correspond to the range derived from the corrected offset.
+            If the residue has not been cached, it will be added to the lookup table for later reuse.
+
+        atomname: str or None {None}
+            The name of the atom to lookup which will return the corresponding residue ID. Like the previous parameter, 
+            if that residue does not exist in the lookup table it will be added for later reuse. 
+
+        Returns
+        -------
+        dict
+            A list containing all the atoms corresponding to a given residue id that match the input residue id (`resid`)
+            or, the residue corresponding to the atom name (`atomname`).
         """
 
         # if resid is not yet in table create an empty dicitionary
@@ -453,25 +523,33 @@ class CTProtein:
         region keyword. If no region is supplied this returns the entire region (NME/ACE caps
         included).
 
-        ........................................
-        OPTIONS 
-        ........................................
         
-        region [list/tuple of length 2] 
-        Defines the first and last residue (INCLUSIVE) for a region to be examined
+        Parameters
+        ----------
+        
+        region : `np.array`, `list`, or `tuple` {None}
+            An array_like object of size 2 which defines the first and last residue (INCLUSIVE) for a region to be examined.
 
-        backbone [bool] 
-        Boolean flag to determine if only the backbone atoms should be returned, or if all the full
-        chain's atoms should be included (i.e. including sidechain)
+        backbone: bool {True}
+            Boolean flag to determine if only the backbone atoms should be returned, or if all the full
+            chain's atoms should be included (i.e. including sidechain).
 
-        heavy [bool] {False}
-        Boolean flag to determine if we should only select heavy atoms or not (i.e. not H)
+        heavy: bool {False}
+            Boolean flag to determine if we should only select heavy atoms or not (i.e. not H).
 
-        correctOffset [Bool] {True}
-        Defines if we perform local protein offset correction
-        or not. By default we do, but some internal functions
-        may have already performed the correction and so don't
-        need to perform it again
+        correctOffset: bool {True}
+            Defines if we perform local protein offset correction or not. By default we do, but some internal functions
+            may have already performed the correction and so don't need to perform it again
+
+        Returns
+        -------
+        selectionatoms
+            A `numpy.array` comprised of atom indices corresponding to the residues in a given region.
+
+        Raises
+        ------
+        CTException
+            When the input region is larger than 2.
 
         """
 
@@ -525,16 +603,19 @@ class CTProtein:
         in a list.
         
         Returns a list of lists, where each list element is itself a list of two elements,
-        index position and the resname-resid from the PDB file
+        index position and the resname-resid from the PDB file.
         
 
         Parameters
         ----------
-        silent : Bool
-            If set to true, print_residues does not print out to screen but still
-            returns the list of lists
+        silent : bool {False}
+            If set to `True`, `print_residues()` does not print out to screen but still
+            returns the list of lists.
 
-
+        Returns
+        -------
+        return_list
+            List containing a mapping of the zero-indexed residues and their names.
         """
 
         AA = self.get_aminoAcidSequence()
@@ -570,8 +651,7 @@ class CTProtein:
     #
     def get_numberOfResidues(self):
         """
-        Returns the number of residues in this protein object
-
+        Returns the number of residues (`int`) in this protein object.
         """
         return self.__num_residues
 
@@ -580,7 +660,7 @@ class CTProtein:
     #
     def get_numberOfFrames(self):
         """
-        Returns the number of frames associated with a trajectory
+        Returns the number of frames (`int`) associated with a trajectory.
         """
         return self.traj.n_frames
      
@@ -589,24 +669,24 @@ class CTProtein:
     #        
     def get_aminoAcidSequence(self, oneletter=False, numbered=True):
         """
-        Returns the protein's amino acid sequence
+        Returns the protein's amino acid sequence.
 
-        ........................................
-        OPTIONS 
-        ........................................
-        keyword [type] {default} 
-        Description
-        ........................................
-        
-        oneletter [bool] {False} 
-        If true returns a single sequence of one letter amino
-        acid codes. If false get a list of 3 letter codes with residue 
-        number separated by a '-' character
+        Parameters
+        ----------
+        oneletter : bool {False}
+            If `True` returns a single sequence of one letter amino
+            acid codes. If `False` get a list of 3 letter codes with residue 
+            number separated by a '-' character.
 
-        numbered [bool] {True}
-        If true the return value is a list of RESNAME-RESID strings, 
-        if false return value is a list of RESNAME in the correct order
+        numbered : bool {True}
+            If `True` the return value is a list of RESNAME-RESID strings, 
+            if `False` return value is a list of RESNAME in the correct order.
 
+        Returns
+        -------
+        list
+            A list comprised of the 1-letter or 3-letter names of the amino acid
+            sequence.
         """
         
         if oneletter:
@@ -646,22 +726,31 @@ class CTProtein:
     #
     def get_CAindex(self, residueIndex, correctOffset=True):
         """ 
-        Get the CA atom index for the residue defined by residueIndex
+        Get the CA atom index for the residue defined by residueIndex.
 
         Defensivly checks for errors.
 
-        ........................................
-        OPTIONS 
-        ........................................
+        Parameters
+        ----------
         
-        residueIndex [int] 
-        Defines the residue index to select the CA from
+        residueIndex: int
+            Defines the residue index to select the CA from.
 
-        correctOffset [Bool] {True}
-        Defines if we perform local protein offset correction
-        or not. By default we do, but some internal functions
-        may have already performed the correction and so don't
-        need to perform it again
+        correctOffset: bool {True}
+            Defines if we perform local protein offset correction
+            or not. By default we do, but some internal functions
+            may have already performed the correction and so don't
+            need to perform it again.
+
+        Returns
+        -------
+        list
+            A list of size 1 containing the CA atom index for the residue index, `residueIndex`.
+
+        Raises
+        ------
+        CTException
+            When the number of CA atoms do not equal 1.
 
         """
                 
@@ -688,20 +777,24 @@ class CTProtein:
         residues defined in the resID_list OR for all residues if no list 
         is provided.
 
-        ........................................
-        OPTIONS 
-        ........................................
+        Parameters
+        ----------
         
-        resID_list [list of int]  {None}
-        Defines a list of residues for which the C-alpha atom index will 
-        be retrieved. If no list is provided we simply  
+        resID_list: list of int  {None}
+            Defines a list of residues for which the C-alpha atom index will 
+            be retrieved. If no list is provided we simply select the list
+            of residues with C-alphas, whose indices have been corrected.
 
-        correctOffset [Bool] {True}
-        Defines if we perform local protein offset correction
-        or not. By default we do, but some internal functions
-        may have already performed the correction and so don't
-        need to perform it again
+        correctOffset: bool {True}
+            Defines if we perform local protein offset correction
+            or not. By default we do, but some internal functions
+            may have already performed the correction and so don't
+            need to perform it again.
         
+        Returns
+        -------
+        CAlist: list
+            The list (`int`) of C-Alpha indices of the input list of residue IDs.
         """
 
         # if we've just passed a single unlisted integer
@@ -743,40 +836,49 @@ class CTProtein:
         """
         Calculate the full set of distances between C-alpha atoms. Note that by default 
         this explicitly works in a way to avoid computing redundancy where we ONLY
-        compute distances between residue i and residues greater than i up
-        to the final residue. This behaviour is defined by the 'onlyCterminalResidues' flag.
+        compute distances between residue `i` and residues greater than `i` up
+        to the final residue. This behaviour is defined by the `onlyCterminalResidues` flag.
 
         Distance is returned in Angstroms.
 
         Can be fed a mode 'COM' keyword to calcule center of mass distances instead of CA distances.
 
-        ........................................
-        OPTIONS 
-        ........................................
+        Parameters
+        ----------
         
-        residueIndex [int] 
-        Defines the residue index to select the CA from
+        residueIndex: int
+            Defines the residue index to select the CA from.
 
-        stride [int] {1}
-        Defines the spacing between frames to compare - i.e. if comparing frame1 to a trajectory we'd compare
-        frame 1 and every stride-th frame
+        stride: int {1}
+            Defines the spacing between frames to compare - i.e. if comparing frame1 to a trajectory we'd compare
+            frame 1 and every stride-th frame.
 
-        mode [string] {'CA'}
-        String, must be one of either 'CA' or 'COM'.
-        'CA' = alpha carbon
-        'COM' = center of mass (associated withe the residue) 
+        mode: str {'CA'}
+            String, must be one of either 'CA' or 'COM'.
+            - 'CA' = alpha carbon.
+            - 'COM' = center of mass (associated withe the residue).
 
-        onlyCterminalResidues [Bool] (True)
-        This variable means that only residues C-terminal of the residueIndex 
-        value will be considered. This is useful when performing an ALL vs. ALL
-        matrix as it ensures that only the upper triangle is calculated if we
-        iterate over all residues, but may not be deseriable in other contexts.
+        onlyCterminalResidues: bool {True}
+            This variable means that only residues C-terminal of the residueIndex 
+            value will be considered. This is useful when performing an ALL vs. ALL
+            matrix as it ensures that only the upper triangle is calculated if we
+            iterate over all residues, but may not be deseriable in other contexts.
 
-        correctOffset [Bool] {True}
-        Defines if we perform local protein offset correction
-        or not. By default we do, but some internal functions
-        may have already performed the correction and so don't
-        need to perform it again
+        correctOffset: bool {True}
+            Defines if we perform local protein offset correction
+            or not. By default we do, but some internal functions
+            may have already performed the correction and so don't
+            need to perform it again.
+
+        Returns
+        -------
+        numpy.array
+            Array containing the end-to-end distance measures based on the input mode.
+
+        Raises
+        ------
+        CTException
+            If the input mode is nether 'CA' or 'COM'.
 
         """
 
@@ -869,32 +971,38 @@ class CTProtein:
 
         Distance is described in Angstroms.
 
-        ........................................
-        OPTIONS 
-        ........................................
+        Parameters
+        ----------
         stride [int] {1}
-        Defines the spacing between frames to compare - i.e. if comparing frame1 to a trajectory we'd compare
-        frame 1 and every stride-th frame
+            Defines the spacing between frames to compare - i.e. if comparing frame1 to a trajectory we'd compare
+            frame 1 and every stride-th frame.
         
-        weights [list or array of floats]
-        Defines the frame-specific weights if re-weighted analysis is required. This can be 
-        useful if an ensemble has been re-weighted to better match experimental data, or in
-        the case of analysing replica exchange data that is re-combined using T-WHAM.
+        weights : list or array of floats
+            Defines the frame-specific weights if re-weighted analysis is required. This can be 
+            useful if an ensemble has been re-weighted to better match experimental data, or in
+            the case of analysing replica exchange data that is re-combined using T-WHAM.
 
-        verbose [bool] {True}
-        Print messages (or not)
+        verbose : bool {True}
+            Print messages (or not).
         
-        mode [string] {'CA'}
-        String, must be one of either 'CA' or 'COM'.
-        'CA' = alpha carbon
-        'COM' = center of mass (associated withe the residue) 
+        mode : str {'CA'}
+            String, must be one of either 'CA' or 'COM'.
+            - 'CA' = alpha carbon.
+            - 'COM' = center of mass (associated withe the residue).
 
-        RMS [Bool] {False}
-        If set to False, scaling map reports ensemble average distances (this is the standard and
-        default behaviour). If True, then  the distance reported is the root mean squared (RMS)
-        = i.e. SQRT(<r_ij^2>), which is the formal order parameter that should be used for polymeric 
-        distance properties.
+        RMS : bool {False}
+            If set to False, scaling map reports ensemble average distances (this is the standard and
+            default behaviour). If True, then  the distance reported is the root mean squared (RMS)
+            = i.e. SQRT(<r_ij^2>), which is the formal order parameter that should be used for polymeric 
+            distance properties.
                         
+
+        Returns
+        -------
+        tuple
+            A 2-tuple containing:
+            - [0] := The distance map derived from the measurements between CA atoms.
+            - [1] := The standard deviation corresponding to the distance map.
         """
         
         weights = self.__check_weights(weights, stride)
@@ -953,19 +1061,19 @@ class CTProtein:
     #
     def get_polymer_scaled_distance_map(self, nu=None, A0=None, min_separation=10, mode='fractional-change', weights=False, stride=1):
         """
-        Function that allows for a global assesment of how well all i-j distances conform to standard
-        polymer scaling behaviour (i.e. r_ij = A0*|i-j|^{nu}).
+        Function that allows for a global assesment of how well all `i-j` distances conform to standard
+        polymer scaling behaviour (i.e. $r_ij = A0*|i-j|^{nu}$).
 
         Essentially, this generates a distance map (2D matrix of i vs. j distances) where that distance is either 
         normalized by the expected distance for a provided homopolymer model, or quantifies the fractional deviation
         from that homopolymer mode. These two modes are explained in more detail below.
 
         In this standard scaling relationship:
-        r_ij  : Average inter-residue distance of residue i and j
-        A0    : Scaling prefactor. Note this is NOT the same *numerical* value as the R0 prefactor that
+        `r_ij`  : Average inter-residue distance of residue i and j
+        `A0`    : Scaling prefactor. Note this is NOT the same *numerical* value as the R0 prefactor that
                 defines the relationship Rg = R0*N^{nu}.
-        |i-j| : Sequence separation between residues i and j
-        nu    : The intrinsic polymer scaling exponent
+        `|i-j|` : Sequence separation between residues i and j
+        `nu`    : The intrinsic polymer scaling exponent
 
         This is the scaling behaviour expected for a standard homopolymer. This fucnction then assess how well
         this relationship holds for ALL inter-residue distances.
@@ -974,71 +1082,71 @@ class CTProtein:
         where the element is either the default value OR quantifes the deviation from a polymer model in one of two ways.
         Positions two, three  are the nu and A0 values used, respectively. Finally, position 4 will be the reduced chi-square
         fitting to the polymer model for the internal scaling profile (i.e. how A0 and nu are originally calculated).
-        
-        ........................................
-        OPTIONS 
-        ........................................
 
         If no options are provided, the function calculates the best fit to a homopolymer mode using the 
         default parameters associated with the get_scaling_exponent_v2() function, and then uses this
         model to determine pairwise deviations.
         
+        Parameters
+        ----------
 
-        nu [float] {None}
-        Scaling exponent used (if provided). Note for a provided nu to be used, both nu and A0 must be
-        provided.
+        nu : float {None}
+            Scaling exponent used (if provided). Note for a provided nu to be used, both nu and A0 must be
+            provided.
 
-        A0 [float] {None}
-        Scaling prefactor used (if provided). Note for a provided A0 to be used, both A0 and nu must be
-        provided.
+        A0 : float {None}
+            Scaling prefactor used (if provided). Note for a provided A0 to be used, both A0 and nu must be
+            provided.
 
-        min_separation [int] {10}
-        Minimum distance for which deviations are calculated. At close distances, we expect local steric
-        effects to cause deviations from a polymer model, so this value defines the threshold minimum
-        distance to be used.
+        min_separation : int {10}
+            Minimum distance for which deviations are calculated. At close distances, we expect local steric
+            effects to cause deviations from a polymer model, so this value defines the threshold minimum
+            distance to be used.
 
-        mode ['fractional-change', 'signed-fractional-change', 'signed-absolute-change', or 'scaled'] {'fractional-change'}
-        Defines the mode in which deviation from a homopolymer model is calculated. 
+        mode : str {'fractional-change'}
+            Defines the mode in which deviation from a homopolymer model is calculated. Options are: 
+            `'fractional-change', 'signed-fractional-change', 'signed-absolute-change', 'scaled'`.
+            
+            *fractional-change:*
+            Each inter-residue deviation is calculated as
+                `d_ij = abs(r_ij - polymer_ij)/polymer_ij`
+            Where r_ij is the mean distance from the simulation for residues i and j, and 
+            polymer_ij is the expected distance for any pair of residues that are separated
+            by `|i-j|` distance in the polymer model.
+
+            *signed-fractional-change:* 
+            Each inter-residue deviation is calculated as:       
+                `d_ij = (r_ij - polymer_ij)/polymer_ij`
+            i.e. the same as the fractional-change, except a sign is now also included. Positive
+            values mean there is expansion with respect to the homopolymer behaviour, while
+            negative values mean there is contraction with respect to the homopolymer model.
+
+            *signed-absolute-change:* 
+            Each inter-residue deviation is calculated as:       
+                `d_ij = (r_ij - polymer_ij)`
+            i.e. the same as the signed-fractional-change, except now it is no longer 
+            fraction but in absolute distance units. This can be useful for getting a 
+            sense of by how-much the real behaviour deviates from the model in terms
+            of Angstroms.
+
+            *scaled:* 
+            Each inter-residue deviation is calculated as:       
+                `d_ij = r_ij/polymer_ij`
+            Where `r_ij` is and `polymer_ij` are defined as above.
         
-        **fractional-change**: each inter-residue deviation is calculated as:       
+        weights : list or array of floats {None}
+            Defines the frame-specific weights if re-weighted analysis is required. This can be 
+            useful if an ensemble has been re-weighted to better match experimental data, or in
+            the case of analysing replica exchange data that is re-combined using T-WHAM.
 
-        d_ij = abs(r_ij - polymer_ij)/polymer_ij
-
-        Where r_ij is the mean distance from the simulation for residues i and j, and 
-        polymer_ij is the expected distance for any pair of residues that are separated
-        by |i-j| distance in the polymer model
-
-
-        **signed-fractional-change**: each inter-residue deviation is calculated as:       
-
-        d_ij = (r_ij - polymer_ij)/polymer_ij
-
-        i.e. the same as the fractional-change, except a sign is now also included. Positive
-        values mean there is expansion with respect to the homopolymer behaviour, while
-        negative values mean there is contraction with respect to the homopolymer model.
+        Raises
+        ------
+        CTException
 
 
-        **signed-absolute-change**: each inter-residue deviation is calculated as:       
+        Returns
+        -------
 
-        d_ij = (r_ij - polymer_ij)
-
-        i.e. the same as the signed-fractional-change, except now it is no longer 
-        fraction but in absolute distance units. This can be useful for getting a 
-        sense of by how-much the real behaviour deviates from the model in terms
-        of Angstroms
-
-
-        **scaled**: each inter-residue deviation is calculated as:       
-
-        d_ij = r_ij/polymer_ij
-
-        Where r_ij is and polymer_ij are defined as above.
-        
-        weights [list or array of floats] {None}
-        Defines the frame-specific weights if re-weighted analysis is required. This can be 
-        useful if an ensemble has been re-weighted to better match experimental data, or in
-        the case of analysing replica exchange data that is re-combined using T-WHAM.
-                
         """
 
         # first sanity check mode input
@@ -2593,7 +2701,7 @@ class CTProtein:
 
 
         Calculates the averaged internal scaling info for the protein in the simulation in terms of
-        root mean square (i.e. sqrt(<Rij^2>) vs | i - j |.
+        root mean square (i.e. `sqrt(<Rij^2>`) vs `| i - j |`.
 
         R1 and R2 define a sub-region to operate over if sub-regional analysis is
         required. When residues are not provided the full protein's internal scaling 
@@ -2603,9 +2711,9 @@ class CTProtein:
 
         Returns two lists of the same length:
 
-        1) sequence separation (|i - j|)
+        1) sequence separation (`|i - j|`)
 
-        2) mean sqrt(<Rij^2>) 
+        2) mean sqrt(`<Rij^2>`) 
         
         The internal scaling profile is a plot of sequence separation vs. mean through-space distance for 
         all pairs of residues at a given sequence separation. What this means is that if we had a 6 residue
@@ -2748,7 +2856,7 @@ class CTProtein:
         useful if an ensemble has been re-weighted to better match experimental data, or in
         the case of analysing replica exchange data that is re-combined using T-WHAM.
      
-        
+
         """
         
         if weights is not False:
@@ -3630,58 +3738,65 @@ class CTProtein:
         distances correlate with global dimensions as measured by the radius of gyration. This is a new
         analysis, that is best explained through a formal write up.
 
-        Return:
-        Returns a four-place tuple. 
-        [0] - This is an 2 by (n_cycles*max_num_pairs) array, where the first column is the number of pairs
-              and the second column is the Rg-lambda correlation for a specific set of pairs (the pairs in
-              question are not included). This can be thought of as the 'raw' data, and may only be useful
-              if distributions of the correlation are of interest (e.g. for generating 2D histograms).
-
-        [1] - Array with the number of pairs used (e.g. if max_num_pairs = 10 then this would be
-              [1,2,3,4,5,6,7,8,9]
-
-        [2] - Array with the mean correlation associated with the numbers of pairs in position 2
-              and the radius of gyration
-        
-        [3] - Array with the standard deviation of the correlation associated with the number of 
-              pairs in position 2 and the radius of gyration. Note the inclusion of the standard 
-              deviation makes the assumption that the distribution is Gaussian which may or may
-              not be true.
-
         Parameters
-        ---------------
-        mode : str
-            String, must be one of either 'CA' or 'COM'.
-            'CA' = alpha carbon
-            'COM' = center of mass (associated withe the residue) 
-            Default = 'COM'
+        ----------
+        mode : str {'COM'}
+            Must be one of either 'CA' or 'COM'.
+
+            - 'CA' = alpha carbon.
+            - 'COM' = center of mass (associated withe the residue).
         
-        stride : int
+        stride : int {20}
             Defines the spacing between frames for calculating the ensemble
             average. As stride gets larger this analysis gets slower.
             It is worth experimenting with to see how the results change
             as a function of stride, but in theory the accuracy should
             remain fixed but precision improved as stride is reduced.
-            Default = 20
 
-        n_cycles : int
+        n_cycles : int {100}
             Number of times, for each number of pairs, we re-select a different
             set of paris to use. This depends (weakly) on the number of residues,
             but we do not recommend a value < 50. For larger proteins this number
             should be increased. Again, it's worth examining how your results
             chain as a function of n_cycles to determine the optimal tradeoff
-            between speed and precision. Default = 100
+            between speed and precision.
 
-        max_num_pairs : int
+        max_num_pairs : int {10}
             The maximum number of pairs to be consider for correlation analysis.
             In general we've found above 10-20 the average correlation tends to 
             plateau towards 1 (note it will NEVER be 1) so 1-20 is a reasonable
-            set to use. Default  = 10
+            set to use.
 
-        weights : Bool
-            Flag that indicates if frame weights should be used or not. Default
-            = False.
+        weights : bool {False}
+            Flag that indicates if frame weights should be used or not.
 
+        Returns
+        -------
+        tuple
+            Returns a four-place tuple. 
+        
+            - [0] = This is an 2 by (n_cycles*max_num_pairs) array, where the first column is the number 
+              of pairs and the second column is the Rg-lambda correlation for a specific set of pairs (the 
+              pairs in question are not included). This can be thought of as the 'raw' data, and may only 
+              be useful if distributions of the correlation are of interest (e.g. for generating 2D histograms).
+
+            - [1] = Array with the number of pairs used (e.g. if max_num_pairs = 10 then this would be
+              [1,2,3,4,5,6,7,8,9]).
+
+            - [2] = Array with the mean correlation associated with the numbers of pairs in position 2
+              and the radius of gyration.
+            
+            - [3] = Array with the standard deviation of the correlation associated with the number of 
+              pairs in position 2 and the radius of gyration. Note the inclusion of the standard 
+              deviation makes the assumption that the distribution is Gaussian which may or may
+              not be true.
+
+        Raises
+        ------
+        CTException
+            Raised when the mode is not 'CA' or 'COM'; or, when the lengths of the Rg-stride derived 
+            calculations did not match the lengths of the internal distances; or, when the installed 
+            numpy version doesn't support the `aweights` keyword for the `numpy.cov` function.
         """
         
         weights = self.__check_weights(weights, stride)
@@ -3725,7 +3840,7 @@ class CTProtein:
         stride_rg = full_rg[0::stride]
 
         if len(stride_rg) != len(all_distances[0]):
-            raise CTException('Somethinge when wrong when comparing stride-derived Rg and internal distances, this is a bug in the code...)') 
+            raise CTException('Something when wrong when comparing stride-derived Rg and internal distances, this is a bug in the code...)') 
 
         # total number of distance pairs
         n_pairs = len(all_distances)
@@ -3794,17 +3909,18 @@ class CTProtein:
         """
         Computes the correlation between Rg^2 and end-to-end^2. 
 
-        Return:
-        A single float describing the correlation (as calculated by np.corrcoef)
+        Parameters
+        ---------
 
-        ........................................
-        OPTIONS 
-        ........................................
+        mode: str {'CA'}
+            String, must be one of either 'CA' or 'COM'.
+            - 'CA' = alpha carbon.
+            - 'COM' = center of mass (associated withe the residue).
 
-        mode [string] {'CA'}
-        String, must be one of either 'CA' or 'COM'.
-        'CA' = alpha carbon
-        'COM' = center of mass (associated withe the residue) 
+        Returns
+        -------
+        float
+            A single float describing the correlation (as calculated by np.corrcoef).
 
         """
 
@@ -3838,7 +3954,7 @@ class CTProtein:
         the fraction of the simulation each residue is in that particular secondary structure type.
 
         Parameters
-        .......... 
+        ----------
 
         R1 : int 
              Default value is False. Defines the value for first residue in the region of 
@@ -3857,7 +3973,7 @@ class CTProtein:
 
 
         Returns
-        .......
+        -------
         
         ddsp_vector : np.array
              A 4xn numpy array (where n is the number of residues) in which column 1 defines the
@@ -3923,7 +4039,7 @@ class CTProtein:
 
         
         Parameters
-        .......... 
+        ----------
 
         R1 : int 
              Default value is False. Defines the value for first residue in the region of 
@@ -3942,7 +4058,7 @@ class CTProtein:
              this variable.
 
         Returns
-        .......
+        -------
         
         return_bbseg : dict
              Dictionary of 9 key-value pairs where keys are integers 0-8 and values are 
@@ -3999,7 +4115,7 @@ class CTProtein:
         if this function is being called make sure this is true!
 
         Parameters
-        ...........
+        ----------
         phi_vector :   iterable (list or numpy vector)
              ordered list of phi angles for a specific residue
 
@@ -4007,12 +4123,12 @@ class CTProtein:
             ordered list of psu angles for a specific residue
          
         Returns
-        .......
+        -------
 
         classes : list
              A list of length equal to phi_vector and psi_vector that 
              classifies each pair of phi/psi angles using the BBSEG2
-             definition 
+             definition.
         """
 
         classes = []
@@ -4051,7 +4167,7 @@ class CTProtein:
         Returns
         -------
         float 
-            Molar concentration for the overlap concentration
+            Molar concentration for the overlap concentration.
         """
 
         return ctpolymer.get_overlap_concentration(np.mean(self.get_radius_of_gyration()))
@@ -4067,6 +4183,24 @@ class CTProtein:
         Returns the a 4 by n numpy array in which column 1 gives residue number, column 2 is local helicity,  
 
         No checking of atom1 and atom2...
+
+        Parameters
+        ----------
+
+        atom1: str {C}
+            The first atom to use when calculating the angle decay.
+
+        atom2: str {N}
+            The second atom to use when calculating the angle decay.
+
+        return_full_matrix: bool {False}
+            Whether or not to return the full matrix along with the angle decay calculation.
+
+        Returns
+        -------
+        array_like, or 2-tuple
+            If `array_like`, the matrix returned is comprised of only the angle decay.
+            If a 2-tuple, both the angle decay matrix (index 0) and the full matrix is returned (index 1). 
         """
 
         # first compute all the C-N vector for each residue
