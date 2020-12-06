@@ -14,7 +14,7 @@ This is the docstring at the top of ctprotein
 ##
 ## Alex Holehouse (Pappu Lab and Holehouse Lab)
 ## Simulation analysis package
-## Copyright 2014 - 2019
+## Copyright 2014 - 2021
 ##
 
 import mdtraj as md
@@ -35,6 +35,8 @@ from . import ctpolymer
 from . _internal_data import BBSEG2
 
 import scipy.cluster.hierarchy
+
+
 
 class CTProtein:
     """
