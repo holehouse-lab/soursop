@@ -14,6 +14,7 @@
 import numpy as np
 import mdtraj as md
 from . import configs
+from camparitraj._internal_data import MAX_SASA_DATA
 from .analyzer_exception import AnalyzerException
 import afrc
 AALIST = ['A','C','D','E','F','G','H','I','K','L','M','N','P','Q','R','S','T','V','W','Y']
@@ -54,7 +55,7 @@ def run_asphericity(CP, outdir):
 
 def run_distanceMap(CP, outdir):
     status_message('Distance map', outdir)        
-    [a,b] = CP.get_distanceMap()
+    [a,b] = CP.get_distance_map()
     np.savetxt('%s/distance_map.csv'%(outdir), a, delimiter=',')
     np.savetxt('%s/distance_map_std.csv'%(outdir), b, delimiter=', ')
 
@@ -71,7 +72,7 @@ def run_polymer_scaling_map(CP, outdir):
     np.savetxt('%s/polymer_deviation_map_params.csv'%(outdir), np.transpose([nu,A0,redchi]), delimiter=', ')
 
 def run_analytical_frc(CP, outdir,count=False):
-    AAS = CP.get_aminoAcidSequence(oneletter=True)
+    AAS = CP.get_amino_acid_sequence(oneletter=True)
     AAS_final = AAS.translate(str.maketrans('','','<>'))
     AFRC = afrc.AnalyticalFRC(AAS_final)
 
@@ -219,14 +220,15 @@ def run_SASA(CP, outdir, stride2use, probe_radius=0.14):
 
     # read in max values for sidechains and backbone, and construct a dictionary that allows
     # easy lookup for each residue type
-    max_sasa_vals=np.loadtxt('/work/alex/tools/ANALYZER/data/SASA_SUMMARY.csv',delimiter=',')
+    #max_sasa_vals = np.loadtxt('/work/alex/tools/ANALYZER/data/SASA_SUMMARY.csv',delimiter=',')
+    max_sasa_vals = MAX_SASA_DATA
     AA_max={}
     for idx in range(0,20):
         AA = AALIST[idx]
         AA_max[AA] = list(max_sasa_vals[idx])
         
     # get AA sequence (note this includes caps as  '<' and '>' but SASA also gives you 
-    AA_seq = CP.get_aminoAcidSequence(oneletter=True)
+    AA_seq = CP.get_amino_acid_sequence(oneletter=True)
 
     NCAP=False
     CCAP=False
@@ -324,8 +326,8 @@ def run_DSSP_analysis_OLD(CP, outdir):
     E_vector = []
     H_vector = []
 
-    n_residues = CP.get_numberOfResidues()
-    n_frames   = CP.get_numberOfFrames()
+    n_residues = CP.n_residues
+    n_frames   = CP.n_frames
 
     for i in range(1,n_residues-1):
         C_vector.append(float(sum(dssp_data.transpose()[i] == 'C'))/n_frames)
@@ -399,7 +401,7 @@ def run_dihedral_extraction(CP, outdir):
     MEGA_PHI=[]
     MEGA_PSI=[]
     MEGA_OMEGA=[]
-    for residue_index in range(1,CP.get_numberOfResidues()-3):
+    for residue_index in range(1, CP.n_residues - 3):
         print(residue_index)
         PHI   = np.degrees(np.transpose(md.compute_phi(CP.traj)[1])[residue_index])
         PSI   = np.degrees(np.transpose(md.compute_psi(CP.traj)[1])[residue_index])
