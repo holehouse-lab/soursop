@@ -24,7 +24,7 @@ def test_cap_DSSP():
         CT = cttrajectory.CTTrajectory("%s/cap_tests/%s.pdb"%(test_data_dir, CN), "%s/cap_tests/%s.pdb"%(test_data_dir, CN))
         for CP in CT.proteinTrajectoryList:  
             print("")
-            print(CP.get_aminoAcidSequence())
+            print(CP.get_amino_acid_sequence())
             assert len(CP.get_secondary_structure_DSSP()[0]) == 6
             
                 

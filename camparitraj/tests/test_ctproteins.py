@@ -13,27 +13,32 @@ from camparitraj import cttrajectory
 def test_code_coverage(NTL9_CP):
 
     NTL9_CP.print_residues()
-    a = NTL9_CP.get_residue_index_list()
-    a = NTL9_CP.get_numberOfResidues()
-    a = NTL9_CP.get_numberOfFrames()
-    a = NTL9_CP.get_aminoAcidSequence()
-    a = NTL9_CP.get_CAindex(10)
-    a = NTL9_CP.get_CAindex(10, correctOffset=False)
-    a = NTL9_CP.get_multiple_CAindex()
-    a = NTL9_CP.get_multiple_CAindex([3,4,5])
-    a = NTL9_CP.get_multiple_CAindex([3,4,5], correctOffset=False)
 
-    a = NTL9_CP.calculateAllCAdistances(10)
-    a = NTL9_CP.calculateAllCAdistances(10, correctOffset=False)
-    a = NTL9_CP.calculateAllCAdistances(10,stride=2)
-    a = NTL9_CP.calculateAllCAdistances(10,stride=2)
-    a = NTL9_CP.calculateAllCAdistances(10,stride=2, mode='COM')
-    a = NTL9_CP.calculateAllCAdistances(10,stride=2, mode='COM', onlyCterminalResidues=False)
+    # property
+    a = NTL9_CP.residue_index_list
+    a = NTL9_CP.n_residues
+    a = NTL9_CP.n_frames
+    
+    
 
-    a = NTL9_CP.get_distanceMap()
-    a = NTL9_CP.get_distanceMap(verbose=True)
-    a = NTL9_CP.get_distanceMap(verbose=True,mode='COM')
-    a = NTL9_CP.get_distanceMap(verbose=True,mode='COM',RMS=True)
+    a = NTL9_CP.get_amino_acid_sequence()
+    a = NTL9_CP.get_CA_index(10)
+    a = NTL9_CP.get_CA_index(10, correctOffset=False)
+    a = NTL9_CP.get_multiple_CA_index()
+    a = NTL9_CP.get_multiple_CA_index([3,4,5])
+    a = NTL9_CP.get_multiple_CA_index([3,4,5], correctOffset=False)
+
+    a = NTL9_CP.calculate_all_CA_distances(10)
+    a = NTL9_CP.calculate_all_CA_distances(10, correctOffset=False)
+    a = NTL9_CP.calculate_all_CA_distances(10, stride=2)
+    a = NTL9_CP.calculate_all_CA_distances(10, stride=2)
+    a = NTL9_CP.calculate_all_CA_distances(10, stride=2, mode='COM')
+    a = NTL9_CP.calculate_all_CA_distances(10, stride=2, mode='COM', onlyCterminalResidues=False)
+
+    a = NTL9_CP.get_distance_map()
+    a = NTL9_CP.get_distance_map(verbose=True)
+    a = NTL9_CP.get_distance_map(verbose=True, mode='COM')
+    a = NTL9_CP.get_distance_map(verbose=True, mode='COM', RMS=True)
 
     a = NTL9_CP.get_polymer_scaled_distance_map()
     a = NTL9_CP.get_polymer_scaled_distance_map(nu=0.54,A0=6)
@@ -158,3 +163,14 @@ def test_phi_psi_bbseg(NTL9_CP):
         assert(content[idx].strip() == local.strip())
         idx=idx+1
     
+
+
+def test_get_distance_map(GS6_CO):
+    for protein_index in range(len(GS6_CO.proteinTrajectoryList)):
+        distance_map, stddev_map = GS6_CO.proteinTrajectoryList[0].get_distance_map()
+
+        # verify that the shapes match
+        assert distance_map.shape == stddev_map.shape
+
+        # verify that we obtain an upper triangular matrix
+        assert np.allclose(distance_map, np.triu(distance_map)) is True

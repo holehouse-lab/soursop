@@ -19,6 +19,7 @@ from camparitraj.configs import TMP_DIR
 
 
 from . import conftest
+#import conftest
 
 # -------------------------------------------------------------------------------------------------
 # CTTrajectory `__init__` tests.
@@ -101,33 +102,11 @@ def test_read_in_protein_grouping_multiple_mixed_order():
 # -------------------------------------------------------------------------------------------------
 
 
-def test_get_distance_map(GS6_CO):
-    for protein_index in range(len(GS6_CO.proteinTrajectoryList)):
-        distance_map, stddev_map = GS6_CO.get_distanceMap(protein_index)
-
-        # verify that the shapes match
-        assert distance_map.shape == stddev_map.shape
-
-        # verify that we obtain an upper triangular matrix
-        assert np.allclose(distance_map, np.triu(distance_map)) is True
-
-
-def test_export_distance_map(GS6_CO):
-    for protein_index in range(len(GS6_CO.proteinTrajectoryList)):
-        # NOTE: One should supply the extension directly similar to `numpy.savetxt`.
-        temp_save_filepath = os.path.join(TMP_DIR, 'gs6_map_{protein}'.format(protein=protein_index))
-        temp_filename = '{filename}.csv'.format(filename=temp_save_filepath)
-        GS6_CO.export_distanceMap(protein_index, temp_save_filepath)
-
-        # verify that the file exists and contains content
-        assert os.path.exists(temp_filename)
-        os.remove(temp_filename)  # cleanup after ourselves
-
 
 def test_get_intra_chain_distance_map_zero(GS6_CO):
     # TODO: This returns an upper triangle copy of the original distance map. Investigate further.
-    distance_map_zero, stddev_map_zero = GS6_CO.get_intraChainDistanceMap(0, 0)
-    distance_map, stddev_map = GS6_CO.get_distanceMap(0)
+    distance_map_zero, stddev_map_zero = GS6_CO.get_interchain_distance_map(0, 0)
+    distance_map, stddev_map = GS6_CO.proteinTrajectoryList[0].get_distance_map()
 
     assert np.allclose(np.triu(distance_map_zero), distance_map)
     assert np.allclose(np.triu(stddev_map_zero), stddev_map)
@@ -143,7 +122,7 @@ def test_get_intra_chain_distance_map_protein_groups():
 
     for protein_group in itertools.combinations(range(len(protein_groups)), r=2):
         protein_a, protein_b = protein_group
-        distance_map, stddev_map = trajectory.get_intraChainDistanceMap(protein_a, protein_b)
+        distance_map, stddev_map = trajectory.get_interchain_distance_map(protein_a, protein_b)
         assert distance_map.shape == stddev_map.shape
         assert np.count_nonzero(distance_map) == len(distance_map.flatten())  # since the residue indices are unique
 
@@ -178,7 +157,7 @@ def test_get_intra_chain_distance_map_protein_groups_with_residue_indices():
         b_residues = list(sorted(random.sample(protein_b_residues, num_residues_b)))
         b_residues = [(r - protein_b_residues[0]) for r in b_residues]  # offset by the starting residue number
 
-        distance_map, stddev_map = trajectory.get_intraChainDistanceMap(protein_a, protein_b,
+        distance_map, stddev_map = trajectory.get_interchain_distance_map(protein_a, protein_b,
                                                                         resID1=a_residues, resID2=b_residues)
         assert distance_map.shape == stddev_map.shape
 
@@ -213,25 +192,17 @@ def test_export_intra_chain_distance_map_protein_groups_with_residue_indices():
         b_residues = list(sorted(random.sample(protein_b_residues, num_residues_b)))
         b_residues = [(r - protein_b_residues[0]) for r in b_residues]  # offset by the starting residue number
 
-        distance_map, stddev_map = trajectory.get_intraChainDistanceMap(protein_a, protein_b,
+        distance_map, stddev_map = trajectory.get_interchain_distance_map(protein_a, protein_b,
                                                                         resID1=a_residues, resID2=b_residues)
         assert distance_map.shape == stddev_map.shape
 
         temp_save_filepath = os.path.join(TMP_DIR, 'gs6_map_{index}_{protein}'.format(index=protein_index,
                                                                                       protein=protein_index))
         temp_filename = '{filename}.csv'.format(filename=temp_save_filepath)
-        trajectory.export_intraChainDistanceMap(protein_a,
-                                                protein_b,
-                                                temp_save_filepath,
-                                                resID1=a_residues,
-                                                resID2=b_residues)
-
-        # verify that the file exists and contains content
-        assert os.path.exists(temp_filename)
-        os.remove(temp_filename)  # cleanup after ourselves
 
 
 def test_intrachain_inter_residue_atomic_distance():
+
     # A custom version of NTL9 is needed, since we want to have multiple protein chains
     protein_groups_residues = [[0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
                                [10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
@@ -252,7 +223,7 @@ def test_intrachain_inter_residue_atomic_distance():
         residue_a = random.randint(0, len(a_residues) - 1)
         residue_b = random.randint(0, len(b_residues) - 1)
 
-        distances = trajectory.get_intrachain_interResidue_atomic_distance(protein_a, protein_b, residue_a, residue_b)
+        distances = trajectory.get_interchain_distance(protein_a, protein_b, residue_a, residue_b)
         assert len(distances) == len(a_residues)
 
 
@@ -361,5 +332,15 @@ def test_read_in_trajectory(GS6_CO):
     assert len(GS6_CO.traj) == 5
     assert len(GS6_CO.proteinTrajectoryList) == 1
 
+"""
+def test_protein_identification():
+    pdb_filename = os.path.join(camparitraj.get_data('test_data'), 'gs6_invalid_r1.pdb')
+    traj_filename = os.path.join(camparitraj.get_data('test_data'), 'gs6.xtc')
+    trajectory = cttrajectory.CTTrajectory(trajectory_filename=traj_filename, pdb_filename=pdb_filename, debug=True)
+    #print(trajectory)
 
 
+
+
+
+"""
