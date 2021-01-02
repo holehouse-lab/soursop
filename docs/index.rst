@@ -5,7 +5,7 @@
 
 Welcome to the CAMPARITraj docs!
 =========================================================
-*Last updated: June 5th 2019*
+*Last updated: January 1st 2021*
 
 **CAMPARITraj** is a Python package for the analysis of all-atom simulations of unfolded/disordered proteins. It provides a wide range of functionalities that may not be of use for folded proteins, but provide important insight into simulations of intrinsically disordered proteins. *CAMPARITraj* was formerly known as *CTraj*, and includes all the original functionality therein. 
 
@@ -27,6 +27,9 @@ This documentation is currently being generated as we finalize **CAMPARITraj**.
 
 Quickstart!
 ==============
+*Update: Jan 2021*
+**CAMPARITraj** was recently restructured to homogenize a number of functions, as well as ensure future and backwards compatibility with `mdtraj` version 1.9.5. The anticipated release of `camparitraj` is soon
+ 
 *Update: May 2019*
 **CAMPARITraj** is currently still being finalized, so we do not currently recommend installation directly from the GitHub repository as tests, final code tweaks, and even major changes to the code-base are occurring constantly. However, in principle, assuming **camparitraj** is building, once downloaded from GitHub it can be installed via
 
@@ -37,4 +40,4 @@ We plan to release **CAMPARITraj** over ``conda-forge`` once it has finalized an
 
 About
 ========
-**CAMPARITraj** is built and maintained by `Alex Holehouse <https://holehouselab.com/>`_. It's development was supported financially and intelluctually by the  `Molecular Sciences Software Institute (MOLSSI) <https://molssi.org/>`_.
+**CAMPARITraj** is built and maintained by Jared Lalmansingh (Pappu lab) and `Alex Holehouse <https://holehouselab.com/>`_. It's development was supported financially and intelluctually by the  `Molecular Sciences Software Institute (MOLSSI) <https://molssi.org/>`_.
