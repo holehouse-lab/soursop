@@ -1,5 +1,4 @@
 ##
-
 ##
 ##                                       _ _              _ 
 ##   ___ __ _ _ __ ___  _ __   __ _ _ __(_) |_ _ __ __ _ (_)
@@ -10,7 +9,7 @@
 ##
 ## Alex Holehouse (Pappu Lab and Holehouse Lab)
 ## Simulation analysis package
-## Copyright 2014 - 2019
+## Copyright 2014 - 2021
 ##
 
 import mdtraj as md
@@ -43,7 +42,6 @@ class CTPRE:
     generate_PRE_profile function below. This gives both the intensity ratio profile and 
     the transverse relaxation rate (Gamma_2) profiles. For more detail on the calculation
     of these profiles see the help associated with generate_PRE_profile function
-
 
     For more information on caculation of PREs using method see the Supplementary information 
     in the following two papers.

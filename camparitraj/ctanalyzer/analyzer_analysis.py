@@ -365,7 +365,7 @@ def run_linear_heterogeneity(CP, outdir):
 
 
 def run_heterogeneity_analysis(CP, strideval, outdir):
-    ALL_D = CP.get_DVector(stride=strideval)
+    ALL_D = CP.get_D_vector(stride=strideval)
     mean_D  = arrayfy(np.mean(ALL_D))
     std_D   = arrayfy(np.std(ALL_D))
     np.savetxt('%s/D_vector.csv'%(outdir), ALL_D, delimiter=', ')

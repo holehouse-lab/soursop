@@ -1,7 +1,7 @@
 """
 cttrajectory.py
 
-This is where some stuff will be described
+cttrajectory is the main class through which simulation trajectories are read in.
 
 """
 
@@ -16,7 +16,7 @@ This is where some stuff will be described
 ##
 ## Alex Holehouse (Pappu Lab)
 ## Simulation analysis package
-## Copyright 2014 - 2019
+## Copyright 2014 - 2021
 ##
 
 import mdtraj as md
@@ -28,14 +28,6 @@ from .ctprotein import CTProtein
 from .ctexceptions import CTException
 from . import ctutils
 from . import ctio
-
-def testfunct():
-    """
-    This is a test function for documentation - do we build from source?
-    """
-    print('YEAH OK')
-
-
 
 
 class CTTrajectory:
@@ -158,7 +150,7 @@ class CTTrajectory:
         presented.
 
         Parameters
-        ------------------
+        -----------
         trajectory_filename : str
             Filename which contains the trajectory file of interest. File type
             is automatically detected and dealt with mdtraj' 'load' command
@@ -175,7 +167,12 @@ class CTTrajectory:
             the front of the trajectory. This is useful if you are starting
             an analysis where that first structure should be a reference frame
             but it's not actually included in the trajectory file.
-   
+
+        Returns
+        --------
+        mdtraj.traj 
+            Returns an mdtraj trajectory object
+
         """
 
         # straight up read the trajectory first using mdtraj's awesome
@@ -190,11 +187,9 @@ class CTTrajectory:
             if (uc_lengths[0] == 0 or uc_lengths[1] == 0 or uc_lengths[2] == 0):
                 ctio.warning_message("Trajectory file unit cell lengths are zero for at least one dimension. This is a probably a bug with an FRC generated __START.pdb file, because in the old version of CAMPARI used to do grid based FRC calculations the unit cell dimensions are not written correctly. This may cause issues but we're going to assume everything is OK for now. Check the validity of any analysis output. If you're worried, you can use the following workaround.\n\n:::: WORK AROUNDS ::::\nSimply run\n\ntrjconv -f __traj.xtc -s __START.pdb -box a b c -o frc.xtc \n\nAn then \n\ntrjconv -f frc.xtc -s __START.pdb -box a b c -o start.pdb -dump 0\n\n\nHere\n-f n__traj.xtc   : defines the trajectory file\n-s __start.pdb   : defines the pdb file used to parse the topology\n-box a b c       : defines the box lengths **in nanometers**\n-o frc.xtc       : is the name of the new trajectory file with updated box lengths\nSelect 0 (system) when asked to 'Select group for output'.The second step creates the equivalent PDB file with the header-line correctly defining the box unit cell lengths and angles. These two new files should then be used for analysis.\n\nAs an example, if my FRC simulation had a sphere radius of 100 angstroms then my correction command would look something like \n\ntrjconv -f __traj.xtc -s __START.pdb -box 20 20 20 -o frc.xtc\ntrjconv -f frc.xtc -s __START.pdb -box 20 20 20 -o start.pdb -dump 0")
 
-
         except TypeError:
             ctio.warning_message("Warning: UnitCell lengths were not provided... This may cause issues but we're going to assume everything is OK for now...")
         
-
         # if pdbLead is true then load the pdb_filename as a trajectory
         # and then add it to the front (the PDB file is its own topology
         # file so no need to specificy the top= file here!
@@ -207,15 +202,13 @@ class CTTrajectory:
             try:
                 uc_lengths_1 = traj.unitcell_lengths[0]
                 uc_lengths_2 = traj.unitcell_lengths[1]
-
             
                 if (uc_lengths_1[0] != uc_lengths_2[0]) or (uc_lengths_1[2] != uc_lengths_2[2]) or (uc_lengths_1[2] != uc_lengths_2[2]):
                     ctio.warning_message('........................\nWARNING:\nThe unit cell dimensions of the PDB file and trajectory file did not match, specifically\nPDB file = [ %s ]\nXTC file = [ %s ]\nThis may cause issues if native MDTraj untilities are used (and potentially for CTraj utilities that are based on these. It is not necessarily an issue, but PLEASE sanity check your outcome. To be save we reeommend editing the PDB-file untilcell dimenions to match.')
 
             except TypeError:
                 ctio.warning_message("Warning: UnitCell lengths were not provided... This may cause issues but we're going to assume everything is OK for now...")
-                                   
-                                        
+                                                                           
         return traj
 
 

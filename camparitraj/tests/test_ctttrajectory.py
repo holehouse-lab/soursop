@@ -268,60 +268,6 @@ def test_intrachain_inter_residue_atomic_distance_by_name():
 
 
 
-def test_export_local_collapse_no_bins(NTL9_CO):
-    base_filenames = 'mean_collapse_vector.csv,std_collapse_vector.csv'.split(',')
-    for protein_index in range(len(NTL9_CO.proteinTrajectoryList)):
-        temp_save_filepath = os.path.join(TMP_DIR, 'ntl9_{protein}'.format(protein=protein_index))
-        mean, std_dev = NTL9_CO.export_localCollapse(protein_index, temp_save_filepath,
-                                                     windowSize=10,
-                                                     bins=None)
-
-        # check that the files were created
-        filepaths = list()
-        for filename in base_filenames:
-            path = os.path.join(TMP_DIR, 'ntl9_{protein}_{fname}'.format(protein=protein_index, fname=filename))
-            filepaths.append(path)
-            assert os.path.exists(path)
-
-        # check that they are non-zero
-        read_mean = np.loadtxt(os.path.join(TMP_DIR, filepaths[0]))
-        read_stddev = np.loadtxt(os.path.join(TMP_DIR, filepaths[1]))
-
-        assert np.allclose(mean, read_mean)
-        assert np.allclose(std_dev, read_stddev)
-
-        # clean up
-        for filepath in filepaths:
-            os.remove(filepath)
-
-
-def test_export_local_collapse_with_bins_defaults(NTL9_CO):
-    base_filenames = 'mean_collapse_vector.csv,std_collapse_vector.csv,distribution_collapse_vector.csv'.split(',')
-    for protein_index in range(len(NTL9_CO.proteinTrajectoryList)):
-        temp_save_filepath = os.path.join(TMP_DIR, 'ntl9_{protein}'.format(protein=protein_index))
-        mean, std_dev, hist1d = NTL9_CO.export_localCollapse(protein_index, temp_save_filepath,
-                                                             windowSize=10,
-                                                             bins=np.arange(0, 10, 0.1))
-
-        # check that the files were created
-        filepaths = list()
-        for filename in base_filenames:
-            path = os.path.join(TMP_DIR, 'ntl9_{protein}_{fname}'.format(protein=protein_index, fname=filename))
-            filepaths.append(path)
-            assert os.path.exists(path)
-
-        # check that they are non-zero
-        read_mean = np.loadtxt(os.path.join(TMP_DIR, filepaths[0]), delimiter=',')
-        read_stddev = np.loadtxt(os.path.join(TMP_DIR, filepaths[1]), delimiter=',')
-        read_hist1d = np.loadtxt(os.path.join(TMP_DIR, filepaths[2]), delimiter=',')
-
-        assert np.allclose(mean, read_mean)
-        assert np.allclose(std_dev, read_stddev)
-        assert np.allclose(hist1d, read_hist1d)
-
-        # clean up
-        for filepath in filepaths:
-            os.remove(filepath)
 
 
 # -------------------------------------------------------------------------------------------------

@@ -15,7 +15,7 @@ including this function in any one other class.
 ##
 ## Alex Holehouse (Pappu Lab and Holehouse Lab)
 ## Simulation analysis package
-## Copyright 2014 - 2019
+## Copyright 2014 - 2021
 ##
 
 

@@ -52,7 +52,7 @@ def test_code_coverage(NTL9_CP):
     a = NTL9_CP.get_local_heterogeneity(fragmentSize=5, stride=1)
     a = NTL9_CP.get_local_heterogeneity(fragmentSize=20, stride=2)
     a = NTL9_CP.get_local_heterogeneity(fragmentSize=20, stride=1)
-    a = NTL9_CP.get_DVector(stride=1)
+    a = NTL9_CP.get_D_vector(stride=1)
 
     a = NTL9_CP.get_RMSD(1)
     a = NTL9_CP.get_RMSD(1,frame2=3)

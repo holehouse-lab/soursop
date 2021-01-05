@@ -1074,9 +1074,6 @@ class CTProtein:
             # finally convert list to numpy array and flip so returns in same format as CA mode
             return np.array(return_distances).transpose()
 
-            
-
-
 
 
     # ........................................................................
@@ -1433,10 +1430,13 @@ class CTProtein:
 
     # ........................................................................
     #
-    def get_DVector(self, stride=20):
+    def get_D_vector(self, stride=20):
         """
         Function to calculate the vector of D values used to calculate the Phi parameter from Lyle et al[1].
-        The stride defines the spacing between frames which are analyzed. This is just for practical purposes.
+
+        The stride parameter defines the spacing between frames which are analyzed. This is just for practical 
+        purposes.
+
         The Phi calulation computes a D value for each frame vs. frame comparison - for a 2000 frame simulation
         this would be 4 Million D values if every value was calculated which is a bit much, so the stride let's
         you define how many frames you should skip. 
@@ -1454,16 +1454,22 @@ class CTProtein:
         about 5 seconds. However, as protein size increases the computational cost of this process grows
         rapidly.
 
-        OPTIONS 
-        ........................................
-        
-        stride [int] {20}
-        Defines the spacing between frames to compare - i.e. if comparing frame1 to a trajectory we'd compare
-        frame 1 and every stride-th frame
+        Parameters
+        ------------        
+        stride : int {20}        
+            Defines the spacing between frames to compare - i.e. if comparing frame1 to a trajectory 
+            we'd compare frame 1 and every stride-th frame
 
-        
+        Returns
+        ---------
+        np.ndarray
+            Returns a numpy array of D values (i.e. the D_vector)
+
+        References
+        --------------
         [1] Lyle, N., Das, R. K., & Pappu, R. V. (2013). A quantitative measure for protein conformational 
         heterogeneity. The Journal of Chemical Physics, 139(12), 121907.
+
         """
                 
         # get the list of residues which have CA (typically this means we exlcude
@@ -1488,7 +1494,6 @@ class CTProtein:
             # have to include a -1 here because we don't have a self:self distance
             all_distances[SM_index][0:(len(residuesWithCA)-1)-SM_index] = vals.transpose()
             SM_index=SM_index+1
-
         
         # number of residues we're calculating distances between
         n_res = np.shape(all_distances)[0]
@@ -1556,34 +1561,33 @@ class CTProtein:
         specificy a local region to perform this analysis over.
 
         Units are Angstroms.
-
-        ........................................
-        OPTIONS 
-        ........................................
         
-        frame1 [int] 
-        Defines the frame to be used as a reference
 
-        frame2 [int] {-1} 
-        Defines the frame to be used as a comparison, OR if left blank or set to -1 means the entire 
-        trajectory
+        Parameter
+        --------------
+        frame1 : int
+            Defines the frame to be used as a reference
 
-        stride [int] {1}
-        Defines the spacing between frames to compare - i.e. if comparing frame1 to a trajectory we'd compare
-        frame 1 and every stride-th frame
+        frame2 : int {-1}         
+            Defines the frame to be used as a comparison, OR if left blank or set to -1 means the entire 
+            trajectory
+
+        stride : int {1}
+            Defines the spacing between frames to compare - i.e. if comparing frame1 to a trajectory we'd compare
+            frame 1 and every stride-th frame
         
-        region [list/tuple of length 2]  {[]}
-        Defines the first and last residue (INCLUSIVE) for a region to be examined
+        region : list/tuple of length 2  {None}
+            Defines the first and last residue (INCLUSIVE) for a region to be examined. By default is set 
+            to None which means the entire protein is used
         
-        backbone [bool] {True}
-        Boolean flag for using either the full chain or just backbone. Generally backbone alone 
-        is fine so default to true.
+        backbone : bool  {True}
+            Boolean flag for using either the full chain or just backbone. Generally backbone alone 
+            is fine so default to True.
 
-        correctOffset [Bool] {True}
-        Defines if we perform local protein offset correction
-        or not. By default we do, but some internal functions
-        may have already performed the correction and so don't
-        need to perform it again
+        correctOffset : bool  {True}
+            Defines if we perform local protein offset correction or not. By default we do, but some 
+            internal functions may have already performed the correction and so don't need to perform it 
+            again
 
         """
 
@@ -1610,7 +1614,15 @@ class CTProtein:
 
     # ........................................................................
     #
-    def get_Q(self, stride=1, protein_average=True, region=None, correctOffset=True, weights=False):
+    def get_Q(self, 
+              stride = 1, 
+              protein_average = True, 
+              region = None, 
+              beta_const = 50.0,
+              lambda_const = 1.8,
+              native_contact_threshold = 4.5,              
+              correctOffset = True, 
+              weights = False):
         """
         Function which will calculate the fraction of native contacts in each frame of the trajectory,
         where the 'native' state is defined as a specific frame (1st frame by default - note this means
@@ -1623,51 +1635,70 @@ class CTProtein:
         PNAS (2013) 10.1073/pnas.1311599110. The implementation is according to the code helpfully
         provided at http://mdtraj.org/latest/examples/native-contact.html
 
-        If protein_average=True a single vector is returned with the overall protein average fraction of native
-        contacts associated with each frame. If protein_average is set to false a 4-position tuple is returned,
-        where each of the four positions has the following identity
-         
-        idx | 
-        0   | The fraction of the time a contact is native for all each native contact (vector of length $N_NATIVE CONTACTS)
-        
-        1   | The native contact definition (same length as 1) where each element is a pair of atoms which are considered
-              native
 
-        2   | The residue-by-residue dictionary-native contacts dictionary. Keys are residue name-number and each key-associated
-              value is the fractional native contacts for atoms associated with that residue. To get the residue-specific fraction
-              of native contacts take the mean of the element values
+        Parameters
+        -----------
+        stride : int {1}
+            Defines the spacing between frames to compare - i.e. if comparing frame1 to a 
+            trajectory we'd compare frame 1 and every stride-th frame.
+        
+
+        protein_average : bool  {True}
+            This is the default mode, and means that the return vector is the AVERAGE fraction of 
+            native contacts over the protein surface for each frame (e.g. each value refers to a             
+            single frame). If set to false the simulation-average value at native-contact resolution is 
+            returned, instead returning $NATIVE_CONTACT number of values and an additional list of native 
+            contact pairs.
+
+        region : list/tuple of length 2  {None}
+            Defines the first and last residue (INCLUSIVE) for a region to be examined. By default is set 
+            to None which means the entire protein is used
+
+        beta_const : float {50}
+            Constant used for computing Q in reciprocal nanometers. Default is 50 and probably should
+            not be changed without good reason.
+
+        lambda_const : float {1.8} 
+            Constant value is 1.8 for all-atom simulations. Probably should not be changed without good
+            reason
+
+        native_contact_threshold : float {4.5}
+            Threshold in Angstroms typically used for all-atom simulations and again probably should not
+            be changed without good reason
+
+        correctOffset : bool  {True}
+            Defines if we perform local protein offset correction or not. By default we do, but some 
+            internal functions may have already performed the correction and so don't need to perform it 
+            again
+
+        weights : list or array of floats  {False}
+            Defines the frame-specific weights if re-weighted analysis is required. This can be 
+            useful if an ensemble has been re-weighted to better match experimental data, or in
+            the case of analysing replica exchange data that is re-combined using T-WHAM.
+
+
+
+        Returns
+        -----------
+        If protein_average=True a single vector is returned with the overall protein average fraction of 
+        native contacts associated with each frame for each residue. If protein_average is set to False a 
+        4-position tuple is returned, where each of the four positions has the following identity:
+                 
+        idx | 
+        0   | The fraction of the time a contact is native for all each native contact (vector of length 
+              $N_NATIVE CONTACTS)
+        
+        1   | The native contact definition (same length as 1) where each element is a pair of atoms which 
+              are considered native              
+
+        2   | The residue-by-residue dictionary-native contacts dictionary. Keys are residue name-number 
+              and each key-associated value is the fractional native contacts for atoms associated with 
+              that residue. To get the residue-specific fraction of native contacts take the mean of the 
+              element values
 
         3   | The ordered list of keys from 2 for easy plotting in a residue-residue manner
 
         4   | A nres x nres array showing a 2D contact map defining inter-residue specific Q values
-
-        ........................................
-        OPTIONS 
-        ........................................
-        
-        stride [int] {1}
-        Defines the spacing between frames to compare - i.e. if comparing frame1 to a trajectory we'd compare
-        frame 1 and every stride-th frame
-
-        protein_average [bool] {True}
-        This is the default mode, and means that the return vector is the AVERAGE fraction of native contacts
-        over the protein surface for each frame (e.g. each value refers to a single frame). If set to 
-        false the simulation-average value at native-contact resolution is returned, instead returning
-        $NATIVE_CONTACT number of values and an additional list of native contact pairs.
-        
-        region [list/tuple of length 2]  {None}
-        Defines the first and last residue (INCLUSIVE) for a region to be examined
-
-        correctOffset [Bool] {True}
-        Defines if we perform local protein offset correction
-        or not. By default we do, but some internal functions
-        may have already performed the correction and so don't
-        need to perform it again.
-
-        weights [list or array of floats] {False}
-        Defines the frame-specific weights if re-weighted analysis is required. This can be 
-        useful if an ensemble has been re-weighted to better match experimental data, or in
-        the case of analysing replica exchange data that is re-combined using T-WHAM.
 
        
         """
@@ -1683,7 +1714,6 @@ class CTProtein:
         if weights is not False and stride != 1:
             raise CTException('For get_Q() weights must be set for EACH frame and stride=1')
         
-
         # if we're using a subregion 
         # NOTE this is WAY more elegant than the previous way of doing this but there *used* to be problems with MDTraj doing
         # things like this...
@@ -1698,9 +1728,18 @@ class CTProtein:
         # now align the entire trajectory to the 'native' frame
         target.superpose(target, frame=native_state_frame, atom_indices=selectionatoms)
         
-        BETA_CONST = 50       # in reciprocal nm (1/nm)
-        LAMBDA_CONST = 1.8    # For all-atom simulations
-        NATIVE_CUTOFF = 0.45  # Native contact threshold distance in nm
+        try:
+            BETA_CONST = float(beta_const)       # in reciprocal nm (1/nm)        
+            LAMBDA_CONST = float(lambda_const)    # For all-atom simulations
+
+            # Native contact threshold distance in nm (not param is passed in Angstroms but the calculation
+            # happens expecting nanometers so have to update (hence divide by 10)
+            NATIVE_CUTOFF = float(native_contact_threshold)/10
+            
+        
+        except ValueError as e:
+            raise CTException('Could not convert constant into float for setting constants in get_Q().\nSee below:\n\n%s' % (str(e)))
+            
 
         # use all pairs of atoms that are over 3 away in sequence space
         heavy_pairs = np.array(
@@ -1736,7 +1775,7 @@ class CTProtein:
             if weights is not False:
                 q_full = (1.0 / (1 + np.exp(BETA_CONST * (r - LAMBDA_CONST * r0)))).transpose()
 
-                q =[]
+                q = []
                 for i in q_full:
 
                     # note i[1:] means we ignore the first (native) frame
@@ -1753,8 +1792,8 @@ class CTProtein:
             # get the set of unqiue atoms which are involved in native contacts
             unique_native_contact_atoms = np.unique(np.hstack((np.transpose(native_contacts)[0],np.transpose(native_contacts)[1])))
 
-            res2at={}
-            res2res={}
+            res2at = {}
+            res2res = {}
 
             # for each unqiue atom
             for atom in unique_native_contact_atoms:
@@ -1762,6 +1801,7 @@ class CTProtein:
                 # determine the name of the residue it's from and update the res2at dictionary
                 # if needed
                 local_res = str(self.topology.atom(atom).residue)
+
                 if local_res not in res2at:
                     res2at[local_res] = []
                     res2res[int(local_res[3:])] = local_res
@@ -1808,7 +1848,8 @@ class CTProtein:
             # the data a bit easier to play with going forward.
             res2res_keys = list(res2res.keys())
             np.sort(res2res_keys)
-            sorted_residues=[]
+            sorted_residues = []
+
             for lk in res2res_keys:
                 sorted_residues.append(res2res[lk])
 
