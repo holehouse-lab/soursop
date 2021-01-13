@@ -134,38 +134,8 @@ def run_rg_re_correlation(CP, outdir):
     np.savetxt('%s/rg_re_corr.csv'%(outdir), arrayfy(c), delimiter=', ')
 
 
-def run_scaling_exponent(CP, outdir, end_effect=5):
-    c = CP.get_scaling_exponent(end_effect=end_effect)
-
-    if end_effect == configs.DEFAULT_END_EFFECT:
-        outname_1='scaling_exp_analysis.csv'
-        outname_2='scaling_exp_fit.csv'
-    else:
-        outname_1='scaling_exp_analysis_ee%i.csv' %(end_effect)
-        outname_2='scaling_exp_fit_ee%i.csv' % (end_effect)
-
-    np.savetxt('%s/%s'%(outdir, outname_1), c[0:8], delimiter=', ')
-    np.savetxt('%s/%s'%(outdir, outname_2), c[8].transpose(), delimiter=', ')
-
-
-
-def run_scaling_exponent_CA(CP, outdir, end_effect=5):
-    c = CP.get_scaling_exponent(end_effect=end_effect, mode='CA')
-
-    if end_effect == configs.DEFAULT_END_EFFECT:
-        outname_1='scaling_exp_analysis_CA.csv'
-        outname_2='scaling_exp_fit_CA.csv'
-    else:
-        outname_1='scaling_exp_analysis_ee%i_CA.csv' %(end_effect)
-        outname_2='scaling_exp_fit_ee%i_CA.csv' % (end_effect)
-
-    np.savetxt('%s/%s'%(outdir, outname_1), c[0:8], delimiter=', ')
-    np.savetxt('%s/%s'%(outdir, outname_2), c[8].transpose(), delimiter=', ')
-
-
-
 def run_scaling_exponent_power(CP, outdir, end_effect=5):
-    c = CP.get_scaling_exponent_v2(end_effect=end_effect, mode='COM')
+    c = CP.get_scaling_exponent(end_effect=end_effect, mode='COM')
 
     if end_effect == configs.DEFAULT_END_EFFECT:
         outname_1='scaling_exp_analysis_power.csv'
@@ -182,7 +152,7 @@ def run_scaling_exponent_power(CP, outdir, end_effect=5):
 
 
 def run_scaling_exponent_power_CA(CP, outdir, end_effect=5):
-    c = CP.get_scaling_exponent_v2(end_effect=end_effect, mode='CA')
+    c = CP.get_scaling_exponent(end_effect=end_effect, mode='CA')
 
     if end_effect == configs.DEFAULT_END_EFFECT:
         outname_1='scaling_exp_analysis_power_CA.csv'

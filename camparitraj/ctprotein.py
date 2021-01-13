@@ -28,11 +28,20 @@ from numpy.random import choice
 from .configs import DEBUGGING
 from .ctdata import THREE_TO_ONE, DEFAULT_SIDECHAIN_VECTOR_ATOMS, ALL_VALID_RESIDUE_NAMES
 from .ctexceptions import CTException
-from . import ctmutualinformation, ctio, cttools, ctpolymer
+from . import ctmutualinformation, ctio, cttools, ctpolymer, ctutils
 
 from . _internal_data import BBSEG2
 
 import scipy.cluster.hierarchy
+
+
+## Order of standard args:
+## 1. correctOffset
+## 2. stride
+## 3. weights
+#  4. verbose
+##
+##
 
 
 class CTProtein:
@@ -332,11 +341,11 @@ class CTProtein:
 
         Parameters
         ----------
-        R1 : int or False {False}
+        R1 : int or False/None {False}
             First residue in range - can be an integer (assumes first residue in chain indexed at 0). 
             If `False` assume we start at 0.
         
-        R2 : int or False {False}
+        R2 : int or False/None {False}
             Last residue in range - can be an integer (assumes first residue in chain indexed at 0).
             If `False` assumes we're using the whole chain.
 
@@ -356,7 +365,7 @@ class CTProtein:
         """
 
         # first define as if we're starting from first and last residue with/without caps
-        if R1 == False:
+        if R1 == False or R1 == None:
             if withCA:
                 if self.ncap:
                     R1 = 1
@@ -365,7 +374,7 @@ class CTProtein:
             else:
                 R1 = 0
 
-        if R2 == False:
+        if R2 == False or R2 == None:
             if withCA:
                 if self.ccap:
                     R2 = self.n_residues - 2
@@ -752,7 +761,7 @@ class CTProtein:
 
     # ........................................................................
     #
-    def print_residues(self, silent=False):
+    def print_residues(self, verbose=True):
         """
         Function to help determine the mapping of residue ID to PDB residue value. 
         Prints the mapping between resid and PDB residue, and returns this information
@@ -764,9 +773,9 @@ class CTProtein:
 
         Parameters
         ----------
-        silent : bool {False}
-            If set to `True`, `print_residues()` does not print out to screen but still
-            returns the list of lists.
+        verbose : bool {True}
+            If set to `True`, `print_residues()` will print out to screen and also return
+            a list. If set to False, means nothing is printed to the screen.
 
         Returns
         -------
@@ -778,7 +787,7 @@ class CTProtein:
         AA = self.get_amino_acid_sequence()
         return_list = []
         for i in range(0, len(AA)):
-            if silent is False:
+            if verbose is True:
                 print("%i --> %s" %(i, AA[i]))
             return_list.append([i,AA[i]])
         return return_list
@@ -953,7 +962,7 @@ class CTProtein:
         
     # ........................................................................
     #
-    def calculate_all_CA_distances(self, residueIndex, stride=1, mode='CA', onlyCterminalResidues=True, correctOffset=True):
+    def calculate_all_CA_distances(self, residueIndex,  mode='CA', onlyCterminalResidues=True, correctOffset=True, stride=1):
         """
         Calculate the full set of distances between C-alpha atoms. Note that by default 
         this explicitly works in a way to avoid computing redundancy where we ONLY
@@ -969,10 +978,6 @@ class CTProtein:
         
         residueIndex: int
             Defines the residue index to select the CA from.
-
-        stride: int {1}
-            Defines the spacing between frames to compare - i.e. if comparing frame1 to a trajectory we'd compare
-            frame 1 and every stride-th frame.
 
         mode: str {'CA'}
             String, must be one of either 'CA' or 'COM'.
@@ -991,6 +996,10 @@ class CTProtein:
             may have already performed the correction and so don't
             need to perform it again.
 
+        stride: int {1}
+            Defines the spacing between frames to compare - i.e. if comparing frame1 to a trajectory we'd compare
+            frame 1 and every stride-th frame.
+
         Returns
         -------
         numpy.array
@@ -1003,9 +1012,8 @@ class CTProtein:
 
         """
 
-
-        if mode not in ['CA', 'COM']:
-            raise CTException("End-to-end distance analysis requires that 'mode' is set to one of 'CA' (alpha carbon) or 'COM' (center of mass). mode was set to [%s]" % str(mode))
+        # validate input
+        ctutils.validate_keyword_option(mode, ['CA', 'COM'], 'mode')
 
         # first check the residue we passed is valid and offset if required
         if correctOffset:
@@ -1022,7 +1030,6 @@ class CTProtein:
                         
         # list of atomic indices for C-alpha atoms we care about 
         CAlist = [] 
-
 
         ##
         ## Block to use if using CA as base for computing distances
@@ -1069,7 +1076,7 @@ class CTProtein:
                 if residue <= residueIndex and onlyCterminalResidues:
                     continue
 
-                return_distances.append(self.get_interResidueCOMDistance(residueIndex, residue))
+                return_distances.append(self.get_inter_residue_COM_distance(residueIndex, residue))
             
             # finally convert list to numpy array and flip so returns in same format as CA mode
             return np.array(return_distances).transpose()
@@ -1078,7 +1085,7 @@ class CTProtein:
 
     # ........................................................................
     #
-    def get_distance_map(self, weights=False, verbose=True, mode='CA', RMS=False,stride=1):
+    def get_distance_map(self, mode='CA', RMS=False, stride=1, weights=False, verbose=True):
         """
         Function to calculate the CA defined distance map for a protein of interest. Note 
         this function doesn't take any arguments and instead will just calculate the complete
@@ -1091,17 +1098,6 @@ class CTProtein:
 
         Parameters
         ----------
-        stride [int] {1}
-            Defines the spacing between frames to compare - i.e. if comparing frame1 to a trajectory we'd compare
-            frame 1 and every stride-th frame.
-        
-        weights : list or array of floats
-            Defines the frame-specific weights if re-weighted analysis is required. This can be 
-            useful if an ensemble has been re-weighted to better match experimental data, or in
-            the case of analysing replica exchange data that is re-combined using T-WHAM.
-
-        verbose : bool {True}
-            Print messages (or not).
         
         mode : str {'CA'}
             String, must be one of either 'CA' or 'COM'.
@@ -1114,6 +1110,18 @@ class CTProtein:
             = i.e. SQRT(<r_ij^2>), which is the formal order parameter that should be used for polymeric 
             distance properties.
                         
+        stride : int {1}
+            Defines the spacing between frames to compare - i.e. if comparing frame1 to a trajectory we'd compare
+            frame 1 and every stride-th frame.
+        
+        weights : list or array of floats
+            Defines the frame-specific weights if re-weighted analysis is required. This can be 
+            useful if an ensemble has been re-weighted to better match experimental data, or in
+            the case of analysing replica exchange data that is re-combined using T-WHAM.
+
+        verbose : bool
+            Flag that by default is True determines if the function prints status updates. This is relevant because
+            this function can be computationally expensive, so having some report on status can be comforting!
 
         Returns
         -------
@@ -1122,6 +1130,8 @@ class CTProtein:
             - [0] := The distance map derived from the measurements between CA atoms.
             - [1] := The standard deviation corresponding to the distance map.
         """
+
+        ctutils.validate_keyword_option(mode, ['CA', 'COM'], 'mode')
         
         weights = self.__check_weights(weights, stride)
         
@@ -1136,8 +1146,8 @@ class CTProtein:
         SM_index=0
         for resIndex in residuesWithCA[0:-1]:
 
-            if verbose:
-                ctio.status_message("On protein residue %i (overall residue index = %i) of %i [distance calculations]"% (SM_index, resIndex, int(len(residuesWithCA))))
+
+            ctio.status_message("On protein residue %i (overall residue index = %i) of %i [distance calculations]"% (SM_index, resIndex, int(len(residuesWithCA))), verbose)
 
             # get all CA-CA distances between the residue of index resIndex and every other residue. Note this gives the non-redudant upper 
             # triangle. No need to correct for offset because this was done when we retrived the set of residues with CA
@@ -1177,32 +1187,37 @@ class CTProtein:
 
     # ........................................................................
     #
-    def get_polymer_scaled_distance_map(self, nu=None, A0=None, min_separation=10, mode='fractional-change', weights=False, stride=1):
+    def get_polymer_scaled_distance_map(self, nu=None, A0=None, min_separation=10, mode='fractional-change', stride=1, weights=False, verbose=True):
         """
         Function that allows for a global assesment of how well all `i-j` distances conform to standard
         polymer scaling behaviour (i.e. $r_ij = A0*|i-j|^{nu}$).
 
         Essentially, this generates a distance map (2D matrix of i vs. j distances) where that distance is either 
         normalized by the expected distance for a provided homopolymer model, or quantifies the fractional deviation
-        from that homopolymer mode. These two modes are explained in more detail below.
+        from a homopolymer model fit to the data. These two modes are explained in more detail below.
 
         In this standard scaling relationship:
+
         `r_ij`  : Average inter-residue distance of residue i and j
+
         `A0`    : Scaling prefactor. Note this is NOT the same *numerical* value as the R0 prefactor that
                 defines the relationship Rg = R0*N^{nu}.
+
         `|i-j|` : Sequence separation between residues i and j
+
         `nu`    : The intrinsic polymer scaling exponent
 
-        This is the scaling behaviour expected for a standard homopolymer. This fucnction then assess how well
-        this relationship holds for ALL inter-residue distances.
+        This is the scaling behaviour expected for a standard homopolymer. This function then assess how well
+        this relationship holds for ALL possible inter-residue distances.
 
         This function returns a four position tuple. Position 1 is an n x n numpy matrix (where n = sequence length), 
         where the element is either the default value OR quantifes the deviation from a polymer model in one of two ways.
-        Positions two, three  are the nu and A0 values used, respectively. Finally, position 4 will be the reduced chi-square
-        fitting to the polymer model for the internal scaling profile (i.e. how A0 and nu are originally calculated).
+        Positions two and three are the nu and A0 values used, respectively. Finally, position 4 will be the reduced chi-square
+        fitting to the polymer model for the internal scaling profile (i.e. how A0 and nu are originally calculated). NOTE
+        that the reduced chi-squared value will be -1 if nu and A0 are provided manually.
 
         If no options are provided, the function calculates the best fit to a homopolymer mode using the 
-        default parameters associated with the get_scaling_exponent_v2() function, and then uses this
+        default parameters associated with the get_scaling_exponent() function, and then uses this
         model to determine pairwise deviations.
         
         Parameters
@@ -1257,34 +1272,50 @@ class CTProtein:
             useful if an ensemble has been re-weighted to better match experimental data, or in
             the case of analysing replica exchange data that is re-combined using T-WHAM.
 
-        Raises
-        ------
-        CTException
-
+        verbose : bool
+            Flag that by default is True determines if the function prints status updates. This is relevant because
+            this function can be computationally expensive, so having some report on status can be comforting!
 
         Returns
         -------
+        tuple (len = 4)
 
+            return[0]  : n x n numpy matrix (where n = sequence length), where the element is either the default value 
+                         OR quantifes the deviation from a polymer model in one of two ways.
+           
+
+            return[1]  : float defining the scaling exponent nu
+
+            return[2]  : float defining the A0 prefactor
+
+            return[3]  : reduced chi-squared fitting to the polymer model (goodness of fit)
+
+        Raises
+        ------
+        CTException
+        
         """
+        
+        # First validate keyword
+        ctutils.validate_keyword_option(mode, ['fractional-change','scaled', 'signed-fractional-change', 'signed-absolute-change'], 'mode')
 
-        # first sanity check mode input
-        if mode not in ['fractional-change','scaled', 'signed-fractional-change', 'signed-absolute-change']:
-            raise CTException("mode keyword must be set to one of 'fractional-change', 'scaled', 'signed-fractional-change', or 'signed-absolute-change'")
-
+        # next check that the minimum separation requested makes sense... (this is only a partial check)
         if min_separation < 1:
             raise CTException("Minimum separation to be used must be greater than 0")
                         
-        # next see if nu or A0 have been provided...
+        ## next see if nu or A0 have been provided...
 
         # If NEITHER provided then do fitting here and now!
         if nu == None and A0 == None:
-            ctio.status_message("Fitting data to homopolymer mode...")
-            SE = self.get_scaling_exponent_v2(verbose=False, weights = weights, stride = stride)
+            ctio.status_message("Fitting data to homopolymer mode...", verbose)
+
+            # remind that this is the old get_scaling_exponent_v2() 
+            # ALSO note this uses COM which is also how the distance map is computed
+            SE = self.get_scaling_exponent(verbose=False, weights = weights, stride = stride)
             nu = SE[0]
             A0 = SE[1]
             REDCHI = SE[7]
             
-
         elif nu is None:
             raise CTException("A0 parameter provided [%1.5f] but nu was not. Must provide BOTH or neither (in which case fitting is done)" %( A0))
 
@@ -1301,6 +1332,7 @@ class CTProtein:
             if A0 <= 0:
                 raise CTException("A0 paameter must be greater than 0")
 
+            # not computing a reduced chi
             REDCHI = -1
             
         # We now define a function which will evaluate how we assess the deviation (or lack thereof) from the 
@@ -1335,7 +1367,7 @@ class CTProtein:
 
         # first compute and get the distance map (note [0] means we get first element
         # which is mean distance ([1] is STDEV)
-        distance_map = self.get_distance_map(weights, verbose=False, mode='COM',RMS=True, stride=stride)[0]
+        distance_map = self.get_distance_map(mode='COM', RMS=True, stride=stride, weights=weights, verbose=False)[0]
 
         # get distance map dimensions (will be a square so just take X-dim)
         dimensions = distance_map.shape[0]
@@ -1360,7 +1392,7 @@ class CTProtein:
 
     # ........................................................................
     #
-    def get_local_heterogeneity(self, fragmentSize=10, stride=20, bins=np.arange(0,10,0.01)):
+    def get_local_heterogeneity(self, fragment_size=10, bins=None, stride=20, verbose=True):
         """
         Function to calculate the vector of D values used to calculate the Phi parameter from Lyle et al[1].
         The stride defines the spacing between frames which are analyzed. This is just for practical purposes.
@@ -1372,65 +1404,108 @@ class CTProtein:
         about 5 seconds. However, as protein size increases the computational cost of this process grows
         rapidly.
 
-        OPTIONS 
-        ........................................
+
+        Parameters
+        -----------
         
-        fragmentSize [int] {10}
-        Size of local region that is considered to be a single unit over which structural heterogeneity
-        is examined.
+        fragment_size : int {10}        
+            Size of local region that is considered to be a single unit over which structural heterogeneity
+            is examined. Should be between 2 and the length of the sequence.
 
-        stride [int] {20}
-        Defines the spacing between frames to compare - i.e. if comparing frame1 to a trajectory we'd compare
-        frame 1 and every stride-th frame.
+        bins : np.ndarray {np.arange(0,1,0.01)}
+            Bins used to capture the heterogeneity at each position. If default a set of bins from 0 to 1 with an
+            interval of 0.01 is used
 
-        bins [numpy array] {np.arange(0,1,0.01)}
-        Bins used to capture the heterogeneity at each position
+        stride : int {20}
+            Defines the spacing between frames to compare - i.e. if comparing frame1 to a trajectory we'd compare
+            frame 1 and every stride-th frame.
+
+        verbose : bool
+            Flag that by default is True determines if the function prints status updates. This is relevant because
+            this function can be computationally expensive, so having some report on status can be comforting!
+
+        
+        Returns
+        -------
+        tuple (len = 4)
+
+            return[0]  : list of floats of len *n*, where each float reports on the mean RMSD-deviation at a specific 
+                         position along the sequence as defined by the fragment_size
+
+            return[1]  : list of floats of len *n* , where each float reports on the standard deviation of the 
+                         RMSD-deviation  at a specific position along the sequence as defined by the fragment_size
+
+            return[2]  : List of np.ndarrays of len *n*, where each sub-array reports on the histogram values associated
+                         with the full RMSD distribution at a given position along the sequence
+
+            return[3]  : np.ndarray which corresponds to bin values for each of the histograms in return[2]
+
+        Raises
+        ------
+        CTException
+
 
         """
 
+        # validate bins
+        if bins is None:
+            bins = np.arange(0,10,0.01)
+        else:
+            try:
+                if len(bins)  < 2:
+                    raise CTException('Bins should be a numpy defined vector of values - e.g. np.arange(0,1,0.01)')                    
+            except TypeError:
+                raise CTException('Bins should be a list, vector, or numpy array of evenly spaced values')
 
+            try:
+                bins = np.array(bins, dtype=float)
+            except ValueError:
+                raise CTException('Passed bins could not be converted to a numpy array of floats')
+                
         # check stride is ok
         self.__check_stride(stride)
 
-        # Only allow bins to be used if appropriate
-        if ( bins is not None) and (len(bins) < 2):
-            raise CTException('Bins should be a numpy defined vector of values - arange(0,1,0.01)')
-
-        
         # get the residue IDXs were going to use
         res_idx_list = self.residue_index_list
         n_frames = self.n_frames
-                    
-        # check the window is an appropriate size
-        if fragmentSize > len(res_idx_list):
-            raise CTException('fragmentSize is larger than the number of residues')
 
+                            
+        # check the fragment_size is appropriate
+        if fragment_size > len(res_idx_list):
+            raise CTException('fragment_size is larger than the number of residues')
+        if fragment_size < 2:
+            raise CTException('fragment_size must be 2 or larger')
+        
 
         meanData = []
         stdData  = []
         histo    = []
-        for frag_idx in res_idx_list[0:-fragmentSize]:
+        
+        # cycle over each sub-region in the sequence
+        for frag_idx in res_idx_list[0:-fragment_size]:
             tmp = []
-            ctio.status_message("On range %i" % frag_idx)
+            ctio.status_message("On range %i" % frag_idx, verbose)
 
+            # for each frame in ensemble, calculate RMSD for that sub-region compared to
+            # all other sub-regions (i.e. we're doing a 1-vs-all RMSD calculation for EACH
+            # frame (after adjusting for stride) for a subregion of the protein
             for j in range(0, n_frames, stride):
-                #tmp.extend(self.get_RMSD(j,-1,region=[frag_idx-(fragmentSize-1), frag_idx]))
-                tmp.extend(self.get_RMSD(j,-1,region=[frag_idx, frag_idx+fragmentSize]))
-                
-            if not bins is None:
-                (b,c)=np.histogram(tmp,bins)
-                histo.append(b)
+                tmp.extend(self.get_RMSD(j ,-1, region=[frag_idx, frag_idx+fragment_size]))
+                            
+            # compute a histogram for this large dataset
+            (b,c) = np.histogram(tmp,bins)
+            histo.append(b)
                                 
             meanData.append(np.mean(tmp))
             stdData.append(np.std(tmp))
 
-        return (meanData, stdData, histo)
+        return (meanData, stdData, histo, bins)
         
 
 
     # ........................................................................
     #
-    def get_D_vector(self, stride=20):
+    def get_D_vector(self, stride=20, verbose=True):
         """
         Function to calculate the vector of D values used to calculate the Phi parameter from Lyle et al[1].
 
@@ -1460,6 +1535,10 @@ class CTProtein:
             Defines the spacing between frames to compare - i.e. if comparing frame1 to a trajectory 
             we'd compare frame 1 and every stride-th frame
 
+        verbose : bool
+            Flag that by default is True determines if the function prints status updates. This is relevant because
+            this function can be computationally expensive, so having some report on status can be comforting!
+
         Returns
         ---------
         np.ndarray
@@ -1487,7 +1566,7 @@ class CTProtein:
         # so we stick with the upper traingle only)
         SM_index=0
         for resIndex in residuesWithCA[0:-1]:        
-            ctio.status_message("Calculating non redundant distance for res. %i " % resIndex)
+            ctio.status_message("Calculating non redundant distance for res. %i " % resIndex, verbose)
 
             vals = self.calculate_all_CA_distances(resIndex, stride=stride, onlyCterminalResidues=True, correctOffset=False)                                 
 
@@ -1512,7 +1591,7 @@ class CTProtein:
         # calculate the D-vector of all frames
         D_vector = []
         for A in range(0, n_frames):
-            ctio.status_message("Running PHI calculation on frame %i of %i" % (A, n_frames))
+            ctio.status_message("Running PHI calculation on frame %i of %i" % (A, n_frames), verbose)
 
             
             for B in range(A+1, n_frames):
@@ -1554,7 +1633,7 @@ class CTProtein:
 
     # ........................................................................
     #
-    def get_RMSD(self, frame1, frame2=-1, stride=1, region=None, backbone=True, correctOffset=True):
+    def get_RMSD(self, frame1, frame2=-1, region=None, backbone=True, correctOffset=True, stride=1):
         """
         Function which will calculate the aligned RMSD between two frames, or between one frame and 
         all frames in the trajectory. This can be done over the entire protein but we can also
@@ -1572,10 +1651,6 @@ class CTProtein:
             Defines the frame to be used as a comparison, OR if left blank or set to -1 means the entire 
             trajectory
 
-        stride : int {1}
-            Defines the spacing between frames to compare - i.e. if comparing frame1 to a trajectory we'd compare
-            frame 1 and every stride-th frame
-        
         region : list/tuple of length 2  {None}
             Defines the first and last residue (INCLUSIVE) for a region to be examined. By default is set 
             to None which means the entire protein is used
@@ -1588,6 +1663,17 @@ class CTProtein:
             Defines if we perform local protein offset correction or not. By default we do, but some 
             internal functions may have already performed the correction and so don't need to perform it 
             again
+
+        stride : int {1}
+            Defines the spacing between frames to compare - i.e. if comparing frame1 to a trajectory we'd compare
+            frame 1 and every stride-th frame
+        
+
+        Returns
+        ----------
+        np.ndarray
+            Returns a numpy array of either 1 (if two frames are passed) or nframes length which corresponds
+            to the RMSD difference either between two frames or between one frame and ALL other frames
 
         """
 
@@ -1615,13 +1701,13 @@ class CTProtein:
     # ........................................................................
     #
     def get_Q(self, 
-              stride = 1, 
               protein_average = True, 
               region = None, 
               beta_const = 50.0,
               lambda_const = 1.8,
               native_contact_threshold = 4.5,              
               correctOffset = True, 
+              stride = 1, 
               weights = False):
         """
         Function which will calculate the fraction of native contacts in each frame of the trajectory,
@@ -1638,10 +1724,6 @@ class CTProtein:
 
         Parameters
         -----------
-        stride : int {1}
-            Defines the spacing between frames to compare - i.e. if comparing frame1 to a 
-            trajectory we'd compare frame 1 and every stride-th frame.
-        
 
         protein_average : bool  {True}
             This is the default mode, and means that the return vector is the AVERAGE fraction of 
@@ -1671,11 +1753,14 @@ class CTProtein:
             internal functions may have already performed the correction and so don't need to perform it 
             again
 
+        stride : int {1}
+            Defines the spacing between frames to compare - i.e. if comparing frame1 to a 
+            trajectory we'd compare frame 1 and every stride-th frame.
+        
         weights : list or array of floats  {False}
             Defines the frame-specific weights if re-weighted analysis is required. This can be 
             useful if an ensemble has been re-weighted to better match experimental data, or in
             the case of analysing replica exchange data that is re-combined using T-WHAM.
-
 
 
         Returns
@@ -1868,26 +1953,34 @@ class CTProtein:
         vector (N x 1) that describe the contacts (heavy atom - heavy atom interactions) made by each of the 
         residues over the simulation. 
         
-        Each element is normalized such that it is between 0 and 1. i+1 and i+2 elements are excluded, and the
-        minimum distances is the distance between the closest heavy atoms on each residue (backbone or 
+        Each element is normalized such that it is between 0 and 1. i+1 and i+2 elements are excluded, and 
+        the minimum distances is the distance between the closest heavy atoms on each residue (backbone or         
         sidechain).
 
-        ........................................
-        OPTIONS 
-        ........................................
+        Parameters
+        -----------------
         
-        stride [int] {1}
-        Defines the spacing between frames to compare - i.e. if comparing frame1 to a trajectory we'd compare
-        frame 1 and every stride-th frame. Note this operation may scale poorly as protein length increases
-        at which point increasing the stride may become necessary.
 
-        distance_thresh [float] {5.0}
-        Distance threshold used to define a 'contact' in Angstroms. Contacts are 
+        distance_thresh : float {5.0}
+            Distance threshold used to define a 'contact' in Angstroms. Contacts are taken as frames
+            in which 
+
+        stride : int {1}
+            Defines the spacing between frames to compare - i.e. if comparing frame1 to a trajectory 
+            we'd compare frame 1 and every stride-th frame. Note this operation may scale poorly as 
+            protein length increases at which point increasing the stride may become necessary.
 
         weights [list or array of floats] {False}
-        Defines the frame-specific weights if re-weighted analysis is required. This can be 
-        useful if an ensemble has been re-weighted to better match experimental data, or in
-        the case of analysing replica exchange data that is re-combined using T-WHAM.
+            Defines the frame-specific weights if re-weighted analysis is required. This can be 
+            useful if an ensemble has been re-weighted to better match experimental data, or in
+            the case of analysing replica exchange data that is re-combined using T-WHAM.
+
+        Returns:
+        ---------------
+        tuple of size 2
+            Returns a tuple where:
+            0 - contact map
+            1 - contact order
 
         
         """
@@ -1920,7 +2013,6 @@ class CTProtein:
 
         # build a MASK where distance is not zero (i.e. where distances were calculated
         MASK =  (CMAP[0] != 0)*1
-
 
         # if no weights...
         if weights is False:
@@ -1966,7 +2058,7 @@ class CTProtein:
     # ........................................................................
     #
     #
-    def get_clusters(self, region=None, stride=20, n_clusters=10, backbone=True, correctOffset=True):
+    def get_clusters(self, region=None, n_clusters=10, backbone=True, correctOffset=True, stride=20):
         """
         Function to determine the structural clusters associated with a trajectory. 
         This can be useful for identifying the most populated clusters. This approach
@@ -2010,11 +2102,6 @@ class CTProtein:
         region [list/tuple of length 2]  {[]}
         Defines the first and last residue (INCLUSIVE) for a region to be examined
 
-        stride [int] {20}     
-        Defines the spacing betwen frames to compare with - i.e. take every $stride-th frame.
-        Setting stride=1 would mean every frame is used, which would mean you're doing an
-        all vs. all comparions, which would be ideal BUT may be slow.
-
         n_clusters [int] {10}
         Number of clusters to be returned through Ward's clustering algorithm. 
 
@@ -2026,6 +2113,12 @@ class CTProtein:
         or not. By default we do, but some internal functions
         may have already performed the correction and so don't
         need to perform it again.
+
+        stride [int] {20}     
+        Defines the spacing betwen frames to compare with - i.e. take every $stride-th frame.
+        Setting stride=1 would mean every frame is used, which would mean you're doing an
+        all vs. all comparions, which would be ideal BUT may be slow.
+
 
         """
 
@@ -2121,7 +2214,7 @@ class CTProtein:
     # ........................................................................
     #
     #
-    def get_interResidueCOMDistance(self, R1, R2, stride=1, correctOffset=True):
+    def get_inter_residue_COM_distance(self, R1, R2, correctOffset=True, stride=1):
         """
         Function which calculates the complete set of distances between two residues'
         centers of mass (COM) and returns a vector of the distances.
@@ -2137,16 +2230,17 @@ class CTProtein:
         R2 [int] 
         Residue index of second residue
 
-        stride [int] {20}     
-        Defines the spacing betwen frames to compare with - i.e. take every $stride-th frame.
-        Setting stride=1 would mean every frame is used, which would mean you're doing an
-        all vs. all comparions, which would be ideal BUT may be slow.
-
         correctOffset [Bool] {True}
         Defines if we perform local protein offset correction
         or not. By default we do, but some internal functions
         may have already performed the correction and so don't
         need to perform it again.
+
+        stride [int] {1}     
+        Defines the spacing betwen frames to compare with - i.e. take every $stride-th frame.
+        Setting stride=1 would mean every frame is used, which would mean you're doing an
+        all vs. all comparions, which would be ideal BUT may be slow.
+
 
         """
 
@@ -2154,6 +2248,9 @@ class CTProtein:
         if correctOffset:
             R1 = self.get_offset_residue(R1)
             R2 = self.get_offset_residue(R2)
+        else:
+            R1 = int(R1)
+            R2 = int(R2)
 
         
         # get COM of the two residues for every stride-th frame (only split
@@ -2189,13 +2286,13 @@ class CTProtein:
     # ........................................................................
     #
     #
-    def get_interResidueCOMVector(self, R1, R2, stride=1, correctOffset=True):
+    def get_inter_residue_COM_vector(self, R1, R2, correctOffset=True, stride=1):
         """
         Function which calculates the complete set of distances between two residues'
         centers of mass (COM) and returns the inter-residue distance vector. 
 
         NOTE: This gives a VECTOR and not the distance between the two centers of 
-        mass (which is calculated by get_interResidueCOMDistance)
+        mass (which is calculated by get_inter_residue_COM_distance)
         
 
         ........................................
@@ -2207,16 +2304,16 @@ class CTProtein:
         R2 [int] 
         Residue index of second residue
 
-        stride [int] {20}     
-        Defines the spacing betwen frames to compare with - i.e. take every $stride-th frame.
-        Setting stride=1 would mean every frame is used, which would mean you're doing an
-        all vs. all comparions, which would be ideal BUT may be slow.
-
         correctOffset [Bool] {True}
         Defines if we perform local protein offset correction
         or not. By default we do, but some internal functions
         may have already performed the correction and so don't
         need to perform it again.
+
+        stride [int] {20}     
+        Defines the spacing betwen frames to compare with - i.e. take every $stride-th frame.
+        Setting stride=1 would mean every frame is used, which would mean you're doing an
+        all vs. all comparions, which would be ideal BUT may be slow.
 
 
 
@@ -2225,6 +2322,9 @@ class CTProtein:
         if correctOffset:
             R1 = self.get_offset_residue(R1)
             R2 = self.get_offset_residue(R2)
+        else:
+            R1 = int(R1)
+            R2 = int(R2)
 
         TRJ_1 = self.traj.atom_slice(self.topology.select('resid %i' % R1 ))
         TRJ_1 = TRJ_1.slice(list(range(0, self.n_frames, stride)))
@@ -2242,7 +2342,7 @@ class CTProtein:
     # ........................................................................
     #
     #
-    def get_interResidue_atomic_distance(self, R1, R2, A1='CA', A2='CA', stride=1, mode='atom', correctOffset=True):
+    def get_inter_residue_atomic_distance(self, R1, R2, A1='CA', A2='CA', mode='atom', correctOffset=True, stride=1):
         """
         Function which returns the distance between two specific atoms on two residues. The atoms
         selected are based on the 'name' field from the topology selection language. This defines
@@ -2270,11 +2370,6 @@ class CTProtein:
         A2 [string {CA}
         Atom name of the atom in R2 we're looking at
 
-        stride [int] {1}     
-        Defines the spacing betwen frames to compare with - i.e. take every $stride-th frame.
-        Setting stride=1 would mean every frame is used, which would mean you're doing an
-        all vs. all comparions, which would be ideal BUT may be slow.
-
         mode [string] {'atom'}
         Mode allows the user to define differnet modes for computing atomic distance. The
         default is 'atom' whereby a pair of atoms (A1 and A2) are provided. Other options
@@ -2299,17 +2394,27 @@ class CTProtein:
         may have already performed the correction and so don't
         need to perform it again.
 
+        stride [int] {1}     
+        Defines the spacing betwen frames to compare with - i.e. take every $stride-th frame.
+        Setting stride=1 would mean every frame is used, which would mean you're doing an
+        all vs. all comparions, which would be ideal BUT may be slow.
+
+
         """
 
         # check mode keyword is valid
-        if mode == 'closest' or mode == 'ca' or mode == 'closest-heavy' or mode == 'sidechain' or mode == 'sidechain-heavy' or mode == 'atom':
-            pass
-        else:
-            raise CTException("Provided mode keyword must be one of 'closest', 'ca', 'closest-heavy', 'sidechain', sidechain-heavy', or 'atom'. Provided keyword was [%s]" % (mode))
-
+        ctutils.validate_keyword_option(mode, ['atom', 'ca', 'closest-heavy', 'closest', 'sidechain', 'sidechain-heavy'] , 'mode')
+        
+        # define R1 and R2 - if offset needed perform, else 
+        # define the first and last residue INCLUDING caps
         if correctOffset:
             R1 = self.get_offset_residue(R1)
             R2 = self.get_offset_residue(R2)
+        else:
+            # cast...
+            R1 = int(R1)
+            R2 = int(R2)
+
 
         try:
             # if atom mode was used
@@ -2385,6 +2490,8 @@ class CTProtein:
 
         if correctOffset:
             R1 = self.get_offset_residue(R1)
+        else:
+            R1 = int(R1)
             
         # get the atoms associated with the resite of interest
         res_atoms = self.topology.select('resid %i'%(R1))
@@ -2400,7 +2507,7 @@ class CTProtein:
     # ........................................................................
     #
     #
-    def get_asphericity(self, R1=False, R2=False, statusMessage=True, correctOffset=True):
+    def get_asphericity(self, R1=None, R2=None, correctOffset=True, verbose=True):
         """
         Returns the asphericity associated with the region defined by the intervening stretch of residues between
         R1 and R2. This can be a somewhat slow operation, so a status message is printed for the impatient
@@ -2414,11 +2521,11 @@ class CTProtein:
         OPTIONS 
         ........................................
 
-        R1 [int] {False}
+        R1 [int] {None}
         Index value for first residue in the region of interest. If not 
         provided (False) then first residue is used.
 
-        R1 [int] {False}
+        R1 [int] {None}
         Index value for last residue in the region of interest. If not
         provided (False) then last residue is used.
 
@@ -2427,12 +2534,35 @@ class CTProtein:
         or not. By default we do, but some internal functions
         may have already performed the correction and so don't
         need to perform it again.
+
+        verbose : bool
+            Flag that by default is True determines if the function prints status updates. This is relevant because
+            this function can be computationally expensive, so having some report on status can be comforting!
+
         
         """
+
+        # define R1 and R2 - if offset needed perform, else 
+        # define the first and last residue INCLUDING caps
+        if R1 is None:
+            R1 = 0
+        else:
+            if correctOffset:
+                R1 = self.get_offset_residue(R1)
+            else:
+                # cast...
+                R1 = int(R1)
+
+        if R2 is None:
+            R2 = self.n_residues - 1
+        else:
+            if correctOffset:
+                R2 = self.get_offset_residue(R2)
+            else:
+                R2 = int(R2)
         
         # compute the gyration tensor
-        gyration_tensor_vector = self.get_gyration_tensor(R1, R2, statusMessage, correctOffset)
-
+        gyration_tensor_vector = self.get_gyration_tensor(R1, R2, correctOffset=correctOffset, verbose=verbose)
         asph_vector = []
             
         for gyr in gyration_tensor_vector:
@@ -2451,43 +2581,57 @@ class CTProtein:
     # ........................................................................
     #
     #
-    def get_gyration_tensor(self, R1=False, R2=False, statusMessage=True, correctOffset=True):
+    def get_gyration_tensor(self, R1=None, R2=None, correctOffset=True, verbose=True):
         """
         Returns the instantaneous gyration tensor associated with each frame.
 
-        ........................................
-        OPTIONS 
-        ........................................
+        Parameters
+        ---------------
+        R1 : int  {None}
+            Index value for first residue in the region of interest. If not provided (False) then first 
+            residue is used.
+        
 
-        R1 [int] {False}
-        Index value for first residue in the region of interest. If not 
-        provided (False) then first residue is used.
+        R1 : int {None}
+            Index value for last residue in the region of interest. If not provided (False) then last 
+            residue is used.
+            
 
-        R1 [int] {False}
-        Index value for last residue in the region of interest. If not
-        provided (False) then last residue is used.
+        correctOffset: bool {True}
+            Defines if we perform local protein offset correction or not. By default we do, but some 
+            internal functions may have already performed the correction and so don't need to perform 
+            it again
 
-        correctOffset [Bool] {True}
-        Defines if we perform local protein offset correction
-        or not. By default we do, but some internal functions
-        may have already performed the correction and so don't
-        need to perform it again.
+        verbose : bool
+            Flag that by default is True determines if the function prints status updates. This is relevant because
+            this function can be computationally expensive, so having some report on status can be comforting!
+
+        Returns
+        -----------
+        np.ndarray
+            Returns a numpy array where each position is the frame-specific gyration tensor value
+        
         
         """
 
         # define R1 and R2 - if offset needed perform, else 
         # define the first and last residue INCLUDING caps
-        if R1 == False:
+        if R1 is None:
             R1 = 0
         else:
             if correctOffset:
                 R1 = self.get_offset_residue(R1)
+            else:
+                # cast...
+                R1 = int(R1)
 
-        if R2 == False:
+        if R2 is None:
             R2 = self.n_residues - 1
         else:
             if correctOffset:
                 R2 = self.get_offset_residue(R2)
+            else:
+                R2 = int(R2)
 
         # switch em around so the A to B syntax makes sense
         if R1 > R2:
@@ -2498,15 +2642,15 @@ class CTProtein:
         all_positions_all_frames = self.traj.atom_slice(self.topology.select('resid %i to %i'%(R1,R2)))
 
         gyration_tensor_vector = []
-        count=1
+        count = 1
 
         for frame in all_positions_all_frames:
 
             # quick status update...
-            if count % 500 == 0 and statusMessage:
-                ctio.status_message("On frame %i of %i [computing gyration tensor]" % (count, len(all_positions_all_frames)))
+            if count % 500 == 0:
+                ctio.status_message("On frame %i of %i [computing gyration tensor]" % (count, len(all_positions_all_frames)), verbose)
 
-            count=count+1
+            count = count + 1
             
             # compute the center of mass for the relevant atoms
             COM = md.compute_center_of_mass(frame)
@@ -2526,7 +2670,7 @@ class CTProtein:
             T = T_PRE/len(frame.xyz[0])
             """
             
-            # compute the gyration tensor
+            # compute the gyration tensor - this syntax is WAY faster than the above 
             T_new = np.sum(np.einsum('ij...,i...->ij...',DIF,DIF),axis=0)/len(frame.xyz[0])
             
             gyration_tensor_vector.append(T_new)
@@ -2545,29 +2689,30 @@ class CTProtein:
 
         The vector of End-to-end distances is returned in angstroms
 
-        ........................................
-        OPTIONS 
-        ........................................
-
+        Parameters
+        ---------------
         mode [string] {'CA'}
         String, must be one of either 'CA' or 'COM'.
         'CA' = alpha carbon
         'COM' = center of mass (associated withe the residue) 
 
-        """
+        Returns
+        ---------
+            
 
-        if mode not in ['CA', 'COM']:
-            raise CTException("End-to-end distance analysis requires that 'mode' is set to one of 'CA' (alpha carbon) or 'COM' (center of mass). mode was set to [%s]" % str(mode))
+        """
+        
+        ctutils.validate_keyword_option(mode, ['CA', 'COM'], 'mode')
 
         # extract first and last residue AFTER offset correction (i.e. residue number from original PDB file) 
         start = self.resid_with_CA[0]
         end = self.resid_with_CA[-1]
 
         if mode == 'CA':
-            distance = self.get_interResidue_atomic_distance(start, end, stride=1, correctOffset=False)
+            distance = self.get_inter_residue_atomic_distance(start, end, stride=1, correctOffset=False)
             
         elif mode == 'COM':
-            distance = self.get_interResidueCOMDistance(start, end, stride=1, correctOffset=False)
+            distance = self.get_inter_residue_COM_distance(start, end, stride=1, correctOffset=False)
 
         return distance
         
@@ -2575,7 +2720,7 @@ class CTProtein:
     # ........................................................................
     #
     #
-    def get_radius_of_gyration(self, R1=False, R2=False, correctOffset=True):
+    def get_radius_of_gyration(self, R1=None, R2=None, correctOffset=True):
         """
         Returns the radius of gyration associated with the region defined by the intervening stretch of residues between
         R1 and R2. When residues are not provided the full protein's radius of gyration (INCLUDING the caps,
@@ -2605,11 +2750,15 @@ class CTProtein:
 
         # define R1 and R2 - if offset needed perform, else 
         # define the first and last residue INCLUDING caps
-        if R1 == False:
+        if R1 is None:
             R1 = 0
+        else:
+            R1 = int(R1)
 
-        if R2 == False:
+        if R2 is None:
             R2 = self.n_residues-1
+        else:
+            R2 = int(R2)
 
 
         # note we correct offset regardless of if R1/R2 are passed or not
@@ -2630,7 +2779,7 @@ class CTProtein:
     # ........................................................................
     #
     #
-    def get_t(self, R1=False, R2=False, correctOffset=True):
+    def get_t(self, R1=None, R2=None, correctOffset=True):
         """
         Returns the <t>, a dimensionless parameter which describes the size of the ensemble.
 
@@ -2653,6 +2802,18 @@ class CTProtein:
         need to perform it again.
 
         """
+
+        # define R1 and R2 - if offset needed perform, else 
+        # define the first and last residue INCLUDING caps
+        if R1 is None:
+            R1 = 0
+        else:
+            R1 = int(R1)
+
+        if R2 is None:
+            R2 = self.n_residues-1
+        else:
+            R2 = int(R2)
         
         # first get the instantanoues RG
         rg = self.get_radius_of_gyration(R1, R2, correctOffset)
@@ -2678,7 +2839,7 @@ class CTProtein:
     # ........................................................................
     #
     #    
-    def get_internal_scaling(self, R1=False, R2=False, mode='COM', stride=1, correctOffset=True, mean_vals=False, weights=False):
+    def get_internal_scaling(self, R1=None, R2=None, mode='COM', mean_vals=False, correctOffset=True, stride=1, weights=False, verbose=True):
         """
         Calculates the raw internal scaling info for the protein in the simulation.
         R1 and R2 define a sub-region to operate over if sub-regional analysis is
@@ -2757,21 +2918,31 @@ class CTProtein:
         residue center or mass or the residue CA atom. The provided mode
         must be one of these two options.
 
+        mean_vals [Book] {False}
+        This is False by default, but if true the mean IS is returned instead of 
+        the explicit values. In reality the non-default behaviour is probably
+        preferable...
+
         correctOffset [Bool] {True}
         Defines if we perform local protein offset correction
         or not. By default we do, but some internal functions
         may have already performed the correction and so don't
         need to perform it again.
 
-        mean_vals [Book] {False}
-        This is False by default, but if true the mean IS is returned instead of 
-        the explicit values. In reality the non-default behaviour is probably
-        preferable...
+        stride : int {1}
+            Defines the spacing between frames to compare - i.e. if comparing frame1 to a trajectory 
+            we'd compare frame 1 and every stride-th frame. Note this operation may scale poorly as 
+            protein length increases at which point increasing the stride may become necessary.
+
 
         weights [list or array of floats] {False}
         Defines the frame-specific weights if re-weighted analysis is required. This can be 
         useful if an ensemble has been re-weighted to better match experimental data, or in
         the case of analysing replica exchange data that is re-combined using T-WHAM.
+
+        verbose : bool
+            Flag that by default is True determines if the function prints status updates. This is relevant because
+            this function can be computationally expensive, so having some report on status can be comforting!
 
         
         """
@@ -2787,12 +2958,10 @@ class CTProtein:
         self.__check_stride(stride)
 
         # check mode is OK
-        if mode not in ['CA', 'COM']:
-            raise CTException("Internal scaling analysis requires that 'mode' is set to one of 'CA' (alpha carbon) or 'COM' (center of mass). mode was set to [%s]" % str(mode))
-
+        ctutils.validate_keyword_option(mode, ['CA', 'COM'], 'mode')
 
         # process the R1/R2 to set the position after offset correction
-        out =  self.__get_first_and_last(R1,R2, withCA = True)
+        out =  self.__get_first_and_last(R1, R2, withCA = True)
         R1 = out[0]
         R2 = out[1]
 
@@ -2811,7 +2980,7 @@ class CTProtein:
         seq_sep_vals = []
 
         for seq_sep in range(0, max_seq_sep):
-            ctio.status_message("Internal Scaling - on sequence separation %i of %i" %(seq_sep, max_seq_sep-1))
+            ctio.status_message("Internal Scaling - on sequence separation %i of %i" %(seq_sep, max_seq_sep-1), verbose)
 
             tmp = []
             seq_sep_vals.append(seq_sep)
@@ -2824,10 +2993,10 @@ class CTProtein:
                 # get the distance for every stride-th frame between those two positions using either the CA
                 # mode or the COM mode
                 if mode == 'CA':
-                    distance = self.get_interResidue_atomic_distance(A, B, stride=stride, correctOffset=False)
+                    distance = self.get_inter_residue_atomic_distance(A, B, stride=stride, correctOffset=False)
 
                 elif mode == 'COM':
-                    distance = self.get_interResidueCOMDistance(A, B, stride=stride, correctOffset=False)
+                    distance = self.get_inter_residue_COM_distance(A, B, stride=stride, correctOffset=False)
 
                 # if weights were provided subsample from the set of distances using the weights vector
                 if weights is not False:
@@ -2836,7 +3005,6 @@ class CTProtein:
                 tmp = np.concatenate((tmp,distance))
                 
             seq_sep_distances.append(tmp)
-
 
         if mean_vals:
             mean_is = [np.mean(i) for i in seq_sep_distances]
@@ -2849,7 +3017,7 @@ class CTProtein:
     # ........................................................................
     #
     #    
-    def get_internal_scaling_RMS(self, R1=False, R2=False, mode='COM', stride=1, correctOffset=True, weights=False):
+    def get_internal_scaling_RMS(self, R1=None, R2=None, mode='COM', stride=1, correctOffset=True, weights=False, verbose=True):
         """
         If :math:`r_{i,j} = \langle \langle \sum \sigma_{1}` equals :math:`\sigma_{2}` then etc, etc.
 
@@ -2914,11 +3082,11 @@ class CTProtein:
         OPTIONS 
         ........................................
 
-        R1 [int] {False}
+        R1 [int] {None}
         Index value for first residue in the region of interest. If not 
         provided (False) then first residue is used.
 
-        R1 [int] {False}
+        R1 [int] {None}
         Index value for last residue in the region of interest. If not
         provided (False) then last residue is used.
 
@@ -2938,11 +3106,14 @@ class CTProtein:
         useful if an ensemble has been re-weighted to better match experimental data, or in
         the case of analysing replica exchange data that is re-combined using T-WHAM.
 
+        verbose : bool
+            Flag that by default is True determines if the function prints status updates. This is relevant because
+            this function can be computationally expensive, so having some report on status can be comforting!
         
         """
         
         # compute the non RMS internal scaling behaviour 
-        (seq_sep_vals, seq_sep_distances) = self.get_internal_scaling(R1=R1, R2=R2, mode=mode, stride=stride, correctOffset=correctOffset, weights=weights)
+        (seq_sep_vals, seq_sep_distances) = self.get_internal_scaling(R1=R1, R2=R2, mode=mode, stride=stride, correctOffset=correctOffset, weights=weights, verbose=verbose)
         
         # calculate RMS for each distance 
         mean_is = [np.sqrt(np.mean(i*i)) for i in seq_sep_distances]
@@ -2952,180 +3123,7 @@ class CTProtein:
 
     # ........................................................................
     #
-    #
-    def get_scaling_exponent(self, inter_residue_min=15, end_effect=5, stride=1, correctOffset=True, weights=False, subdivision_batch_size=20, mode='COM'):
-        """
-        Estimation for the A0 and nu exponents for the standard polymer relationship
-
-        sqrt(<Rij^2>) = A0|i-j|^(nu)
-
-        Nu reports on the solvent quality, while the prefactor (A0) reports on the average chain persistence length. For polymers that are
-        above a 0.5 scaling exponent this works, but below this they deviate from fractal behaviour, so formally this relationship stops 
-        working. In practice, the best possible fit line does still track with relative compactness.
-
-        Returns a 9 position tuple with the following associated values:
-        0 - best nu
-        1 - best A0
-        2 - minimum nu identified in bootstrap fitting
-        3 - maximum nu identified in bootstrap fitting
-        4 - minimum A0 identified in bootstrap fitting
-        5 - maximum A0 identified in bootstrap fitting
-        6 - Root mean square error (fit vs. real)
-        7 - chi2 (fit vs. real)
-        8 - 3-column array, where col 1 is the sequence separation, col 2 is 
-            the real spatial separation observed and col 3 is the best fit 
-            curve.
-
-        NOTE: Despite their precision nu and A0 should be treated as qualitative metrics, and are subject to finite
-              chain effects. The idea of a polymer scaling behaviour is only necessarily useful in the case of a 
-              homopolymer, whereas heterpolymers engender massive averaging that can mask underlying conformational
-              complexity. We _strongly_ caution against over interpretation of the scaling exponent.
-
-        ........................................
-        OPTIONS 
-        ........................................
-        inter_residue_min [int] {15}
-        Minimum distances used when selecting pairs of residues. This 25 threshold was determined previously,
-        and essentially avoids scenarios where the two residues (i and j) are close to each other. The goal 
-        of this limit is to avoid finite chain size strongly influencing the scaling exponent limit.
-
-        end_effect [int] {5}
-        Avoid pairs where one of the residues is $end_effect residues from the end. Helps mitigate end-effects.
-        5 chosen as it's around above the blob-length in a polypeptide. Note that for homopolymers this is much 
-        less of an issue.
-
-        correctOffset [Bool] {True}
-        Defines if we perform local protein offset correction
-        or not. By default we do, but some internal functions
-        may have already performed the correction and so don't
-        need to perform it again.
-
-        weights [list or array of floats] {False}
-        Defines the frame-specific weights if re-weighted analysis is required. This can be 
-        useful if an ensemble has been re-weighted to better match experimental data, or in
-        the case of analysing replica exchange data that is re-combined using T-WHAM.
-
-        weights [list or array of floats] {False}
-        Defines the frame-specific weights if re-weighted analysis is required. This can be 
-        useful if an ensemble has been re-weighted to better match experimental data, or in
-        the case of analysing replica exchange data that is re-combined using T-WHAM.
-     
-
-        """
-        
-        if weights is not False:
-            if int(stride) != 1:
-                raise CTException("For get_scaling_exponent with weights stride MUST be set to 1. If this is a HUGE deal for you please contact alex and he'll try and update the code to accomodate this, but for now we suggest creating a sub-sampled trajectory and loading that")
-            
-        if mode not in ['CA', 'COM']:
-            raise CTException("Scaling exponent analysis requires that 'mode' is set to one of 'CA' (alpha carbon) or 'COM' (center of mass). mode was set to [%s]" % str(mode))
-
-        # check weights make sense...
-        weights = self.__check_weights(weights, stride)
-
-        first = self.resid_with_CA[0]
-        last= self.resid_with_CA[-1]
-
-        max_separation = (last-first)+1
-
-        # note integer math used here to round down...
-        num_subdivisions_for_error = int(self.n_frames / subdivision_batch_size)
-        
-        seq_sep_vals             = []
-        seq_sep_RMS_distance     = []
-        seq_sep_RSTDS_distance   = []
-        seq_sep_subsampled_distances  = []
-        
-        # for each possible sequence separation  (|i-j| value)
-        for seq_sep in range(1, max_separation):
-            ctio.status_message("Internal Scaling - on sequence separation %i of %i" %(seq_sep, max_separation))
-
-            tmp = []
-            seq_sep_vals.append(seq_sep)
-
-            # collect all possible average seq-sep values weighted by the weights
-            for pos in range(0, max_separation-seq_sep):
-
-                # define the two positions
-                A = first + pos
-                B = first + pos + seq_sep
-
-                # NOTE - we ONLY alow mode to be COM because using CA means we effectivly allow a repulsive
-                # patch on the side (sidechain) - bad news!
-
-                if mode == 'CA':
-                    distance = self.get_interResidue_atomic_distance(A, B, stride=stride, correctOffset=False)
-                elif mode == 'COM':
-                    distance = self.get_interResidueCOMDistance(A, B, stride=stride, correctOffset=False)
-
-                # compute the ensemble average of the distances
-                if weights is not False:
-                    distance = choice(distance, len(distance), p=weights)
-
-                tmp.extend(distance)
-            
-            tmp = np.array(tmp)
-
-            # add mean and std vals for this sequence sep
-            seq_sep_RMS_distance.append(np.sqrt(np.mean(tmp*tmp)))
-            seq_sep_RSTDS_distance.append(np.sqrt(np.std(tmp*tmp)))
-
-            if num_subdivisions_for_error > 0:
-                subdivision_size = int(len(tmp)/num_subdivisions_for_error)
-
-                # get shuffled indices
-                idx = np.random.permutation(list(range(0,len(tmp))))
-            
-                # split shuffled indices into $num_subdivisions_for_error sized chunks
-                subdivided_idx = cttools.chunks(idx, subdivision_size)
-                        
-                # finally subselect each of the randomly selected indicies 
-                RMS_local   = []
-            
-                for idx_set in subdivided_idx:
-                    # subselect a random set of distances and compute RMS
-                    RMS_local.append(np.sqrt(np.mean(tmp[idx_set]*tmp[idx_set])))
-
-            
-                # add distribution of values for this sequence sep
-                seq_sep_subsampled_distances.append(RMS_local)
-       
-
-        # now sub-select the bit of the curve we actually want
-        seq_sep_vals = seq_sep_vals[inter_residue_min:-end_effect]
-        seq_sep_RMS_distance = seq_sep_RMS_distance[inter_residue_min:-end_effect]
-
-        OF = SPO.curve_fit(cttools.powermodel, seq_sep_vals, seq_sep_RMS_distance,[0.5,2])
-
-        nu_best = OF[0][0]
-        R0_best = OF[0][1]
-    
-        subselected = np.array(seq_sep_subsampled_distances).transpose()
-
-        nu_sub = []
-        R0_sub = []
-        for i in range(0, num_subdivisions_for_error):
-            
-            OF = SPO.curve_fit(cttools.powermodel, seq_sep_vals, subselected[i][inter_residue_min:-end_effect], [0.5,2])
-            nu_sub.append(OF[0][0])
-            R0_sub.append(OF[0][1])
-
-        if num_subdivisions_for_error < 1:
-            nu_sub.append(np.nan)
-            R0_sub.append(np.nan)
-            
-        errors = seq_sep_RMS_distance - cttools.powermodel(seq_sep_vals, nu_best, R0_best)        
-        root_mean_squared_error = np.sqrt(np.sum(np.power(errors,2))/len(errors))    
-        chi_squared = np.sum(np.power(errors,2) / cttools.powermodel(seq_sep_vals, nu_best, R0_best))
-                        
-        return [nu_best, R0_best, min(nu_sub), max(nu_sub), min(R0_sub), max(R0_sub), root_mean_squared_error, chi_squared, np.vstack((seq_sep_vals, seq_sep_RMS_distance, cttools.powermodel(seq_sep_vals, nu_best, R0_best)))]
-
-
-
-
-    # ........................................................................
-    #
-    def get_scaling_exponent_v2(self, inter_residue_min=15, end_effect=5, stride=1, correctOffset=True, weights=False, subdivision_batch_size=20, mode='COM', num_fitting_points=40, fraction_of_points=0.5, fraction_override=False, verbose=True):
+    def get_scaling_exponent(self, inter_residue_min=15, end_effect=5, correctOffset=True,  subdivision_batch_size=20, mode='COM', num_fitting_points=40, fraction_of_points=0.5, fraction_override=False, stride=1, weights=False, verbose=True):
         """
         Estimation for the A0 and nu exponents for the standard polymer relationship
 
@@ -3189,11 +3187,6 @@ class CTProtein:
         may have already performed the correction and so don't
         need to perform it again.
 
-        weights [list or array of floats] {False}
-        Defines the frame-specific weights if re-weighted analysis is required. This can be 
-        useful if an ensemble has been re-weighted to better match experimental data, or in
-        the case of analysing replica exchange data that is re-combined using T-WHAM.
-
         mode [string, either 'COM' or 'CA'] {'COM'}
         Defines the mode in which the internal scaling profile is calculated, can use either
         COM (center of mass) of each residue or the CA carbon of each residue. COM is more
@@ -3213,15 +3206,32 @@ class CTProtein:
         If set to False then fraction_of_points ONLY used if the length of the sequence is
         less than the num_fitting points. If true then we explicitly use fraction_of_points
         and ignore num_fitting_points.
+
+        stride : int {1}
+            Defines the spacing between frames to compare - i.e. if comparing frame1 to a trajectory 
+            we'd compare frame 1 and every stride-th frame. Note this operation may scale poorly as 
+            protein length increases at which point increasing the stride may become necessary.
+
+
+        weights [list or array of floats] {False}
+        Defines the frame-specific weights if re-weighted analysis is required. This can be 
+        useful if an ensemble has been re-weighted to better match experimental data, or in
+        the case of analysing replica exchange data that is re-combined using T-WHAM.
+
+        verbose : bool
+            Flag that by default is True determines if the function prints status updates. This is relevant because
+            this function can be computationally expensive, so having some report on status can be comforting!
+
+
+
         
         """
         
-        if weights is not False:
-            if int(stride) != 1:
-                raise CTException("For get_scaling_exponent with weights stride MUST be set to 1. If this is a HUGE deal for you please contact alex and he'll try and update the code to accomodate this, but for now we suggest creating a sub-sampled trajectory and loading that")
-            
-        if mode not in ['CA', 'COM']:
-            raise CTException("Scaling exponent analysis requires that 'mode' is set to one of 'CA' (alpha carbon) or 'COM' (center of mass). mode was set to [%s]" % str(mode))
+        # check weights are OK
+        weights = self.__check_weights(weights, stride)
+
+        # check mode is OK
+        ctutils.validate_keyword_option(mode, ['CA', 'COM'], 'mode')
 
         # compute max |i-j| distance being used...
         first = self.resid_with_CA[0]
@@ -3270,8 +3280,7 @@ class CTProtein:
         # for each possible sequence separation  (|i-j| value)
         for seq_sep in range(1, max_separation):
 
-            if verbose:
-                ctio.status_message("Internal Scaling - on sequence separation %i of %i" %(seq_sep, max_separation))
+            ctio.status_message("Internal Scaling - on sequence separation %i of %i" %(seq_sep, max_separation), verbose)
 
             tmp = []
             seq_sep_vals.append(seq_sep)
@@ -3285,10 +3294,10 @@ class CTProtein:
 
 
                 if mode == 'CA':
-                    distance = self.get_interResidue_atomic_distance(A, B, stride=stride, correctOffset=False)
+                    distance = self.get_inter_residue_atomic_distance(A, B, stride=stride, correctOffset=False)
 
                 elif mode == 'COM':
-                    distance = self.get_interResidueCOMDistance(A, B, stride=stride, correctOffset=False)
+                    distance = self.get_inter_residue_COM_distance(A, B, stride=stride, correctOffset=False)
 
                 # compute the ensemble average of the distances
                 if weights is not False:
@@ -3437,6 +3446,8 @@ class CTProtein:
         # correct the offset if necessary
         if correctOffset:
             R1 = self.get_offset_residue(R1)
+        else:
+            R1 = int(R1)
         
         # get the atoms associated with the resite of interest
         return md.compute_center_of_mass(self.traj.atom_slice(self.topology.select('resid %i'%R1)))
@@ -3446,7 +3457,7 @@ class CTProtein:
     # ........................................................................
     #
     #
-    def get_all_SASA(self, stride=20, probe_radius=0.14, mode='residue'):
+    def get_all_SASA(self, probe_radius=0.14, mode='residue', stride=20):
         """
         Returns the Solvent Accessible Surface Area (SASA) for each residue from 
         every stride-th frame. SASA is determined using shrake_rupley algorithm.
@@ -3457,9 +3468,6 @@ class CTProtein:
         OPTIONS 
         ........................................
         
-        stride [int] {20}
-        Defines the spacing between frames to compare - i.e. if comparing frame1 
-        to a trajectory we'd compare frame 1 and every stride-th frame
                 
         probe_radius [float]  {0.14}
         Radius of the solvent probe used in nm. Uses the Golden-Spiral algorithm. 
@@ -3469,6 +3477,11 @@ class CTProtein:
         Defines the mode used to compute the SASA. Must be one of 'residue' or 
         'atom'. For atom mode, extracted areas are resolved per-atom. For 'residue',
         this is computed instead on the per residue basis. 
+
+        stride [int] {20}
+        Defines the spacing between frames to compare - i.e. if comparing frame1 
+        to a trajectory we'd compare frame 1 and every stride-th frame
+        
         
         """
         
@@ -3514,13 +3527,9 @@ class CTProtein:
             return np.array(residue_SASA).transpose()
             ## >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 
-        try:
-            mode = mode.lower()
-        except:
-            raise CTException("'mode' variable could not be set to lowercase. Please pass a string ('residue', or 'atom')")
-        
-        if mode not in ['residue','atom','backbone','sidechain','all']:
-            raise CTException("'mode' variable must be one of residue, atom, backbone, sidechain, or all")
+
+        # validate input mode
+        ctutils.validate_keyword_option(mode, ['residue', 'atom','backbone','sidechain','all'], 'mode')
 
         # downsample based on the stride        
         target = self.__get_subtrajectory(self.traj, stride)
@@ -3533,7 +3542,6 @@ class CTProtein:
             return 100*md.shrake_rupley(target, mode='atom', probe_radius=probe_radius)
             
         if mode == 'sidechain' or mode == 'backbone' or mode == 'all':
-
             
             print("WARNING: Not tested on multiprotein systems")
 
@@ -3565,7 +3573,7 @@ class CTProtein:
     # ........................................................................
     #
     #
-    def get_site_accessibility(self, input_list, probe_radius=0.14, stride=20, mode='residue_type'):
+    def get_site_accessibility(self, input_list, probe_radius=0.14, mode='residue_type', stride=20):
         """
         Function to compute site/residue type accessibility. This can be done using one of two modes.
         Under 'residue_type' mode, the input_list should be a list of canonical 3-letter amino acid
@@ -3583,25 +3591,27 @@ class CTProtein:
         input_list [list] 
         List of either residue names (e.g. ['TRP','TYR','GLN'] or resid values
         ([1,2,3,4]) which will be taken and the SASA calculated for.
-        
-        stride [int] {20}
-        Defines the spacing between frames to compare - i.e. if comparing frame1 
-        to a trajectory we'd compare frame 1 and every stride-th frame
-                
+                        
         probe_radius [float]  {0.14}
         Radius of the solvent probe used in nm. Uses the Golden-Spiral algorithm. 
         0.14 nm is pretty standard. NOTE - the probe radius must be in nanometers
 
         mode [string] {'residue_type'}
         Mode used to examine sites. MUST be one of 'residue_type' or 'resid'
+
+        stride [int] {20}
+        Defines the spacing between frames to compare - i.e. if comparing frame1 
+        to a trajectory we'd compare frame 1 and every stride-th frame
+
                
         
         """
 
         ## First check mode is valid and then sanity check input
+        ctutils.validate_keyword_option(mode, ['residue_type', 'resid'], 'mode')
 
         # if we're in 'residue_type' mode
-        if mode.lower() == 'residue_type':
+        if mode == 'residue_type':
 
             # set the list of valid residues to the 20 AAs + the caps            
             for res in input_list:
@@ -3620,8 +3630,6 @@ class CTProtein:
                 self.__check_single_residue(R1)
                 offset_input_idx.append(self.get_offset_residue(R1))
 
-        else:
-            raise CTException('Error: Using get_site_accessibility(), the mode passed was not recognized [%s], must be either residue_type or resid' % (mode))
             
 
         ## if we get here all input has been validated
@@ -3650,13 +3658,12 @@ class CTProtein:
         for i in offset_input_idx:
             return_data[lookup[i]] = [np.mean(ALL_SASA[i]), np.std(ALL_SASA[i])]
             
-
         return return_data
         
     # ........................................................................
     #
     #
-    def get_regional_SASA(self, R1, R2, stride=20, probe_radius=0.14, correctOffset=True):
+    def get_regional_SASA(self, R1, R2, probe_radius=0.14, correctOffset=True, stride=20):
         """
         Returns the Solvent Accessible Surface Area (SASA) for a local region in
         every stride-th frame. SASA is determined using shrake_rupley algorithm.
@@ -3672,11 +3679,7 @@ class CTProtein:
 
         R2 [int]
         Index value for the last residue in the region
-        
-        stride [int] {20}
-        Defines the spacing between frames to compare - i.e. if comparing frame1 
-        to a trajectory we'd compare frame 1 and every stride-th frame
-                
+                        
         probe_radius [float]  {0.14}
         Radius of the solvent probe used in nm. Uses the Golden-Spiral algorithm. 
         0.14 nm is pretty standard. NOTE - the probe radius must be in nanometers
@@ -3686,6 +3689,11 @@ class CTProtein:
         or not. By default we do, but some internal functions
         may have already performed the correction and so don't
         need to perform it again.
+
+        stride [int] {20}
+        Defines the spacing between frames to compare - i.e. if comparing frame1 
+        to a trajectory we'd compare frame 1 and every stride-th frame
+        
                       
         """
 
@@ -3789,7 +3797,7 @@ class CTProtein:
     # ........................................................................
     #
     #
-    def get_dihedral_mutual_information(self, angle_name='psi', weights=False, stride=1, bwidth = np.pi/5.0):
+    def get_dihedral_mutual_information(self, angle_name='psi',  bwidth = np.pi/5.0, stride=1, weights=False):
         """
         Generate the full mutual information matrix for a specific diehdral
         type. The resulting matrix describes the mutual information between each 
@@ -3821,14 +3829,19 @@ class CTProtein:
         String, must be one of the following options
         'chi1','phi, 'psi', 'omega'. 
 
-        stride [int] {20}
-        Defines the spacing between frames to compare - i.e. if comparing frame1 
-        to a trajectory we'd compare frame 1 and every stride-th frame.
-
         bwidth [np.array} {np.pi/5.0)
         The width of the bins that will stretch from -pi to pi. np.pi/5.0 is
         probablty the smallest binsize you want - even np.pi/2 should work
         well. You may want to experiment with this parameter...
+
+        stride [int] {20}
+        Defines the spacing between frames to compare - i.e. if comparing frame1 
+        to a trajectory we'd compare frame 1 and every stride-th frame.
+
+        weights [list or array of floats] {False}
+        Defines the frame-specific weights if re-weighted analysis is required. This can be 
+        useful if an ensemble has been re-weighted to better match experimental data, or in
+        the case of analysing replica exchange data that is re-combined using T-WHAM.
 
         """
 
@@ -3845,6 +3858,9 @@ class CTProtein:
 
         # if weights were passed make sure they're LEGIT!
         weights = self.__check_weights(weights, stride)
+
+        # check 
+        ctutils.validate_keyword_option(angle_name, ['chi1', 'phi', 'psi', 'omega'], 'angle_name')
 
         ## ..................................................
         
@@ -3884,7 +3900,7 @@ class CTProtein:
     # ........................................................................
     #
     #
-    def get_local_to_global_correlation(self, mode='COM', stride=20, n_cycles=100, max_num_pairs=10, weights=False):
+    def get_local_to_global_correlation(self, mode='COM', n_cycles=100, max_num_pairs=10, stride=20, weights=False, verbose=True):
         """
         Method to analyze how well ensemble average distances taken from a finite number of inter-residue 
         distances correlate with global dimensions as measured by the radius of gyration. This is a new
@@ -3898,13 +3914,6 @@ class CTProtein:
             - 'CA' = alpha carbon.
             - 'COM' = center of mass (associated withe the residue).
         
-        stride : int {20}
-            Defines the spacing between frames for calculating the ensemble
-            average. As stride gets larger this analysis gets slower.
-            It is worth experimenting with to see how the results change
-            as a function of stride, but in theory the accuracy should
-            remain fixed but precision improved as stride is reduced.
-
         n_cycles : int {100}
             Number of times, for each number of pairs, we re-select a different
             set of paris to use. This depends (weakly) on the number of residues,
@@ -3919,8 +3928,19 @@ class CTProtein:
             plateau towards 1 (note it will NEVER be 1) so 1-20 is a reasonable
             set to use.
 
+        stride : int {20}
+            Defines the spacing between frames for calculating the ensemble
+            average. As stride gets larger this analysis gets slower.
+            It is worth experimenting with to see how the results change
+            as a function of stride, but in theory the accuracy should
+            remain fixed but precision improved as stride is reduced.
+
         weights : bool {False}
             Flag that indicates if frame weights should be used or not.
+
+        verbose : bool
+            Flag that by default is True determines if the function prints status updates. This is relevant because
+            this function can be computationally expensive, so having some report on status can be comforting!
 
         Returns
         -------
@@ -3953,9 +3973,8 @@ class CTProtein:
         
         weights = self.__check_weights(weights, stride)
         
-        if mode not in ['CA', 'COM']:
-            raise CTException("The variable 'mode' must be set to one of 'CA' (alpha carbon) or 'COM' (center of mass). mode was set to [%s]" % str(mode))
 
+        ctutils.validate_keyword_option(mode, ['CA', 'COM'], 'mode')
 
         # note start and end here are after offset correction
         start = self.resid_with_CA[0] 
@@ -3965,7 +3984,7 @@ class CTProtein:
 
         # start with a sequence separation of 1
         for seq_sep in range(1, self.n_residues):
-            ctio.status_message("On sequence separation %i" % (seq_sep)) 
+            ctio.status_message("On sequence separation %i" % (seq_sep), verbose) 
 
             for pos in range(start, end - seq_sep):
 
@@ -3976,10 +3995,10 @@ class CTProtein:
                 # get the distance for every stride-th frame between those two positions using either the CA
                 # mode or the COM mode
                 if mode == 'CA':
-                    distance = self.get_interResidue_atomic_distance(A, B, stride=stride, correctOffset=False)
+                    distance = self.get_inter_residue_atomic_distance(A, B, stride=stride, correctOffset=False)
 
                 elif mode == 'COM':
-                    distance = self.get_interResidueCOMDistance(A, B, stride=stride, correctOffset=False)
+                    distance = self.get_inter_residue_COM_distance(A, B, stride=stride, correctOffset=False)
 
                 if FIRST_CHECK:
                     all_distances = distance
@@ -4006,7 +4025,7 @@ class CTProtein:
 
         idx=0
         for n_selected in pair_selection_vector:
-            ctio.status_message("On %i pairs selected" % n_selected)
+            ctio.status_message("On %i pairs selected" % n_selected, verbose)
             for i in range(0,n_cycles):
 
                 # select n_select different values between 0 and n_pairs
@@ -4076,6 +4095,9 @@ class CTProtein:
 
         """
 
+        # validate the keyword 
+        ctutils.validate_keyword_option(mode, ['CA', 'COM'], 'mode')
+
         # get end-to-end distance
         distance = self.get_end_to_end_distance(mode)            
 
@@ -4094,7 +4116,7 @@ class CTProtein:
     # ........................................................................
     #
     #
-    def get_secondary_structure_DSSP(self, R1=False, R2=False, correctOffset=True):
+    def get_secondary_structure_DSSP(self, R1=None, R2=None, correctOffset=True):
         """
         Returns the a 4 by n numpy array inwhich column 1 gives residue number, column 2 is local helicity,  
         column 3 is local 'extended' (beta strand/sheet) and column 4 is local coil on a per-residue
@@ -4108,13 +4130,13 @@ class CTProtein:
         Parameters
         ----------
 
-        R1 : int 
-             Default value is False. Defines the value for first residue in the region of 
+        R1 : int {None}
+             Default value is None. Defines the value for first residue in the region of 
              interest. If not provided (False) then first residue is used.
               
 
-        R2 : int
-             Default value is False. Defines the value for last residue in the region of 
+        R2 : int {None}
+             Default value is None. Defines the value for last residue in the region of 
              interest. If not provided (False) then last residue is used.
              
         correctOffset : Bool
@@ -4166,7 +4188,7 @@ class CTProtein:
     # ........................................................................
     #
     #
-    def get_secondary_structure_BBSEG(self, R1=False, R2=False, correctOffset=True):
+    def get_secondary_structure_BBSEG(self, R1=None, R2=None, correctOffset=True):
         """      
         Returns a dictionary where eack key-value pair is keyed by a BBSEG classification
         type (0-9) and each value is a vector showing the fraction of time each residue
@@ -4434,7 +4456,7 @@ class CTProtein:
     #oxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxo
     #
     #
-    def get_local_collapse(self, window_size=10, bins=np.arange(0,10,0.1)):
+    def get_local_collapse(self, window_size=10, bins=None, verbose=True):
         """        
 
 
@@ -4451,25 +4473,51 @@ class CTProtein:
         bins : np.arange or list
             A range of values (np.arange or list) spanning histogram bins. Default is np.arange(0, 10, 0.1).
 
+        verbose : bool
+            Flag that by default is True determines if the function prints status updates. This is relevant because
+            this function can be computationally expensive, so having some report on status can be comforting!
+
+
         Returns
         -------
-        tuple 
-            tuple containing `meanData`, and `stdData`. Histogrammed data is only included when `bins` is not None.
+        tuple (len = 4)
+
+            return[0]  : list of floats of len *n*, where each float reports on the mean local collapse  a specific 
+                         position along the sequence as defined by the fragment_size
+
+            return[1]  : list of floats of len *n* , where each float reports on the standard deviation of the 
+                         local collapse at a specific position along the sequence as defined by the fragment_size
+
+            return[2]  : List of np.ndarrays of len *n*, where each sub-array reports on the histogram values associated
+                         with the local collapse at a given position along the sequence
+
+            return[3]  : np.ndarray which corresponds to bin values for each of the histograms in return[2]
 
         """
-        # Only allow bins to be used if appropriate
-        if bins is not None and len(bins) < 2:
-            raise CTException('Bins should be a numpy defined vector of values - arange(0,1,0.01)')
+        # validate bins
+        if bins is None:
+            bins = np.arange(0,10,0.01)
+        else:
+            try:
+                if len(bins)  < 2:
+                    raise CTException('Bins should be a numpy defined vector of values - e.g. np.arange(0,1,0.01)')                    
+            except TypeError:
+                raise CTException('Bins should be a list, vector, or numpy array of evenly spaced values')
 
-
+            try:
+                bins = np.array(bins, dtype=float)
+            except ValueError:
+                raise CTException('Passed bins could not be converted to a numpy array of floats')
 
         n_residues = self.n_residues
         n_frames   = self.n_frames
-        
+
         # check the window is an appropriate size
         if window_size > n_residues:
             raise CTException('window_size is larger than the number of residues')
 
+
+        
         meanData = []
         stdData  = []
         histo    = []
@@ -4477,23 +4525,21 @@ class CTProtein:
         
         for i in range(window_size - 1, n_residues):
                     
-            print("On range %i" % i)
+            ctutils.status_message("On range %i" % i, verbose)
 
             # get radius of gyration (now by default is in Angstroms
             # - in previous versions we performed a conversion here)
             tmp = self.get_radius_of_gyration(i - (window_size-1), i)
                 
-            if bins is not None:
-                (b, c) = np.histogram(tmp, bins)
-                histo.append(b)
+
+            (b, c) = np.histogram(tmp, bins)
+            histo.append(b)
                                 
             meanData.append(np.mean(tmp))
             stdData.append(np.std(tmp))
 
-        if bins is not None:
-            return (meanData, stdData, histo)
-            
-        return (meanData, stdData)
+
+        return (meanData, stdData, histo, bins)
 
 
         

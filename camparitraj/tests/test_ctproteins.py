@@ -46,12 +46,11 @@ def test_code_coverage(NTL9_CP):
     a = NTL9_CP.get_polymer_scaled_distance_map(nu=0.54,A0=6,min_separation=20, mode='signed-fractional-change')
     a = NTL9_CP.get_polymer_scaled_distance_map(nu=0.54,A0=6,min_separation=20, mode='signed-absolute-change')
     a = NTL9_CP.get_polymer_scaled_distance_map(nu=0.54,A0=6,min_separation=20, mode='scaled')
-
     
     a = NTL9_CP.get_local_heterogeneity(stride=1)
-    a = NTL9_CP.get_local_heterogeneity(fragmentSize=5, stride=1)
-    a = NTL9_CP.get_local_heterogeneity(fragmentSize=20, stride=2)
-    a = NTL9_CP.get_local_heterogeneity(fragmentSize=20, stride=1)
+    a = NTL9_CP.get_local_heterogeneity(fragment_size=5, stride=1)
+    a = NTL9_CP.get_local_heterogeneity(fragment_size=20, stride=2)
+    a = NTL9_CP.get_local_heterogeneity(fragment_size=20, stride=1)
     a = NTL9_CP.get_D_vector(stride=1)
 
     a = NTL9_CP.get_RMSD(1)
@@ -76,16 +75,16 @@ def test_code_coverage(NTL9_CP):
     a = NTL9_CP.get_clusters(stride=1, n_clusters=3, backbone=False)
     a = NTL9_CP.get_clusters(stride=1, n_clusters=3, backbone=False, correctOffset=False)
 
-    a = NTL9_CP.get_interResidueCOMDistance(10,30)
-    a = NTL9_CP.get_interResidueCOMDistance(10,30, stride=2)
-    a = NTL9_CP.get_interResidueCOMDistance(10,30, stride=2, correctOffset=False)
+    a = NTL9_CP.get_inter_residue_COM_distance(10,30)
+    a = NTL9_CP.get_inter_residue_COM_distance(10,30, stride=2)
+    a = NTL9_CP.get_inter_residue_COM_distance(10,30, stride=2, correctOffset=False)
 
-    a = NTL9_CP.get_interResidueCOMVector(10,30)
-    a = NTL9_CP.get_interResidueCOMVector(10,30, stride=2)
-    a = NTL9_CP.get_interResidueCOMVector(10,30, stride=2, correctOffset=False)
+    a = NTL9_CP.get_inter_residue_COM_vector(10,30)
+    a = NTL9_CP.get_inter_residue_COM_vector(10,30, stride=2)
+    a = NTL9_CP.get_inter_residue_COM_vector(10,30, stride=2, correctOffset=False)
 
-    a = NTL9_CP.get_interResidue_atomic_distance(2,10)
-    a = NTL9_CP.get_interResidue_atomic_distance(2,10, A1='CB')
+    a = NTL9_CP.get_inter_residue_atomic_distance(2,10)
+    a = NTL9_CP.get_inter_residue_atomic_distance(2,10, A1='CB')
     a = NTL9_CP.get_angle_decay()
 
 

@@ -31,7 +31,7 @@ def debug_message(msg):
     print("")
 
 
-def status_message(msg):
-    print("")
-    print("STATUS: %s"%(msg))
-    print("")
+def status_message(msg, verbose):
+    if verbose:
+        print("STATUS: %s"%(msg))
+
