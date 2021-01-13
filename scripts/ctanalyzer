@@ -10,7 +10,7 @@
 ##
 ## Alex Holehouse (Pappu Lab and Holehouse Lab)
 ## Simulation analysis package
-## Copyright 2014 - 2020
+## Copyright 2014 - 2021
 ##
 
 from camparitraj.cttrajectory import CTTrajectory # import CTTrajectory, the main trajectory reading module
@@ -20,7 +20,7 @@ import os, errno
 from camparitraj.ctanalyzer.analyzer_analysis import *
 
 VERSION_MAJ=2
-VERSION_MIN=1
+VERSION_MIN=2
 
 def welcome():
     print("")
@@ -85,8 +85,6 @@ if __name__=="__main__":
     parser.add_argument("--rmsis", help="Internal scaling using root mean squared distances", dest='rmsis', action='store_true')
     parser.add_argument("--fractal_deviation", help="Average deviation from fractal behaviour (20 pairs) [Default stride = 20, stride value is argument]", dest='fractal_deviation')
     parser.add_argument("--rg_re_corr", help="Correlation between Rg^2 and Re^2", dest='rg_re_corr', action='store_true')
-    parser.add_argument("--nu", help="Polymer Scaling Exponent using COM", dest='nu', nargs="?", action="store", const=5)
-    parser.add_argument("--nu_CA", help="Polymer Scaling Exponent using CA", dest='nu_CA', nargs="?", action="store", const=5)
     parser.add_argument("--nu_power", help="Polymer Scaling Exponent using COM", dest='nu_power', nargs="?", action="store", const=5)
     parser.add_argument("--nu_power_CA", help="Polymer Scaling Exponent using CA", dest='nu_power_CA', nargs="?", action="store", const=5)
     parser.add_argument("--cmap", help="Contact map", dest='cmap', nargs="?", action="store", const=5.0)
@@ -281,13 +279,6 @@ if __name__=="__main__":
     # re vs rg correlation
     if args.rg_re_corr:
         run_rg_re_correlation(CP, outdir)
-
-    # scaling exponent
-    if args.nu:
-        run_scaling_exponent(CP, outdir, end_effect=int(args.nu))
-
-    if args.nu_CA:
-        run_scaling_exponent_CA(CP, outdir, end_effect=int(args.nu_CA))
 
     if args.nu_power:
         run_scaling_exponent_power(CP, outdir, end_effect=int(args.nu_power))
