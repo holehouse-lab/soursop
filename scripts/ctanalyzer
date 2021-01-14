@@ -79,6 +79,7 @@ if __name__=="__main__":
         
     # polymer analysis
     parser.add_argument("--rg", help="Radius of gyration", dest='rg', action='store_true')
+    parser.add_argument("--rh", help="Hydrodynamic radius", dest='rh', action='store_true')
     parser.add_argument("--e2e", help="End to end distance", dest='e2e', action='store_true')
     parser.add_argument("--asph", help="Asphericity", dest='asph', action='store_true')
     parser.add_argument("--is", help="Internal scaling", dest='IS', action='store_true')
@@ -236,6 +237,11 @@ if __name__=="__main__":
     # radius of gyration
     if args.rg:
         run_RG(CP, outdir)
+
+
+    # radius of gyration
+    if args.rh:
+        run_RH(CP, outdir)
 
     if args.e2e:
         run_end_to_end(CP, outdir)

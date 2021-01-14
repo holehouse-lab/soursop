@@ -35,6 +35,16 @@ def run_RG(CP, outdir):
     np.savetxt('%s/RG_mean.csv'%(outdir), MEAN_RG, delimiter=', ')
     np.savetxt('%s/RG_std.csv'%(outdir), STD_RG, delimiter=', ')
 
+
+def run_RH(CP, outdir):
+    status_message('Hydrodynamic radius', outdir)        
+    RH = CP.get_hydrodynamic_radius()
+    MEAN_RH = arrayfy(np.mean(RH))
+    STD_RH  = arrayfy(np.std(RH))
+    np.savetxt('%s/RH.csv'%(outdir), RH, delimiter=',')
+    np.savetxt('%s/RH_mean.csv'%(outdir), MEAN_RH, delimiter=', ')
+    np.savetxt('%s/RH_std.csv'%(outdir), STD_RH, delimiter=', ')
+
 def run_end_to_end(CP, outdir):
     status_message('End to end distance', outdir)        
     E2E = CP.get_end_to_end_distance()

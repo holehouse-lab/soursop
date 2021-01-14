@@ -2727,24 +2727,26 @@ class CTProtein:
         if present) is calculated.
 
         Radius of gyration is returned in Angstroms.
+        
+        Parameters
+        ---------------
+        R1 : int  {None}
+            Index value for first residue in the region of interest. If not 
+            provided (None) then first residue is used.
 
-        ........................................
-        OPTIONS 
-        ........................................
+        R2 : int {None}
+            Index value for last residue in the region of interest. If not
+            provided (False) then last residue is used.
 
-        R1 [int] {False}
-        Index value for first residue in the region of interest. If not 
-        provided (False) then first residue is used.
+        correctOffset : bool {True}
+            Defines if we perform local protein offset correction or not. By default we do, but some internal 
+            functions may have already performed the correction and so don't need to perform it again.
+        
+        Returns
+        -----------
+        np.ndarray 
+            Returns a numpy array with per-frame instantaneous radius of gyration
 
-        R1 [int] {False}
-        Index value for last residue in the region of interest. If not
-        provided (False) then last residue is used.
-
-        correctOffset [Bool] {True}
-        Defines if we perform local protein offset correction
-        or not. By default we do, but some internal functions
-        may have already performed the correction and so don't
-        need to perform it again.
 
         """
 
@@ -2779,27 +2781,96 @@ class CTProtein:
     # ........................................................................
     #
     #
+    def get_hydrodynamic_radius(self, R1=None, R2=None, alpha1=0.216, alpha2=4.06, alpha3=0.821, correctOffset=True):
+        """
+        Returns the apparent hydrodynamic radius as calculated based on the approximation
+        derived by Nygaard et al. [1]. Returns a hydrodynamic radius in Angstroms.
+
+        Parameters (alpha1/2/3 should not be altered to recapitulate behaviour defined
+        by Nygaard et al.
+
+
+        References:
+        -------------
+        [1] Nygaard M, Kragelund BB, Papaleo E, Lindorff-Larsen K. An Efficient 
+        Method for Estimating the Hydrodynamic Radius of Disordered Protein 
+        Conformations. Biophys J. 2017;113: 550–557.
+
+        Radius of gyration is returned in Angstroms.
+
+
+        Parameters
+        ---------------
+        R1 : int {False}
+            Index value for first residue in the region of interest. If not 
+            provided (False) then first residue is used.
+
+        R2 : int {False}
+            Index value for last residue in the region of interest. If not
+            provided (False) then last residue is used.
+
+        alpha1 : float {0.216}
+           First parameter in equation (7) from Nygaard et al.
+
+        alpha2 : float {4.06}
+           Second parameter in equation (7) from Nygaard et al.
+
+        alpha3 : float {0.821}
+           Third parameter in equation (7) from Nygaard et al.
+        
+        correctOffset : bool {True}
+            Defines if we perform local protein offset correction or not. By default we do, 
+            but some internal functions may have already performed the correction and so don't
+            need to perform it again.
+
+        Returns
+        -----------
+        np.ndarray 
+            Returns a numpy array with per-frame instantaneous hydrodynamic radii
+
+
+        """
+
+        # first compute the rg
+        rg = self.get_radius_of_gyration(R1, R2, correctOffset)
+
+        # precompute
+        N_033 = np.power(self.n_residues, 0.33)
+        N_060 = np.power(self.n_residues, 0.60)
+        
+        Rg_over_Rh = ((alpha1*(rg - alpha2*N_033)) / (N_060 - N_033)) + alpha3
+
+        return (1/Rg_over_Rh)*rg
+
+
+    # ........................................................................
+    #
+    #
     def get_t(self, R1=None, R2=None, correctOffset=True):
         """
-        Returns the <t>, a dimensionless parameter which describes the size of the ensemble.
+        Returns the <t>, a dimensionless parameter which describes the 
+        size of the ensemble. 
 
-        ........................................
-        OPTIONS 
-        ........................................
 
-        R1 [int] {False}
-        Index value for first residue in the region of interest. If not 
-        provided (False) then first residue is used.
+        Parameters
+        ---------------
+        R1 : int {None}
+            Index value for first residue in the region of interest. If not 
+            provided (False) then first residue is used.
 
-        R1 [int] {False}
-        Index value for last residue in the region of interest. If not
-        provided (False) then last residue is used.
+        R2 : int {None}
+            Index value for last residue in the region of interest. If not
+            provided (False) then last residue is used.
 
-        correctOffset [Bool] {True}
-        Defines if we perform local protein offset correction
-        or not. By default we do, but some internal functions
-        may have already performed the correction and so don't
-        need to perform it again.
+        correctOffset : bool {True}
+            Defines if we perform local protein offset correction or not. By 
+            default we do, but some internal functions may have already performed 
+            the correction and so don't need to perform it again.
+
+        Returns
+        -----------
+        np.ndarray 
+            Returns a numpy array with per-frame instantaneous t-values
 
         """
 
@@ -4448,11 +4519,6 @@ class CTProtein:
         
 
 
-
-        
-        
-
-
     #oxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxo
     #
     #
@@ -4515,13 +4581,10 @@ class CTProtein:
         # check the window is an appropriate size
         if window_size > n_residues:
             raise CTException('window_size is larger than the number of residues')
-
-
         
         meanData = []
         stdData  = []
-        histo    = []
-                             
+        histo    = []                             
         
         for i in range(window_size - 1, n_residues):
                     

@@ -173,3 +173,13 @@ def test_get_distance_map(GS6_CO):
 
         # verify that we obtain an upper triangular matrix
         assert np.allclose(distance_map, np.triu(distance_map)) is True
+
+
+
+def test_get_hydrodynamic_radius(GS6_CO):
+
+    CP = GS6_CO.proteinTrajectoryList[0]
+    rh = CP.get_hydrodynamic_radius()
+    assert (11.840569781179006 - rh[0]) < 0.001
+
+    
