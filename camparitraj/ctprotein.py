@@ -1946,7 +1946,7 @@ class CTProtein:
     # ........................................................................
     #
     #
-    def get_contact_map(self, distance_thresh=5.0, stride=1, weights=False):
+    def get_contact_map(self, distance_thresh=5.0, mode='closest-heavy', stride=1, weights=False):
         
         """
         get_contact_map() returns 2-position tuple with the  contact map (N x N matrix) and a contact order 
@@ -1963,7 +1963,26 @@ class CTProtein:
 
         distance_thresh : float {5.0}
             Distance threshold used to define a 'contact' in Angstroms. Contacts are taken as frames
-            in which 
+            in which the atoms defined by the scheme are within $distance_thresh angstroms of one another
+
+        mode : string  {'closest-heavy'}
+
+            Mode allows the user to define differnet modes for computing contacts. The default value
+            is 'closest-heavy'. Other options are detailed below and are identical to those offered by 
+            mdtraj in compute_contacts
+        
+            'ca' - same as setting 'atom' and A1='CA' and A2='CA', this uses the C-alpha atoms
+        
+            'closest' - closest atom associated with each of the residues, i.e. the is the point
+                        of closest approach between the two residues 
+
+            'closest-heavy' - same as closest, except only non-hydrogen atoms are considered
+
+            'sidechain' - closest atom where that atom is in the sidechain. Note this requires
+                          mdtraj version 1.8.0 or higher.
+
+            'sidechain-heavy' - closest atom where that atom is in the sidechain and is heavy. 
+                                Note this requires mdtraj version 1.8.0 or higher.
 
         stride : int {1}
             Defines the spacing between frames to compare - i.e. if comparing frame1 to a trajectory 
@@ -1985,9 +2004,11 @@ class CTProtein:
         
         """
 
+        ctutils.validate_keyword_option(mode, ['closest-heavy', 'ca', 'closest', 'sidechain', 'sidechain-heavy'] , 'mode')
+
         if weights is not False:
             if int(stride) != 1:
-                raise CTException("For get_scaling_exponent with weights stride MUST be set to 1. If this is a HUGE deal for you please contact alex and he'll try and update the code to accomodate this, but for now we suggest creating a sub-sampled trajectory and loading that")
+                raise CTException("Cannot accomodate weighst and non-one stride")
 
         # check weights are correct
         weights = self.__check_weights(weights, stride)
@@ -2004,7 +2025,7 @@ class CTProtein:
 
         # compute the contactmap and square-form it (map per frame)
         # CMAP is a [N_FRAMES x N_RES x N_RES] array
-        CMAP_nonsquare = md.compute_contacts(subtraj.atom_slice(mainchain_atoms))
+        CMAP_nonsquare = md.compute_contacts(subtraj.atom_slice(mainchain_atoms), scheme=mode)
         CMAP = md.geometry.squareform(CMAP_nonsquare[0], CMAP_nonsquare[1])
 
         # extract the normalization factor used to compute fractional

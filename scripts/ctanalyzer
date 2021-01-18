@@ -93,7 +93,8 @@ if __name__=="__main__":
     parser.add_argument("--psm", help="Polymer scaling map", dest='psm', action='store_true')
     parser.add_argument("--afrc", help="Build analytical FRC results", dest='afrc', action='store_true')
     parser.add_argument("--afrcONLY", help="Override that doesnt bother with the trajectory but ONLY performs AFRC cal", dest='afrco', nargs="?", action="store", const=-1.0)
-    parser.add_argument("--Q", help="Compute ", dest='Q', action='store_true')
+    parser.add_argument("--Q", help="Compute Q factor for native contacts (uses first frame as reference state)", dest='Q', action='store_true')
+    parser.add_argument("--rij", help="Compute per-frame distance between residues i and j. Expects format i_j (with underscore)", dest='rij')
     
     # local analysis
     parser.add_argument("--motif_rg", help="Pass two index positions that define the location of a motif over which the local RG is calculated", dest='motif_rg', nargs=2)
@@ -281,6 +282,23 @@ if __name__=="__main__":
     # Q analysis (native contacts)
     if args.Q:
         run_Q_analysis(CP, outdir)
+        
+    # rij distance analysis
+    if args.rij:
+
+        s1 = None
+        s2 = None
+        try:
+            s = args.rij.split('_')
+            s1 = int(s[0])
+            s2 = int(s[1])
+        except Exception:
+            print('Failed to parse --rij keyword: should be format --rij i_j where i and j are indices in the sequence')
+            print('Skipping...')
+            
+        if s2 is not None:
+            run_rij_analysis(CP, outdir, s1, s2)
+
 
     # re vs rg correlation
     if args.rg_re_corr:

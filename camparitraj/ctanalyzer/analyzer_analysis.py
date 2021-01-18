@@ -35,7 +35,6 @@ def run_RG(CP, outdir):
     np.savetxt('%s/RG_mean.csv'%(outdir), MEAN_RG, delimiter=', ')
     np.savetxt('%s/RG_std.csv'%(outdir), STD_RG, delimiter=', ')
 
-
 def run_RH(CP, outdir):
     status_message('Hydrodynamic radius', outdir)        
     RH = CP.get_hydrodynamic_radius()
@@ -138,6 +137,14 @@ def run_Q_analysis(CP, outdir):
         for i in Q_TUPLE[3]: 
             fh.write("%s, %3.3f\n" % (i[3:], np.mean(Q_TUPLE[2][i])))
 
+def run_rij_analysis(CP, outdir, ri, rj):
+    rij = CP.get_inter_residue_COM_distance(ri, rj)
+
+    MEAN_rij = arrayfy(np.mean(rij))
+    STD_rij  = arrayfy(np.std(rij))
+    np.savetxt('%s/r_%i_%i.csv'%(outdir, ri, rj), rij, delimiter=',')
+    np.savetxt('%s/r_%i_%i_mean.csv'%(outdir, ri, rj), MEAN_rij, delimiter=', ')
+    np.savetxt('%s/r_%i_%i_std.csv'%(outdir, ri, rj), STD_rij, delimiter=', ')
 
 def run_rg_re_correlation(CP, outdir):
     c = CP.get_end_to_end_vs_rg_correlation()
