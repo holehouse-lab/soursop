@@ -294,23 +294,31 @@ class CTProtein:
         return (self.n_residues, self.n_frames)
 
         
+
+    
     # ........................................................................
     #
-    def __check_weights(self, weights, stride=None):
+    def __check_weights(self, weights, stride=None, etol=0.0000001):
         """
         Function that checks a passed weights-array is usable and matches the number of frames
-        (avoids a lot of heartache when something breaks deep inside the code).
+        (avoids a lot of heartache when something breaks deep inside the code). This also checks
+        that the weights sum to 1 (within some error, as defined by etol).
 
         NOTE: This also typecasts weights to a `numpy.array` which allows them to be indexed directly
-        using a list of values.
+        using a list of values. 
 
         Parameters
         ----------
         weights : array_like
             An `numpy.array` object that corresponds to the number of frames within an input trajectory.
+
         stride : {None}, optional
             The stepsize used when iterating across the frames. A value of `None` will set the step
             size to 0.
+
+        etol : {0.0000001} float 
+            Defines the error tollerance for the weight sums - i.e. if abs(np.sum(weights) - 1) > etol
+            an exception is raised.
 
         Returns
         -------
@@ -327,7 +335,19 @@ class CTProtein:
                 ctio.warning_message("WARNING: Using stride with weights is ALMOST certainly not a good idea unless the weights are\ncalculated for every stride-th residue", with_frills=True)
                 return np.array(weights[list(range(0,self.n_frames,stride))])
             else:
-                return np.array(weights)
+
+                # convert to an array of doubles
+                try:
+                    weights = np.array(weights, dtype=np.float64)
+                except ValueError as e:
+                    ctio.exception_message("Unable to convert passed weights to a np.array(). Likely means the passed value is not numerical (printed below):\n\n%s"%(weights), e, with_frills=True, raise_exception=True)
+                    
+
+                if abs(np.sum(weights) - 1.0) < etol:
+                    return weights
+                else:
+                    ctio.exception_message("Unable to convert passed weights to a np.array(). Likely means the passed value is not numerical (printed below):\n\n%s"%(weights), e, with_frills=True, raise_exception=True)
+                
 
         return False
 
@@ -1751,7 +1771,7 @@ class CTProtein:
         correctOffset : bool  {True}
             Defines if we perform local protein offset correction or not. By default we do, but some 
             internal functions may have already performed the correction and so don't need to perform it 
-            again
+            again. If you are unsure leave as True!
 
         stride : int {1}
             Defines the spacing between frames to compare - i.e. if comparing frame1 to a 
@@ -1960,10 +1980,10 @@ class CTProtein:
         Parameters
         -----------------
         
-
         distance_thresh : float {5.0}
             Distance threshold used to define a 'contact' in Angstroms. Contacts are taken as frames
             in which the atoms defined by the scheme are within $distance_thresh angstroms of one another
+
 
         mode : string  {'closest-heavy'}
 
@@ -2008,7 +2028,7 @@ class CTProtein:
 
         if weights is not False:
             if int(stride) != 1:
-                raise CTException("Cannot accomodate weighst and non-one stride")
+                raise CTException("Cannot accomodate weights if stride is not set to 1")
 
         # check weights are correct
         weights = self.__check_weights(weights, stride)
@@ -2081,65 +2101,64 @@ class CTProtein:
     #
     def get_clusters(self, region=None, n_clusters=10, backbone=True, correctOffset=True, stride=20):
         """
-        Function to determine the structural clusters associated with a trajectory. 
-        This can be useful for identifying the most populated clusters. This approach
-        uses Ward's hiearchical clustering, which means we must define the number of
-        clusters we want a-priori. Clustering is done using RMSD - BUT the approach 
-        taken here would be easy to re-implement in another function where you
-        'simiarity' metric was something else. 
-
+        Function to determine the structural clusters associated with a trajectory. This can be useful for 
+        identifying the most populated clusters. This approach uses Ward's hiearchical clustering, which means 
+        we must define the number of clusters we want a-priori. Clustering is done using RMSD - BUT the approach 
+        taken here would be easy to re-implement in another function where you 'simiarity' metric was something else. 
+        
         Returns a 4-place tuple with the following sub-elements:
 
         [0] - cluster_members:
-        A list of length n_clusters where each element corresponds to the number
-        of frames in each of the 1-n_clusters cluster. i.e. if I had defined n_clusters=3
-        this would be a list of length 3
-
+        A list of length n_clusters where each element corresponds to the number of frames in each of the 1-n_clusters 
+        cluster. i.e. if I had defined n_clusters=3 this would be a list of length 3
+        
         [1] - cluster_trajectories:
-        A list of n_cluster mdtraj trajectory objects of the conformations in the cluster.
-        This is particularly useful because it means you can perform any arbitrary analaysis
-        on the cluster members
+        A list of n_cluster mdtraj trajectory objects of the conformations in the cluster. This is particularly useful 
+        because it means you can perform any arbitrary analaysis on the cluster members.
 
         [2] - cluster distance_matrices:
-        A list of n_clusters where each member is a square matrix that defines the structural
-        distance between each of the members of each cluster. in other words, this quantifies
-        how similar (in terms of RMSD, in units Angstroms).
+        A list of n_clusters where each member is a square matrix that defines the structural distance between each of the 
+        members of each cluster. In other words, this quantifies how similar (in terms of RMSD, in units Angstroms) the 
+        the members of a given cluster are to one another. Useful for computing cluster tightness.
         
         [3] - cluster_centroids
-        A list of n_clusters where each element is the index associated with each cluster
-        trajectory that defines the cluster centroid (i.e. a 'representative' conformation).
-        As an example - if we had 3 clusters this might look like [4,1,6], which means the
-        4th, 1st, and 6th frame from each of the respective mdtraj trajectories in the
+        A list of n_clusters where each element is the index associated with each cluster trajectory that defines the 
+        cluster centroid (i.e. a 'representative' conformation). As an example - if we had 3 clusters this might look 
+        like [4,1,6], which means the 4th, 1st, and 6th frame from each of the respective mdtraj trajectories in the
         cluster_trajectories list would correspond to the centroid.
 
         [4] - cluster frames:
-        List of lists, where each sublist contains the frame indices associated with
-        that cluster. Useful if clustering on a single chain and want to use that
-        information over an entire trajectory
+        List of lists, where each sublist contains the frame indices associated with that cluster. Useful if clustering 
+        on a single chain and want to use that information over an entire trajectory
         
-        ........................................
-        OPTIONS 
-        ........................................
-        region [list/tuple of length 2]  {[]}
-        Defines the first and last residue (INCLUSIVE) for a region to be examined
+        
+        Parameters
+        -------------------
+        region : list of length 2 {[]}
+            Allows the user to defines the first and last residue (INCLUSIVE) for a region to be assessed
+            by the cluster analysis.
 
-        n_clusters [int] {10}
-        Number of clusters to be returned through Ward's clustering algorithm. 
+        n_clusters : int  {10}
+            Number of clusters to be returned through Ward's clustering algorithm. 
 
-        backbone [bool] {True}
-        Flag to determine if backbone atoms or full chain should be used
+        backbone : bool  {True}
+            Flag to determine if backbone atoms or full chain should be used. By default the backbone is used mainly
+            because this makes things a lot computationally cheaper.
 
-        correctOffset [Bool] {True}
-        Defines if we perform local protein offset correction
-        or not. By default we do, but some internal functions
-        may have already performed the correction and so don't
-        need to perform it again.
+        correctOffset : bool  {True}
+            Defines if we perform local protein offset correction or not. By default we do, but some 
+            internal functions may have already performed the correction and so don't need to perform it 
+            again. If you are unsure leave as True!
 
-        stride [int] {20}     
-        Defines the spacing betwen frames to compare with - i.e. take every $stride-th frame.
-        Setting stride=1 would mean every frame is used, which would mean you're doing an
-        all vs. all comparions, which would be ideal BUT may be slow.
+        stride : int  {20}     
+            Defines the spacing betwen frames to compare with - i.e. take every $stride-th frame. Setting stride=1 
+            would mean every frame is used, which would mean you're doing an all vs. all comparions, which would be 
+            ideal BUT may be slow.
 
+        Returns
+        ---------------
+        tuple of length 5
+            See description in main function signature.
 
         """
 
@@ -2151,11 +2170,11 @@ class CTProtein:
 
         distances = np.zeros((distance_dims, distance_dims))
         
-        idx=0
+        idx = 0
 
         # build an all vs. all RMSD matrix based on the parameters provided for every
         # stride-th frame
-        for i in range(0,self.n_frames,stride):
+        for i in range(0, self.n_frames, stride):
             distances[idx] = self.get_RMSD(i, stride=stride, region=region, backbone=backbone, correctOffset=correctOffset)
             idx=idx+1
 
@@ -2191,6 +2210,7 @@ class CTProtein:
         # regardless of how many clusters we *think* we should have, extract the number of labeles
         # we'll actually have...
         final_labels = list(set(labels))
+
         # for each cluster
         for i in final_labels:
 
@@ -2376,50 +2396,53 @@ class CTProtein:
 
         Distance is returned in Angstroms.
 
-        ........................................
-        OPTIONS 
-        ........................................
-        R1 [int]
-        Residue index of first residue
+        Parameters
+        ---------------------
+        R1 : int
+            Residue index of first residue
 
-        R2 [int] 
-        Residue index of second residue
+        R2 : int
+            Residue index of second residue
 
-        A1 [string] {CA}
-        Atom name of the atom in R1 we're looking at
+        A1 : str {CA}
+            Atom name of the atom in R1 we're looking at
 
-        A2 [string {CA}
-        Atom name of the atom in R2 we're looking at
+        A2 : str {CA}
+            Atom name of the atom in R2 we're looking at
 
-        mode [string] {'atom'}
-        Mode allows the user to define differnet modes for computing atomic distance. The
-        default is 'atom' whereby a pair of atoms (A1 and A2) are provided. Other options
-        are detailed below and are identical to those offered by mdtraj in compute_contacts
+        mode : str {'atom'}
+            Mode allows the user to define differnet modes for computing atomic distance. The
+            default is 'atom' whereby a pair of atoms (A1 and A2) are provided. Other options
+            are detailed below and are identical to those offered by mdtraj in compute_contacts
         
-        'ca' - same as setting 'atom' and A1='CA' and A2='CA', this uses the C-alpha atoms
+            'ca' - same as setting 'atom' and A1='CA' and A2='CA', this uses the C-alpha atoms
         
-        'closest' - closest atom associated with each of the residues, i.e. the is the point
-                    of closest approach between the two residues 
+            'closest' - closest atom associated with each of the residues, i.e. the is the point
+                        of closest approach between the two residues 
 
-        'closest-heavy' - same as closest, except only non-hydrogen atoms are considered
+            'closest-heavy' - same as closest, except only non-hydrogen atoms are considered
 
-        'sidechain' - closest atom where that atom is in the sidechain. Note this requires
-                      mdtraj version 1.8.0 or higher.
+            'sidechain' - closest atom where that atom is in the sidechain. Note this requires
+                          mdtraj version 1.8.0 or higher.
 
-        'sidechain-heavy' - closest atom where that atom is in the sidechain and is heavy. 
-                            Note this requires mdtraj version 1.8.0 or higher.
+            'sidechain-heavy' - closest atom where that atom is in the sidechain and is heavy. 
+                                Note this requires mdtraj version 1.8.0 or higher.
 
-        correctOffset [Bool] {True}
-        Defines if we perform local protein offset correction
-        or not. By default we do, but some internal functions
-        may have already performed the correction and so don't
-        need to perform it again.
+        correctOffset : bool  {True}
+            Defines if we perform local protein offset correction or not. By default we do, but some 
+            internal functions may have already performed the correction and so don't need to perform it 
+            again
 
-        stride [int] {1}     
-        Defines the spacing betwen frames to compare with - i.e. take every $stride-th frame.
-        Setting stride=1 would mean every frame is used, which would mean you're doing an
-        all vs. all comparions, which would be ideal BUT may be slow.
+        stride : int {1}
+            Defines the spacing between frames to compare - i.e. if comparing frame1 to a trajectory 
+            we'd compare frame 1 and every stride-th frame. Note this operation may scale poorly as 
+            protein length increases at which point increasing the stride may become necessary.
 
+
+        Returns
+        ---------
+        np.ndarray
+            Returns an array of inter-residue atomic distances
 
         """
 
@@ -3318,7 +3341,8 @@ class CTProtein:
 
         
         """
-        
+
+
         # check weights are OK
         weights = self.__check_weights(weights, stride)
 
@@ -3341,7 +3365,7 @@ class CTProtein:
             if fraction_of_points > 1.0:
                 raise CTException("Using fraction_overide to define the number of points to fit in the linear loglog analysis, but requested over 1.0 fraction (fraction_of_points must lie between >=0 and 1.0")
             # again note int to round down here
-            num_fitting_points = int(fraction_of_points*(max_separation - (end_effect+inter_residue_min)))
+            num_fitting_points = int(fraction_of_points*(max_separation - (end_effect + inter_residue_min)))
             if num_fitting_points < 3:
                 raise CTException("Less than three points - cannot fit a straight line")
             if num_fitting_points < 10:

@@ -20,7 +20,7 @@
 # -- Project information -----------------------------------------------------
 
 project = 'camparitraj'
-copyright = ("2015-2019, Alex Holehouse [a MOLSSI sponsored project]")
+copyright = ("2015-2021, Alex Holehouse, Jared Lalmansingh [a MOLSSI sponsored project]")
 author = 'Alex Holehouse'
 
 # The short X.Y version
