@@ -4633,7 +4633,7 @@ class CTProtein:
         
         for i in range(window_size - 1, n_residues):
                     
-            ctutils.status_message("On range %i" % i, verbose)
+            ctio.status_message("On range %i" % i, verbose)
 
             # get radius of gyration (now by default is in Angstroms
             # - in previous versions we performed a conversion here)
