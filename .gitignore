@@ -97,6 +97,12 @@ ENV/
 # Rope project settings
 .ropeproject
 
+# VS Code settings
+.vscode
+
+# PyCharm and Jetbrains settings
+.idea
+
 # mkdocs documentation
 /site
 
