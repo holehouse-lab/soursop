@@ -8,7 +8,13 @@ import camparitraj
 import pytest
 import sys
 from camparitraj import cttrajectory
+from camparitraj.ctexceptions import CTException
 
+
+def test_contacts_special(NTL9_CP):
+
+    with pytest.raises(CTException) as error: 
+        a = NTL9_CP.get_contact_map(distance_thresh=2, stride=1, mode='sidechain-heavy')
 
 def test_code_coverage(NTL9_CP):
 
@@ -23,17 +29,15 @@ def test_code_coverage(NTL9_CP):
 
     a = NTL9_CP.get_amino_acid_sequence()
     a = NTL9_CP.get_CA_index(10)
-    a = NTL9_CP.get_CA_index(10, correctOffset=False)
     a = NTL9_CP.get_multiple_CA_index()
     a = NTL9_CP.get_multiple_CA_index([3,4,5])
-    a = NTL9_CP.get_multiple_CA_index([3,4,5], correctOffset=False)
+
 
     a = NTL9_CP.calculate_all_CA_distances(10)
-    a = NTL9_CP.calculate_all_CA_distances(10, correctOffset=False)
     a = NTL9_CP.calculate_all_CA_distances(10, stride=2)
     a = NTL9_CP.calculate_all_CA_distances(10, stride=2)
     a = NTL9_CP.calculate_all_CA_distances(10, stride=2, mode='COM')
-    a = NTL9_CP.calculate_all_CA_distances(10, stride=2, mode='COM', onlyCterminalResidues=False)
+    a = NTL9_CP.calculate_all_CA_distances(10, stride=2, mode='COM', only_C_terminal_residues=False)
 
     a = NTL9_CP.get_distance_map()
     a = NTL9_CP.get_distance_map(verbose=True)
@@ -58,13 +62,13 @@ def test_code_coverage(NTL9_CP):
     a = NTL9_CP.get_RMSD(1,frame2=3, stride=2)
     a = NTL9_CP.get_RMSD(1,frame2=3, stride=2, region=[10,20])
     a = NTL9_CP.get_RMSD(1,frame2=3, stride=2, backbone=False)
-    a = NTL9_CP.get_RMSD(1,frame2=3, stride=2, correctOffset=False)
+
 
     a = NTL9_CP.get_Q()
     a = NTL9_CP.get_Q(stride=2)
     a = NTL9_CP.get_Q(stride=2, protein_average=False)
     a = NTL9_CP.get_Q(stride=2, protein_average=False, region=[10,20])
-    a = NTL9_CP.get_Q(stride=2, protein_average=False, region=[10,20], correctOffset=False)
+
 
     a = NTL9_CP.get_contact_map()
     a = NTL9_CP.get_contact_map(distance_thresh=2)
@@ -73,20 +77,20 @@ def test_code_coverage(NTL9_CP):
     a = NTL9_CP.get_contact_map(distance_thresh=2, stride=1, mode='closest-heavy')
     a = NTL9_CP.get_contact_map(distance_thresh=2, stride=1, mode='closest')
     a = NTL9_CP.get_contact_map(distance_thresh=2, stride=1, mode='sidechain')
-    a = NTL9_CP.get_contact_map(distance_thresh=2, stride=1, mode='sidechain-heavy')
+
 
     a = NTL9_CP.get_clusters(stride=1)
     a = NTL9_CP.get_clusters(stride=1, n_clusters=3)
     a = NTL9_CP.get_clusters(stride=1, n_clusters=3, backbone=False)
-    a = NTL9_CP.get_clusters(stride=1, n_clusters=3, backbone=False, correctOffset=False)
+
 
     a = NTL9_CP.get_inter_residue_COM_distance(10,30)
     a = NTL9_CP.get_inter_residue_COM_distance(10,30, stride=2)
-    a = NTL9_CP.get_inter_residue_COM_distance(10,30, stride=2, correctOffset=False)
+
 
     a = NTL9_CP.get_inter_residue_COM_vector(10,30)
     a = NTL9_CP.get_inter_residue_COM_vector(10,30, stride=2)
-    a = NTL9_CP.get_inter_residue_COM_vector(10,30, stride=2, correctOffset=False)
+
 
     a = NTL9_CP.get_inter_residue_atomic_distance(2,10)
     a = NTL9_CP.get_inter_residue_atomic_distance(2,10, A1='CB')

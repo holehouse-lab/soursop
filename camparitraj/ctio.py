@@ -13,7 +13,7 @@ def warning_message(msg, with_frills=False):
 def exception_message(msg, exception, with_frills=False, raise_exception=True):
 
     if with_frills:
-        print("<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@")
+        print("\n<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@")
 
     print("")
     print("ERROR: %s"%(msg))

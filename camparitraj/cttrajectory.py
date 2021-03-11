@@ -115,9 +115,9 @@ class CTTrajectory:
         # extract a list of protein trajectories where each protein is assumed
         # to be in its own chain
         if protein_grouping == None:
-            (self.proteinTrajectoryList, self.resid_offset_list, self.atom_offset_list) = self.__get_proteins(self.traj, debug)        
+            self.proteinTrajectoryList = self.__get_proteins(self.traj, debug)        
         else:
-            (self.proteinTrajectoryList, self.resid_offset_list, self.atom_offset_list)  = self.__get_proteins_by_residue(self.traj, protein_grouping, debug)
+            self.proteinTrajectoryList = self.__get_proteins_by_residue(self.traj, protein_grouping, debug)
 
         
         self.num_proteins = len(self.proteinTrajectoryList)
@@ -235,22 +235,11 @@ class CTTrajectory:
 
         Returns
         ---------
-        tuple :
-            Returns a tuple with three lists:
-        
-            proteinTrajectoryList - contains a list of 0 or more CTProtein objcts        
-            resid_offset_list     - contains a list of 0 or more integers which are 
-                                    resid offset values
-            atom_offset_list      - contains a list of 0 or more integers which are
-                                    atom offset values
- 
-            Note all three lists must be the same length (by definition)
+        list
+            Returns a proteinTrajectoryList - a list with one or more CTProtein
+            objects in it
         
         """
-
-        
-        atom_offset_list  = []
-        resid_offset_list = []
 
         # extract full system topology
         topology = trajectory.topology
@@ -258,7 +247,8 @@ class CTTrajectory:
         chainAtoms = []
         
         # for each chain in this toplogy determine if the 
-        # first residue is protein or not
+        # first residue is protein or not. If it's protein we parse it if 
+        # not it gets skipped
         for chain in topology.chains:
 
             # if the first residue in the chain is protein
@@ -269,40 +259,15 @@ class CTTrajectory:
                 # intialize an empty list of atoms
                 local_atoms = []
 
-                # save that index value associated with
-                # the first residue in the chain. 
-                resid_offset_list.append(chain.residue(0).index)
-
+                # get every atom in this chain
                 for atom in chain.atoms:
                     local_atoms.append(atom.index)
 
                 chainAtoms.append(local_atoms)
 
-                # save first atom associated with this chain for offset
-                atom_offset_list.append(local_atoms[0])
-
-                
-                ## Code below was the old way of builing the atom sets which
-                ## as of mdtraj 1.9.3 the above seems more efficient
-                """
-                # for each residue in the chain
-                for residue in chain.residues:
-                                        
-                    # for each atom in the residue
-                    for atom in residue.atoms:
-
-                        # append all those atoms to our list of atom indicies
-                        atoms.append(atom.index)
-
-                # now add all the atom indices for this protein
-                # chain as a single list to the super-list of 
-                # chain atoms
-                chainAtoms.append(atoms)
-                """
             else:
                 if debug:
                     ctio.debug_message('Skipping residue %s from %s' %(chain.residue(0).name, chain))
-
 
         # for each protein chain that we have atomic indices
         # for (hopefully all of them!) cycle through and create
@@ -317,18 +282,21 @@ class CTTrajectory:
             # previous bug in CAMPARITraj 0.1.4)
             PT = trajectory.atom_slice(local_chain_atoms)
 
+            # WA
             # gets the resid offset in a way that is ensures internal
             # consistency for the CTProtein object
-            resid_offset = PT.topology.chain(0).residue(0).index
-            
-            # add that trajectory, along the index value associated with
-            # the resid offset 
-            proteinTrajectoryList.append(CTProtein(PT, resid_offset))
+            first_resid = PT.topology.chain(0).residue(0).index
+
+            if first_resid != 0:
+                raise CTException('After extracting a protein subtrajectory, the first resid is not 0. This may reflect a bug, or you may not be using MDTraj 1.9.5')
+                
+            # add that CTProtein to the ever-growing proteinTrajectory list
+            proteinTrajectoryList.append(CTProtein(PT))
 
         if len(proteinTrajectoryList) == 0:
             ctio.warning_message('No protein chains found in the trajectory')
 
-        return (proteinTrajectoryList, resid_offset_list, atom_offset_list)
+        return proteinTrajectoryList
 
 
 
@@ -363,11 +331,15 @@ class CTTrajectory:
             CAMPARITraj internal residue indexing, meaning that indexing begins at 0 from
             the first residue in the PDB file.
 
+        Returns
+        ---------
+        list
+            Returns a proteinTrajectoryList - a list with one or more CTProtein
+            objects in it
+        
+
         """
         
-        atom_offset_list  = []
-        resid_offset_list = []
-
         group_atoms = []
 
         # extract full system topology
@@ -376,26 +348,21 @@ class CTTrajectory:
         # for each chain in this toplogy determine if the 
         # first residue is protein or not        
         for group in residue_grouping:
-            local_atoms = [] 
+
+
+            # build a string of the resids
+            res_string = ''
+            for r in group:
+                res_string = res_string + " %i" % (int(r)) 
             
-            for res_index in group:
+            # select atoms based on the resid string
+            local_atoms = topology.select('resid %s' %(res_string))
+            
+            if len(local_atoms) == 0:
+                ctio.warning_message('In residue group [%s ...] no residues in the trajectory were found...' %(str(group)[0:8]))
 
-                # get residue object
-                residue = topology.residue(res_index)
-                resid_offset_list.append(residue.index)
-                                
-                # for each atom in the residue
-                for atom in residue.atoms:                    
-                    # append all those atoms to our list of atom indicies
-                    local_atoms.append(atom.index)
-
-            # save first atom associated with this group for offset
-            atom_offset_list.append(local_atoms[0])
-
-            # now add all the atom indices for this protein
-            # chain as a single list to the superlist of 
-            # chain atoms
-            group_atoms.append(local_atoms)
+            else:
+                group_atoms.append(local_atoms)
 
         # for each protein group that we have atomic indices
         # for cycle through and create sub-trajectories
@@ -403,6 +370,7 @@ class CTTrajectory:
         
         # cycle through each group of atoms as was defined by the residue_grouping
         # indices
+
         for local_group_atoms in group_atoms:
 
             # generate a trajectory composed of *JUST* the
@@ -410,25 +378,28 @@ class CTTrajectory:
             # consistent and contains an associated and fully
             # correct .topology object (NOTE this fixes a 
             # previous bug in CAMPARITraj 0.1.4)
-            PT = trajectory.atom_slice(local_group_atoms)            
+            PT = trajectory.atom_slice(local_group_atoms)       
             
             # gets the resid offset in a way that is ensures internal
             # consistency for the CTProtein object
             resid_offset = PT.topology.chain(0).residue(0).index
 
-            proteinTrajectoryList.append(CTProtein(PT, resid_offset))
+            if resid_offset != 0:
+                raise CTException('After extracting a protein subtrajectory, the first resid is not 0. This may reflect a bug, or you may not be using MDTraj 1.9.5')
+                
+            proteinTrajectoryList.append(CTProtein(PT))
 
         if len(proteinTrajectoryList) == 0:
             ctio.warning_message('No protein chains found in the trajectory')
 
 
-        return (proteinTrajectoryList, resid_offset_list, atom_offset_list)
+        return proteinTrajectoryList
 
 
     #oxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxo
     #
     #
-    def get_interchain_distance_map(self, proteinID1, proteinID2, resID1=None, resID2=None):
+    def get_interchain_distance_map(self, proteinID1, proteinID2, mode='CA'):
         """        
         Function which returns two matrices with the mean and standard deviation distances
         between the residues in resID1 from proteinID1 and resID2 from proteinID2
@@ -461,13 +432,12 @@ class CTTrajectory:
             The ID of the second protein of the two being considered, where the ID is the proteins position in the
             `self.proteinTrajectoryList` list
 
-        resID1 : list of integers, default=None
-            Is the list of residues from protein 1 we're considering. If this is left as None (default), then it 
-            is assumed that all residues in proteinID1 should be used
+        mode : ['CA','COM']
+            String, must be one of either 'CA' or 'COM'.
+            - 'CA' = alpha carbon.
+            - 'COM' = center of mass (associated withe the residue).
+            Default = 'CA'.
 
-        resID2 : list of integers, default=None
-            Is the list of residues from protein 2 we're considering.If this is left as None (default), then it 
-            is assumed that all residues in proteinID2 should be used
 
         Returns
         -------
@@ -486,70 +456,44 @@ class CTTrajectory:
 
         
         """
+
+        ctutils.validate_keyword_option(mode, ['CA', 'COM'], 'mode')
         
         # get CTProtein objects for the two IDs passed (could be the same)
         P1 = self.proteinTrajectoryList[proteinID1]        
-        P2 = self.proteinTrajectoryList[proteinID2]        
+        P2 = self.proteinTrajectoryList[proteinID2]
 
-        P1_atom_offset = self.atom_offset_list[proteinID1]
-        P2_atom_offset = self.atom_offset_list[proteinID2]
-
-        # get all the raw CA atom indices we're gonna be working with
-        CA_p1_raw = P1.get_multiple_CA_index(resID1)
-        CA_p2_raw = P2.get_multiple_CA_index(resID2)
-
-        # atom indices in subtrajectories (i.e. in the trajectories found in proteinTrajectory)
-        # always start from 0 from their own trajectory! To get around this and relate atom
-        # numbers in subtrajectories back to the FULL trajectory we have to add the atomic
-        # offset associated with each subtrajectory
-        CA_p1 = []
-        CA_p2 = []
-        for atom in CA_p1_raw:
-            CA_p1.append(atom + P1_atom_offset)
-
-        for atom in CA_p2_raw:
-            CA_p2.append(atom + P2_atom_offset)
-                
         # create the empty distance maps
-        distanceMap = np.zeros([len(CA_p1),len(CA_p2),])
-        stdMap      = np.zeros([len(CA_p1),len(CA_p2),])
-        
-        # calculate the FULL distance map (so 2N rather than N time).
-        # note this is actually the non-redundant map, because only in the limit
-        # of perfect sampling is it necesessarily true that
-        # 
-        # P1-R5 ::: P2-R10 == P1-R10 :::: P2-R5
-        #
-        #
-        
-        count = 0
-        for CA1 in CA_p1:
-            pairs = []
-            for CA2 in CA_p2:
+        distanceMap = np.zeros([len(P1.resid_with_CA[0:-1]),len(P2.resid_with_CA[0:-1]),])
+        stdMap      = np.zeros([len(P1.resid_with_CA[0:-1]),len(P2.resid_with_CA[0:-1]),])
 
-                pairs.append([CA1, CA2])
+        for r1 in P1.resid_with_CA[0:-1]:
+
+            if mode == 'COM':
+                COM_1 = P1.get_residue_COM(r1)
+            else:
+                COM_1 = P1.get_residue_COM(r1, atom_name='CA')
+
+            for r2 in P2.resid_with_CA[0:-1]:
+
+                if mode == 'COM':
+                    COM_2 = P2.get_residue_COM(r2)
+                else:
+                    COM_2 = P2.get_residue_COM(r2, atom_name='CA')
                 
-            data = 10*md.compute_distances(self.traj, np.array(pairs))
-            print("On residue %i (protein 1) out of %i" % (count+1, len(CA_p1)))
+                # compute distance...
+                d = 10*np.sqrt(np.square(np.transpose(COM_1)[0] - np.transpose(COM_2)[0]) + np.square(np.transpose(COM_1)[1] - np.transpose(COM_2)[1])+np.square(np.transpose(COM_1)[2] - np.transpose(COM_2)[2]))
 
-            # calculate mean and standard deviation over the trajectory data
-            mean_data = np.mean(data,0)
-            std_data = np.std(data,0)
-
-            # assign rows in the matrix
-            distanceMap[count] = mean_data
-            stdMap[count]      = std_data
-
-            # increment the outercounter
-            count = count + 1
-
+                distanceMap[r1,r2] =  np.mean(d, 0)
+                stdMap[r1,r2]    =  np.std(d, 0)
+                
         return (distanceMap, stdMap)
 
 
     #oxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxo
     #
     #
-    def get_interchain_distance(self, proteinID1, proteinID2, R1, R2, A1='CA', A2='CA', stride=1, mode='atom'):
+    def get_interchain_distance(self, proteinID1, proteinID2, R1, R2, A1='CA', A2='CA', mode='atom', periodic=False):
         """
         Function which returns the distance between two specific atoms on two residues, or between 
         two residues based on mdtraj' atomselection mode rules (discussed below). Required input are protein
@@ -571,6 +515,13 @@ class CTTrajectory:
 
         Parameters
         ----------
+
+        proteinID1 : int
+            Index of the first protein of interest
+
+        proteinID2 : int
+            Index of the second protein of interest
+
         R1 : int
             Residue index of first residue
 
@@ -582,11 +533,6 @@ class CTTrajectory:
 
         A2 : str
             Atom name of the atom in R2 we're looking at. Default='CA'
-
-        stride : int
-            Defines the spacing between frames to compare with - i.e. take every $stride-th frame.
-            Setting `stride=1` would mean every frame is used, which would mean you're doing an
-            all vs. all comparisons, which would be ideal BUT may be slow. Default = 1
 
         mode : str
             Mode allows the user to define different modes for computing atomic distance.
@@ -600,10 +546,14 @@ class CTTrajectory:
             + `'closest'` - closest atom associated with each of the residues, i.e. the is the point \
                             of closest approach between the two residues.
             + `'closest-heavy'` - same as `'closest'`, except only non-hydrogen atoms are considered.
-            + `'sidechain'` - closest atom where that atom is in the sidechain. Note this requires \
-                              mdtraj version 1.8.0 or higher.
-            + `'sidechain-heavy'` - closest atom where that atom is in the sidechain and is heavy. \
-                                    Note this requires mdtraj version 1.8.0 or higher.
+            + `'sidechain'` - closest atom where that atom is in the sidechain.
+            + `'sidechain-heavy'` - closest atom where that atom is in the sidechain and is heavy.
+
+        periodic : Bool
+            Flag which if distances mode is passed as anything other than 'atom' then this determines
+            if the minimum image convention should be used. Note that this is only available if pdb
+            crystal dimensions are provided, and in general it's better to set this to false and 
+            center the molecule first. Default = False.
 
         Returns
         -----------
@@ -619,74 +569,60 @@ class CTTrajectory:
             raise CTException("Provided mode keyword must be one of 'closest', 'ca', 'closest-heavy', 'sidechain', sidechain-heavy', or 'atom'. Provided keyword was [%s]" % (mode))
 
         # get CTProtein objects for the two IDs passed (could be the same)
-        P1 = self.proteinTrajectoryList[proteinID1]        
-        P2 = self.proteinTrajectoryList[proteinID2]        
-
-        # get resids that correspond to the FULL trajectory
-        R1_re_referenced = R1 + self.resid_offset_list[proteinID1]
-        R2_re_referenced = R2 + self.resid_offset_list[proteinID2]
-
+        
         try:
-            # if atom mode was used
-            if mode == 'atom':
-                if A1 == 'CA' and A2 == 'CA':
-                    if float(stride) != float(1): 
-                        subtraj = self.traj.slice(list(range(0, self.n_frames, stride)))
-                    else:
-                        subtraj = self.traj
-
-                    distances = 10*md.compute_contacts(subtraj, [[R1_re_referenced, R2_re_referenced]], scheme='ca')[0].ravel()
-                    
-                else:
-                    
-                    atom1 = P1._CTProtein__residue_atom_lookup(R1,A1)
-                    if len(atom1) == 0:
-                        raise CTException('Unable to find atom [%s] in residue R1 (%i)' % (A1, R1))
-
-                    TRJ_1 = self.traj.atom_slice(atom1)
-                    TRJ_1 = TRJ_1.slice(list(range(0, self.traj.n_frames, stride)))
-
-                    
-                    atom2 = P2._CTProtein__residue_atom_lookup(R2,A2)
-                    if len(atom2) == 0:
-                        raise CTException('Unable to find atom [%s] in residue R1 (%i)' % (A2, R2))
-
-                    TRJ_2 = self.traj.atom_slice(atom1)
-                    TRJ_2 = TRJ_2.slice(list(range(0, self.traj.n_frames, stride)))
-
-                    COM_1 = md.compute_center_of_mass(TRJ_1)
-                    COM_2 = md.compute_center_of_mass(TRJ_2)
-
-
-                    distances = 10*np.sqrt(np.square(np.transpose(COM_1)[0] - np.transpose(COM_2)[0]) + np.square(np.transpose(COM_1)[1] - np.transpose(COM_2)[1])+np.square(np.transpose(COM_1)[2] - np.transpose(COM_2)[2]))
+            P1 = self.proteinTrajectoryList[proteinID1]        
+            P2 = self.proteinTrajectoryList[proteinID2]        
 
         except IndexError as e:
+            raise CTException('In get_interchain_distance(): When selecting protein indices %i and %i at least one of these was out of range (indices are from 0...%i)' % (proteinID1, proteinID2, len(self.proteinTrajectoryList)-1))
             
-            print("<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@")
-            print("")
-            print("This is likely because one of [%s] or [%s] is not a valid atom type for the residue in question. Full error printed below" %( A1,A2))
-            print("")
-            print("<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@<>@")
-            print(e)
-            raise e
 
-        # parse any of the allowed modes in compute_contacts (see http://mdtraj.org/1.8.0/api/generated/mdtraj.compute_contacts.html
-        # for more details!)
-        if mode == 'closest' or mode == 'ca' or mode == 'closest-heavy' or mode == 'sidechain' or mode == 'sidechain-heavy':
-            if float(stride) != float(1): 
-                subtraj = self.traj.slice(list(range(0, self.traj.n_frames, stride)))
-            else:
-                subtraj = self.traj
+        # next build a new trajectory that contains ONLY the two residues selected
+        local_atoms1 = P1.topology.select('resid %i'%(R1))
+        local_atoms2 = P2.topology.select('resid %i'%(R2))
 
+        if len(local_atoms1) == 0:
+            raise CTException("In get_interchain_distance(): When selecting resid %i from proteinID1 found no atoms" %(R1))
+
+        if len(local_atoms2) == 0:
+            raise CTException("In get_interchain_distance(): When selecting resid %i from proteinID2 found no atoms" %(R2))
             
-            try:
-                distances = 10*md.compute_contacts(subtraj, [[R1,R2]], scheme=mode)[0].ravel()
-            except ValueError as e:
-                print(e)
-                raise CTException('Your current version of mdtraj does not support [%s] - please update mdtraj to 1.8.0 or later to facilitate support. Alternatively this may be because residue %i or %i is not parsed correctly by mdtraj' % (mode, R1, R2)) 
 
-                                
-        # note 10* to get Angstroms
+        subtraj_p1 = P1.traj.atom_slice(local_atoms1)
+        subtraj_p2 = P2.traj.atom_slice(local_atoms2)
+        
+        # this is now a subtrajectory which in principle contains just two residues. We can check
+        # this to ensure that the trajectory has exactly 2 residues
+        full_subtraj = subtraj_p1.stack(subtraj_p2)
+        if len([i for i in full_subtraj.topology.residues]) != 2:
+            raise CTException("In get_interchain_distance(): When passed in two residues (R1=%i, R2=%i) in proteins %i and %i found multiple residues (%i)...these resids could not be found " %(R1, R2, proteinID1, proteinID2))
+
+        
+        # if we're looking at a specific pair of atoms (note we use resid 0 and 1 because we KNOW this trajectory only has 2 residues and we know R1 is 0 and R2 is 1
+        if mode == 'atom':
+
+            atom1 = full_subtraj.topology.select('resid 0 and name %s'%(A1))
+            if len(atom1) != 1:
+                raise CTException("In get_interchain_distance() when selecting atom %s from residue %i in protein %i no atoms were found " % (A1, R1,  proteinID1))                
+
+            COM_1 = md.compute_center_of_mass(full_subtraj.atom_slice(atom1))
+
+            atom2 = full_subtraj.topology.select('resid 1 and name %s'%(A2))
+            if len(atom2) != 1:
+                raise CTException("In get_interchain_distance() when selecting atom %s from residue %i in protein %i no atoms were found " % (A2, R2,  proteinID2))                
+
+            COM_2 = md.compute_center_of_mass(full_subtraj.atom_slice(atom2))
+            
+            # finally compute distances
+            distances = 10*np.sqrt(np.square(np.transpose(COM_1)[0] - np.transpose(COM_2)[0]) + np.square(np.transpose(COM_1)[1] - np.transpose(COM_2)[1])+np.square(np.transpose(COM_1)[2] - np.transpose(COM_2)[2]))
+
+        else:
+
+            # use the compute_contacts() function from mdtraj, multiplying by 10 because this will
+            # by default give you numbers that 
+            distances = 10*md.compute_contacts(full_subtraj, [[0, 1]], scheme=mode, periodic=periodic)[0].ravel()
+
         return distances
       
 

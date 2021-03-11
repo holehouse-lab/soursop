@@ -36,7 +36,7 @@ import scipy.cluster.hierarchy
 
 
 ## Order of standard args:
-## 1. correctOffset
+## 1. periodic
 ## 2. stride
 ## 3. weights
 #  4. verbose
@@ -73,40 +73,27 @@ class CTProtein:
     ## >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
     ##
     ## A note for the code:
-    ## The residue offset operation is performed by the __get_offset_residue fuction.
-    ## For ANY function where a specific residue is supplied there must also be the
-    ## option to perform this offset or not (i.e. each public facicing function
-    ## should be able to stand alone and not rely on an offset being performed
-    ## by another function) BUT the option to perform the offseting provided so it
-    ## in functions that call other functions which can perform the offset it will
-    ## only need to be performed once.
+    ## As of camparitraj 0.1.3 we assume that for each protein the first residue resid
+    ## will ALWAYS index from 0 onwards. This is explicitly checked in CTTrajectory where
+    ## CTProtein objects are built. This is a change from prior versions were an offset
+    ## backend was built to give the illusion of resid = 0 indexinging, while on the
+    ## level of the underlying mdtraj topology object this was not a given. In MDTraj
+    ## 1.9.5 this has been resolved, allowing the codebase to become substantially 
+    ## simpler.
     ##
     ## >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
     
 
     # ........................................................................
     #
-    def __init__(self, traj, residue_offset):
+    def __init__(self, traj):
         """
-        Initialize a CTProtein object instance using trajectory information, and information
-        about offsets.
+        Initialize a CTProtein object instance using trajectory information.
 
         Parameters
         ----------
         traj: `cttrajectory.CTTrajectory`
             An instance of a system's trajectory populated via `cttrajectory.CTTrajectory`.
-
-        residue_offset: int
-            Similar to `atom_offset`, this is the residue index which will serve as the marker
-            for residue index 0.
-
-            The residue offset operation is performed by the `__get_offset_residue` fuction.
-            For ANY function where a specific residue is supplied there must also be the
-            option to perform this offset or not (i.e. each public facing function
-            should be able to stand alone and not rely on an offset being performed
-            by another function) BUT the option to perform the offseting provided so it
-            in functions that call other functions which can perform the offset it will
-            only need to be performed once.
 
         """
         
@@ -114,18 +101,9 @@ class CTProtein:
         self.traj     = traj
         self.topology = traj.topology
 
-        # WARNING - at the moment it seems that while the trajectory
-        # is a subset of full trajectory, the topology retains 
-        # its full content of RESIDUES (though not atoms)
-        # this is somewhat annoying
-
-
-        # same for residue o
-        self.residue_offset = residue_offset
 
         if DEBUGGING:
             ctio.debug_message("Creating protein")            
-            ctio.debug_message("Residue offset : " + str(residue_offset))
             r_string = ''
             for r in self.topology.chain(0).residues:
                 r_string = r_string + (str)
@@ -147,8 +125,9 @@ class CTProtein:
         self.__CA_residue_atom    = {}
         self.__residue_atom_table = {}
         self.__residue_COM        = {}
+        self.__residue_atom_COM   = {}
 
-        (self.__resid_with_CA, self.__idx_with_CA) = self.__get_resid_with_CA()
+        self.__resid_with_CA = self.__get_resid_with_CA()
 
         # define if caps are present or not - specifically, if the resid 0 is in the CA-containing
         if 0 in self.resid_with_CA:
@@ -156,7 +135,7 @@ class CTProtein:
         else:
             self.__ncap = True
 
-        if (self.n_residues - 1) in self.idx_with_CA:
+        if (self.n_residues - 1) in self.resid_with_CA:
             self.__ccap = False
         else:
             self.__ccap = True
@@ -170,15 +149,13 @@ class CTProtein:
     @property
     def resid_with_CA(self):
         """
-        Return a list of resids that have CA atoms. Note these residues have already have their
-        offset correction applied, and so are valid to be used for selection via the underlying
-        mdtraj topology object (self.topology).
-
-        The values associated with this property are built using the internal function `__get_resid_with_CA()`
-
+        Return a list of resids that have CA (alpha-carbon) atoms. The values associated with this 
+        property are built using the internal function `__get_resid_with_CA()`.
+        
         Returns
         --------
-        list of integers
+        list
+            Returns a list of integers where each int is the resid of a residue that has a CA atom
 
                 
         See Also
@@ -188,28 +165,6 @@ class CTProtein:
         """
         return self.__resid_with_CA
 
-
-    @property
-    def idx_with_CA(self):
-        """
-        Return a list of zero-indexed IDs that have CA atoms. Note these indices start at zero regardless of what
-        the internal .topology resid numbering is. Recall that for for mdtraj 1.9.5 or greater this should be the
-        same as the values returned by `resid_with_CA`.
-
-        The values associated with this property are built using the internal function `__get_resid_with_CA()`
-
-        Returns
-        --------
-        list of integers
-
-                
-        See Also
-        ------------
-        resid_with_CA
-
-        """
-
-        return self.__idx_with_CA
 
     @property
     def ncap(self):
@@ -269,12 +224,17 @@ class CTProtein:
     @property
     def residue_index_list(self):
         """
-        Returns the list of residue index values for this protein. 
-        i.e. this is the correctly offset residue list and will include NME/ACE
-        caps if present.
+        Returns the list of resids associated with this protein. These will always
+        start from 0 and increment (as of camparitraj 0.1.3) but these are extracted
+        here EXPLICITLY from the underlying mdtraj.topology object, which can be useful
+        for debugging.
 
-        For backend implementation details, this returns the res.index values from
-        all res in topology.residues (mdtraj.mdtrajectory)
+        Returns
+        ---------
+        list
+            Returns a list of resid values which should be a uniformly incrementing list
+            of numbers starting at 0 and incrementing to self.n_residues-1.
+
         """
 
         if self.__residue_index_list == None:
@@ -356,8 +316,8 @@ class CTProtein:
     #
     def __get_first_and_last(self, R1, R2, withCA=False):
         """
-        Function which returns first and last residue for a range, correcting for the residue
-        offset problem. The returned tup
+        Internal helper function which returns first and last residue for a range, which is able to identify residues
+        that do or do not have CA 
 
         Parameters
         ----------
@@ -378,34 +338,25 @@ class CTProtein:
         tuple:
             Returns a tuple with three positions:
         
-            - [0] = R1 with relevant offsets applid (`int`).
-            - [1] = R2 with relevant offsets applid (`int`).
+            - [0] = R1 (first residue in region) (`int`).
+            - [1] = R2 (last residue in the region)  (`int`).
             - [2] = String that can be passed directly to topology select to extract the atoms associated with these positions.
 
         """
 
         # first define as if we're starting from first and last residue with/without caps
         if R1 == False or R1 == None:
+            R1 = 0
             if withCA:
                 if self.ncap:
                     R1 = 1
-                else:
-                    R1 = 0
-            else:
-                R1 = 0
 
         if R2 == False or R2 == None:
+            R2 = self.n_residues - 1
             if withCA:
                 if self.ccap:
-                    R2 = self.n_residues - 2
-                else:
-                    R2 = self.n_residues - 1
-            else:
-                R2 = self.n_residues - 1
+                   R2 = self.n_residues - 2 
 
-        # then apply the systematic offset
-        R1 = R1 + self.residue_offset
-        R2 = R2 + self.residue_offset
 
         # finally flip around if R1 is larger than R2
         if R1 > R2:
@@ -415,43 +366,6 @@ class CTProtein:
 
         return (R1, R2, "resid %i to %i" %(R1,R2))
         
-
-    # ........................................................................
-    #
-    def get_offset_residue(self, R1):
-        """
-        Returns the true residue index (TRI) for this protein by taking into
-        account the residue offset. Checks the residue first to ensure a valid
-        residue has been passed.
-
-        NOTE: As of MDTraj 1.9.5 this is ACTUALLY overkill as when new trajectories
-        are created the resid numbering resets to starting at 0 (as opposed to 
-        retaining the old trajectory numbering). However, for 1.9.4 or lower this
-        did not happen, such that usin the get_offset_residue() function provides
-        long-lasting backwards compatibility.
-        
-
-        Parameters
-        -----------
-        R1: int
-            The zero-indexed input residue offset (`int`). This value is
-            examined by `__check_single_residue()`.
-
-        Returns
-        --------
-        TRI: int
-            The updated index which reflects the input offset to determine 
-            the **true** starting residue index.
-
-        See Also
-        --------
-        __check_single_residue
-
-        """
-
-        self.__check_single_residue(R1)
-
-        return R1 + self.residue_offset
 
     # ........................................................................
     #
@@ -487,15 +401,14 @@ class CTProtein:
     def __check_single_residue(self, R1):
         """
         Internal function that checks that a single residue provided makes sense in the context of
-        this protein. NOTE this checks BEFORE an offset is applied (i.e. we assume once a residue
-        offset has been made that the resid's validity has been established).
+        this protein. 
 
         Returns `None` or raises a `CTException`.
 
         Parameters
         ----------
         R1: int
-            The zero-indexed residue index (`int`) whose index is checked and validated.
+            The resid (`int`) of the residue to be  checked and validated.
 
         Raises
         ------
@@ -511,52 +424,31 @@ class CTProtein:
         if R1  >= self.n_residues:
             raise CTException("Trying to use a residue ID greater than the chain length [residue index = %i, chain length = %i] " % (R1, self.n_residues))
 
-        if (R1 - self.residue_offset) >= self.n_residues:
-            raise CTException("Trying to explore distances greater than chain size [residue index = %i, chain length = %i] " % (R1, self.n_residues))
-
 
     # ........................................................................
     #
-    def __check_contains_CA(self, R1, R1_org=None, has_correctOffset=True):
+    def __check_contains_CA(self, R1):
         """
-        Function which checks if residue R1 (which is the residue AFTER an offset correction has 
-        been applied) contains a C-alpha atom.
+        Function which checks if residue R1 contains an alpha carbon (CA) atom.
 
         Returns `None` or raises a `CTException`.
 
         Parameters
         ----------
         R1: int
-            The zero-indexed residue index (`int`) whose index is checked and validated.
-
-        R1_org: int or None {None}
-
+            The resid to be checked (recall that resids always start from 0).
 
         Raises
         ------
         CTException
-            When the `CTProtein` has an uncorrected offset and residue `R1` lacks a C-alpha atom. Or, when
-            the offset residue `R1_org` which maps to `R1` lacks a C-alpha. And, when the offset converted
-            residue lacks a C-alpha atom.
+            If the residue is not found in the resid_with_CA list an exception
+            is raised
 
         """
-        exception_message  = ''
-
-        if has_correctOffset is False:
-            if R1 not in self.idx_with_CA:
-                raise CTException("Residue index %i (where first residue = 0) lacks a C-alpha carbon" % (R1))
-            return
-                
-
-
         if R1 not in self.resid_with_CA:
-            
-            if R1_org:            
-                raise CTException("Residue %i (which maps to %i) lacks a C-alpha carbon [%s]" % (R1_org, R1, self.get_amino_acid_sequence()[R1]))
-            else:
-                raise CTException("Residue %i (offset converted residue ID) lacks a C-alpha carbon [%s]" %(R1, self.get_amino_acid_sequence()[R1]))
+            raise CTException("Resid %i lacks an alpha carbon atom" % (R1))
 
-
+        return None
 
     # ........................................................................
     #
@@ -604,9 +496,8 @@ class CTProtein:
         the same (which for MDTraj 1.9.5 or higher should always be the same) but for systems with
         multiple protein chains in MDTraj 1.9.4 or lower the residuesWithCA and idxWithCA willn differe
         for the second chain and onwards.
-        
-        
-        This list is then assigned to the property variable `self.resid_with_CA` and `self.idx_with_CA`.
+                
+        This list is then assigned to the property variable `self.resid_with_CA` .
 
         Note this is quite slow for large trajectories
 
@@ -626,32 +517,27 @@ class CTProtein:
         """
         
         # initialize empty lists
-        residuesWithCA = []
-        idxWithCA = []
-
-        idx = -1
+        resid_with_CA = []
 
         # for each residue in the topology
         for res in self.topology.residues:
-            idx = idx + 1
 
             # try and get the CA atomic index
-            try:                
-                self.get_CA_index(res.index, correctOffset=False)
+            try:              
+                self.get_CA_index(res.index)
 
                 # if we could get a CA then append this residue index
-                residuesWithCA.append(res.index)
-                idxWithCA.append(idx)
+                resid_with_CA.append(res.index)
 
             except CTException:
                 continue
 
-        return (residuesWithCA, idxWithCA)
+        return resid_with_CA
 
 
     # ........................................................................
     #
-    def __residue_atom_lookup(self, resid, atomname=None):
+    def __residue_atom_lookup(self, resid, atom_name=None):
         """
         Memoisation function to lookup the atomic index of a specific residues atom. Originally I'd assumed
         the underlying MDTraj `topology.select()` operation was basically a lookup, BUT it turns out it's 
@@ -662,10 +548,10 @@ class CTProtein:
         Parameters
         ----------
         resid: int
-            The residue index to lookup. This index must correspond to the range derived from the corrected offset.
-            If the residue has not been cached, it will be added to the lookup table for later reuse.
-
-        atomname: str or None {None}
+            The residue index to lookup. If the residue has not been cached, it will be added to the 
+            lookup table for later reuse.
+            
+        atom_name: str or None {None}
             The name of the atom to lookup which will return the corresponding residue ID. Like the previous parameter, 
             if that residue does not exist in the lookup table it will be added for later reuse. 
 
@@ -673,8 +559,8 @@ class CTProtein:
         -------
         list
             A list containing all the atoms corresponding to a given residue id that match the input residue id (`resid`)
-            or, the residue corresponding to the atom name (`atomname`).
-
+            or, the residue corresponding to the atom name (`atom_name`).
+        
         """
 
         # if resid is not yet in table, create an empty dicitionary
@@ -682,7 +568,7 @@ class CTProtein:
             self.__residue_atom_table[resid] = {}
         
         # if we haven't specified an atom look up ALL the atoms associated with this residue
-        if atomname is None:
+        if atom_name is None:
             
             # if all_atoms not yet associated with this residue
             if 'all_atoms' not in self.__residue_atom_table[resid]:
@@ -692,17 +578,18 @@ class CTProtein:
             return self.__residue_atom_table[resid]['all_atoms']
                                 
         # if atom-name not yet associated with this resid lookup
-        # the atomname from the underlying topology 
-        if atomname not in self.__residue_atom_table[resid]:
-            self.__residue_atom_table[resid][atomname] = self.topology.select('resid %i and name %s'%(resid, atomname))
+        # the atom_name from the underlying topology 
+        if atom_name not in self.__residue_atom_table[resid]:
+            self.__residue_atom_table[resid][atom_name] = self.topology.select('resid %i and name %s'%(resid, atom_name))
             
-        # at this point we know the resid-atomname pair is in the table
+        # at this point we know the resid-atom_name pair is in the table
         # so goahead and look it up!
-        return self.__residue_atom_table[resid][atomname]
+        return self.__residue_atom_table[resid][atom_name]
+
 
     # ........................................................................
     #
-    def __get_selection_atoms(self, region=None, backbone=True, heavy=False, correctOffset=True):
+    def __get_selection_atoms(self, region=None, backbone=True, heavy=False):
         """
         Function which returns a list of atoms associated with the residues defined by the
         region keyword. If no region is supplied this returns the entire region (NME/ACE caps
@@ -722,9 +609,6 @@ class CTProtein:
         heavy: bool {False}
             Boolean flag to determine if we should only select heavy atoms or not (i.e. not H).
 
-        correctOffset: bool {True}
-            Defines if we perform local protein offset correction or not. By default we do, but some internal functions
-            may have already performed the correction and so don't need to perform it again
 
         Returns
         -------
@@ -738,20 +622,26 @@ class CTProtein:
 
         """
 
-        # perform offset if necessary
-        if correctOffset and not region == None:
-            tmp = []
-            for i in region:
-                tmp.append(self.get_offset_residue(i))
-            region = tmp
+
         
+        # if a valid regino was passed...
         if region is None:
-            pass
+            R1 = 0
+            R2 = self.n_residues - 1
 
-        elif not len(region) == 2:
-            CTException("Trying to select a subsection of atoms, but the provided 'region' tuple/list is not of exactly length two [region=%s].\nCould indicate a problem, so be safe raising an exception" % (str(region)))
+            if backbone:
+                if heavy:
+                    selectionatoms = self.topology.select('backbone and resid %i to %i and not type H' % (R1, R2))
+                else:
+                    selectionatoms = self.topology.select('backbone and resid %i to %i' % (R1, R2))
 
-        if not region == None and len(region) == 2:
+            else:
+                if heavy:
+                    selectionatoms = self.topology.select('resid %i to %i and not type H' % (R1, R2))
+                else:
+                    selectionatoms = self.topology.select('resid %i to %i' % (R1, R2))
+
+        elif len(region) == 2:
             if backbone:                
                 if heavy:
                     selectionatoms = self.topology.select('backbone and resid %i to %i and not type H)' % (region[0], region[1]))
@@ -764,19 +654,12 @@ class CTProtein:
                     selectionatoms = self.topology.select('resid %i to %i' % (region[0], region[1]))
 
         else:
-            if backbone:
-                if heavy:
-                    selectionatoms = self.topology.select('backbone and resid %i to %i and not type H' % ( self.residue_offset, self.residue_offset + self.n_residues))
-                else:
-                    selectionatoms = self.topology.select('backbone and resid %i to %i' % ( self.residue_offset, self.residue_offset + self.n_residues))
-
-            else:
-                if heavy:
-                    selectionatoms = self.topology.select('resid %i to %i and not type H' % (self.residue_offset, self.residue_offset + self.n_residues))
-                else:
-                    selectionatoms = self.topology.select('resid %i to %i' % (self.residue_offset, self.residue_offset + self.n_residues))
+            CTException("Trying to select a subsection of atoms, but the provided 'region' tuple/list is not of exactly length two [region=%s].\nCould indicate a problem, so be safe raising an exception" % (str(region)))
 
         return selectionatoms
+
+
+
 
 
     # ........................................................................
@@ -812,7 +695,116 @@ class CTProtein:
             return_list.append([i,AA[i]])
         return return_list
 
+
+
+    # ........................................................................
+    #
+    def residue_atom_com(self, resid, atom_name=None):
+        """
+        Memoisation function th
+
+to lookup the atomic index of a specific residues atom. Originally I'd assumed
+        the underlying MDTraj `topology.select()` operation was basically a lookup, BUT it turns out it's 
+        actually *really* expensive, so this method converts atom/residue lookup information into a 
+        dynamic O(1) operation, greatly improving the performance of a number of different methods
+        in the processes.
+
+        Parameters
+        ----------
+        resid: int
+            The residue index to lookup. If the residue has not been cached, it will be added to the 
+            lookup table for later reuse.
+            
+        atom_name: str or None {None}
+            The name of the atom to lookup which will return the corresponding residue ID. Like the previous parameter, 
+            if that residue does not exist in the lookup table it will be added for later reuse. 
+
+        Returns
+        -------
+        list
+            A list containing all the atoms corresponding to a given residue id that match the input residue id (`resid`)
+            or, the residue corresponding to the atom name (`atom_name`).
+
+        """
+
+        # if resid is not yet in table, create an empty dicitionary
+        if resid not in self.__residue_atom_table:
+            self.__residue_atom_table[resid] = {}
+        
+        # if we haven't specified an atom look up ALL the atoms associated with this residue
+        if atom_name is None:
+            
+            # if all_atoms not yet associated with this residue
+            if 'all_atoms' not in self.__residue_atom_table[resid]:
+                self.__residue_atom_table[resid]['all_atoms'] = self.topology.select('resid %i'%(resid))
+
+            # return set of all atoms
+            return self.__residue_atom_table[resid]['all_atoms']
+                                
+        # if atom-name not yet associated with this resid lookup
+        # the atom_name from the underlying topology 
+        if atom_name not in self.__residue_atom_table[resid]:
+            self.__residue_atom_table[resid][atom_name] = self.topology.select('resid %i and name %s'%(resid, atom_name))
+            
+        # at this point we know the resid-atom_name pair is in the table
+        # so goahead and look it up!
+        return self.__residue_atom_table[resid][atom_name]
+
+
+
+
        
+    # ........................................................................
+    #
+    def get_residue_COM(self, resid, atom_name=None):
+        """
+        Property that returns the 3 x n np.ndarray with the COM of the residue in question.
+        Computes it once and then looks up this data.
+
+        Parameters
+        -------------
+        resid : int 
+            Resid for residue of interest
+
+        Returns
+        -------------
+        np.ndarray
+            Returns an [x,y,z] x n np.ndarray of x/y/z positions for this residue COM for EVERY
+            frame.
+            
+        """
+
+        # check its ok...
+        self.__check_single_residue(resid)
+
+        # for whole residues (atom_name not specified)
+        if atom_name is None:
+            if resid not in self.__residue_COM:
+                atoms = self.__residue_atom_lookup(resid)
+                TRJ_1 = self.traj.atom_slice(atoms)               
+                self.__residue_COM[resid] = md.compute_center_of_mass(TRJ_1)
+                del TRJ_1
+        
+            return self.__residue_COM[resid]
+
+        else:
+            
+            # if resid is not yet in table, create an empty dicitionary
+            if resid not in self.__residue_atom_COM:
+                self.__residue_atom_COM[resid] = {}
+
+            if atom_name not in self.__residue_atom_COM[resid]:
+                atoms = self.__residue_atom_lookup(resid, atom_name)
+                TRJ_1 = self.traj.atom_slice(atoms)     
+                self.__residue_atom_COM[resid][atom_name] = md.compute_center_of_mass(TRJ_1)
+                del TRJ_1
+            
+            return self.__residue_atom_COM[resid][atom_name]
+
+
+
+        
+
     # ........................................................................
     #        
     def get_amino_acid_sequence(self, oneletter=False, numbered=True):
@@ -872,7 +864,7 @@ class CTProtein:
 
     # ........................................................................
     #
-    def get_CA_index(self, residueIndex, correctOffset=True):
+    def get_CA_index(self, resid):
         """ 
         Get the CA atom index for the residue defined by residueIndex. Again does this
         via memoization - i.e. the first time a specific residue is requested the function
@@ -884,13 +876,7 @@ class CTProtein:
         ----------
         
         residueIndex: int
-            Defines the residue index to select the CA from.
-
-        correctOffset: bool {True}
-            Defines if we perform local protein offset correction
-            or not. By default we do, but some internal functions
-            may have already performed the correction and so don't
-            need to perform it again.
+            Defines the resid to select the CA from.
 
         Returns
         -------
@@ -903,25 +889,21 @@ class CTProtein:
             When the number of CA atoms do not equal 1.
 
         """
-                
-        # perform offset if necessary 
-        if correctOffset:
-            residueIndex = self.get_offset_residue(residueIndex)
 
-        if residueIndex not in self.__CA_residue_atom:            
-            return_val = self.__residue_atom_lookup(residueIndex, 'CA')
+        if resid not in self.__CA_residue_atom:            
+            return_val = self.__residue_atom_lookup(resid, 'CA')
         
             if len(return_val) == 1:
-                self.__CA_residue_atom[residueIndex] = return_val[0]            
+                self.__CA_residue_atom[resid] = return_val[0]            
             else:
-                raise CTException("get_CA_index - unable to find residue %i [corrected resid]" % residueIndex)
+                raise CTException("get_CA_index - unable to find residue %i" % resid)
         
-        return self.__CA_residue_atom[residueIndex] 
+        return self.__CA_residue_atom[resid] 
 
 
     # ........................................................................
     #
-    def get_multiple_CA_index(self, resID_list=None, correctOffset=True):
+    def get_multiple_CA_index(self, resID_list=None):
         """
         Returns the atom indices associated with the C-alpha (CA) atom for the
         residues defined in the resID_list OR for all residues, if no list 
@@ -935,11 +917,6 @@ class CTProtein:
             be retrieved. If no list is provided we simply select the list
             of residues with C-alphas, whose indices have been corrected.
 
-        correctOffset: bool {True}
-            Defines if we perform local protein offset correction
-            or not. By default we do, but some internal functions
-            may have already performed the correction and so don't
-            need to perform it again.
         
         Returns
         -------
@@ -951,27 +928,18 @@ class CTProtein:
         # then just return the single residue associated 
         # with
         if type(resID_list) == int:
-            return ([self.get_CA_index(resID_list, correctOffset)])
+            return ([self.get_CA_index(resID_list)])
 
         # if no value passed grab all the residues
         if resID_list == None:
-
-            # this list uses corrected residue index positions. Note now the
-            # correctOffset flag is irrelevant because we didn't pass any 
-            # positions to offset!
             resID_list = self.resid_with_CA
 
-        else:
-            if correctOffset:
-                tmp = []
-                for resid in resID_list:
-                    tmp.append(self.get_offset_residue(resid))
-                resID_list = tmp
+
             
         CAlist = []
         for res in resID_list:
             try:
-                CAlist.append(self.get_CA_index(res, correctOffset=False))
+                CAlist.append(self.get_CA_index(res))
             except CTException as e:                
                 print(e)
                 continue
@@ -982,16 +950,17 @@ class CTProtein:
         
     # ........................................................................
     #
-    def calculate_all_CA_distances(self, residueIndex,  mode='CA', onlyCterminalResidues=True, correctOffset=True, stride=1):
+    def calculate_all_CA_distances(self, residueIndex,  mode='CA', only_C_terminal_residues=True, periodic=False, stride=1):
         """
-        Calculate the full set of distances between C-alpha atoms. Note that by default 
-        this explicitly works in a way to avoid computing redundancy where we ONLY
-        compute distances between residue `i` and residues greater than `i` up
-        to the final residue. This behaviour is defined by the `onlyCterminalResidues` flag.
+        Calculate the full set of distances between C-alpha atoms. Specifically, from the residueIndex,
+        this function will calculate distances between that residue and all other residues that have 
+        CA-atoms, either as CA-CA distance, or as COM-COM distance (as defined by the mode keyword).
+
+        Note that by default this explicitly works in a way to avoid computing redundancy where 
+        we ONLY compute distances between residue `i` and residues greater than `i` up               
+        to the final residue. This behaviour is defined by the `only_C_terminal_residues` flag.
 
         Distance is returned in Angstroms.
-
-        Can be fed a mode 'COM' keyword to calcule center of mass distances instead of CA distances.
 
         Parameters
         ----------
@@ -999,26 +968,26 @@ class CTProtein:
         residueIndex: int
             Defines the residue index to select the CA from.
 
-        mode: str {'CA'}
+        mode : ['CA','COM']
             String, must be one of either 'CA' or 'COM'.
             - 'CA' = alpha carbon.
             - 'COM' = center of mass (associated withe the residue).
+            Default = 'CA'.
 
-        onlyCterminalResidues: bool {True}
+        only_C_terminal_residues: bool
             This variable means that only residues C-terminal of the residueIndex 
             value will be considered. This is useful when performing an ALL vs. ALL
             matrix as it ensures that only the upper triangle is calculated if we
             iterate over all residues, but may not be deseriable in other contexts.
+            Default = True.
 
-        correctOffset: bool {True}
-            Defines if we perform local protein offset correction
-            or not. By default we do, but some internal functions
-            may have already performed the correction and so don't
-            need to perform it again.
+        periodic : bool
+            Flag which - if set to true - means we use minimum image convention for computing distances. 
+            Default = False.
 
-        stride: int {1}
+        stride: int
             Defines the spacing between frames to compare - i.e. if comparing frame1 to a trajectory we'd compare
-            frame 1 and every stride-th frame.
+            frame 1 and every stride-th frame. Default = 1.
 
         Returns
         -------
@@ -1034,14 +1003,10 @@ class CTProtein:
 
         # validate input
         ctutils.validate_keyword_option(mode, ['CA', 'COM'], 'mode')
-
-        # first check the residue we passed is valid and offset if required
-        if correctOffset:
-            residueIndex = self.get_offset_residue(residueIndex)
             
         # determine atomic index of CA atom for the residue you passed in
         try:
-            CA_base = self.get_CA_index(residueIndex, correctOffset=False)
+            CA_base = self.get_CA_index(residueIndex)
         except CTException:
 
             # if we couldln't find a C-alpha for this residue then nothing
@@ -1055,20 +1020,17 @@ class CTProtein:
         ## Block to use if using CA as base for computing distances
         ##
         if mode == 'CA':
+
             for residue in self.resid_with_CA:
 
                 # only compute distances bigger than the residueIndex
                 # such that by default full iteration calculates the 
                 # non-redundant map (i.e. the half diagonal)
-                if residue <= residueIndex and onlyCterminalResidues:
+                if residue <= residueIndex and only_C_terminal_residues:
                     continue
-            
-            
-                # note we have the correctOffset set the false because the residue
-                # index here is the true residue index as was pre-calculated
-                CAlist.append(self.get_CA_index(residue, correctOffset=False))
-
-                
+                        
+                # build a list of c-alpah atomic indices
+                CAlist.append(self.get_CA_index(residue))
                 
             # now we construct a nested list of lists of pairs to compute distances
             # between
@@ -1083,17 +1045,21 @@ class CTProtein:
             local_traj = self.__get_subtrajectory(self.traj, stride)
 
             # 10* for angstroms
-            return 10*md.compute_distances(local_traj, np.array(pairs))
+            return 10*md.compute_distances(local_traj, np.array(pairs), periodic=periodic)
+
         if mode == 'COM':
             ##
             ## Block to use if using COM as base for computing distances
             ##
             return_distances = []
+
+            # cycle over each resid for a residue with a CA atom
             for residue in self.resid_with_CA:
+
                 # only compute distances bigger than the residueIndex
                 # such that by default full iteration calculates the 
                 # non-redundant map (i.e. the half diagonal)
-                if residue <= residueIndex and onlyCterminalResidues:
+                if residue <= residueIndex and only_C_terminal_residues:
                     continue
 
                 return_distances.append(self.get_inter_residue_COM_distance(residueIndex, residue))
@@ -1105,7 +1071,7 @@ class CTProtein:
 
     # ........................................................................
     #
-    def get_distance_map(self, mode='CA', RMS=False, stride=1, weights=False, verbose=True):
+    def get_distance_map(self, mode='CA', RMS=False, periodic=False, stride=1, weights=False, verbose=True):
         """
         Function to calculate the CA defined distance map for a protein of interest. Note 
         this function doesn't take any arguments and instead will just calculate the complete
@@ -1119,20 +1085,25 @@ class CTProtein:
         Parameters
         ----------
         
-        mode : str {'CA'}
+        mode : str 
             String, must be one of either 'CA' or 'COM'.
             - 'CA' = alpha carbon.
             - 'COM' = center of mass (associated withe the residue).
+            Default = 'CA'.
 
-        RMS : bool {False}
+        RMS : bool 
             If set to False, scaling map reports ensemble average distances (this is the standard and
             default behaviour). If True, then  the distance reported is the root mean squared (RMS)
             = i.e. SQRT(<r_ij^2>), which is the formal order parameter that should be used for polymeric 
-            distance properties.
+            distance properties. Default = False.
+
+        periodic : bool
+            Flag which - if set to true - means we use minimum image convention for computing distances. 
+            Default = False.
                         
-        stride : int {1}
+        stride : int 
             Defines the spacing between frames to compare - i.e. if comparing frame1 to a trajectory we'd compare
-            frame 1 and every stride-th frame.
+            frame 1 and every stride-th frame. Default = 1.
         
         weights : list or array of floats
             Defines the frame-specific weights if re-weighted analysis is required. This can be 
@@ -1155,23 +1126,21 @@ class CTProtein:
         
         weights = self.__check_weights(weights, stride)
         
-        # get the list of residues which have CA (typically this means we exclude
-        # ACE and NME if they're present, but they may not be                        
-        residuesWithCA = self.resid_with_CA
 
         # initialize empty matrices that we're gonna fill up
         distanceMap = np.zeros([len(residuesWithCA),len(residuesWithCA),])
         stdMap = np.zeros([len(residuesWithCA),len(residuesWithCA),])
-                
-        SM_index=0
-        for resIndex in residuesWithCA[0:-1]:
+          
+        # cycle over CA-containing residues
+        SM_index = 0
+        for resIndex in self.resid_with_CA[0:-1]:
 
 
             ctio.status_message("On protein residue %i (overall residue index = %i) of %i [distance calculations]"% (SM_index, resIndex, int(len(residuesWithCA))), verbose)
 
-            # get all CA-CA distances between the residue of index resIndex and every other residue. Note this gives the non-redudant upper 
-            # triangle. No need to correct for offset because this was done when we retrived the set of residues with CA
-            full_data = self.calculate_all_CA_distances(resIndex, mode=mode, stride=stride, correctOffset=False)    
+            # get all CA-CA distances between the residue of index resIndex and every other residue. 
+            # Note this gives the non-redudant upper triangle. 
+            full_data = self.calculate_all_CA_distances(resIndex, mode=mode, stride=stride, periodic=periodic)
 
             # if we want root mean square then NOW square each distances
             if RMS:
@@ -1486,12 +1455,12 @@ class CTProtein:
         self.__check_stride(stride)
 
         # get the residue IDXs were going to use
-        res_idx_list = self.residue_index_list
+        #res_idx_list = self.residue_index_list
         n_frames = self.n_frames
 
                             
         # check the fragment_size is appropriate
-        if fragment_size > len(res_idx_list):
+        if fragment_size > self.n_residues:
             raise CTException('fragment_size is larger than the number of residues')
         if fragment_size < 2:
             raise CTException('fragment_size must be 2 or larger')
@@ -1502,7 +1471,9 @@ class CTProtein:
         histo    = []
         
         # cycle over each sub-region in the sequence
-        for frag_idx in res_idx_list[0:-fragment_size]:
+
+        # untested - for loop used to be frag_idx in res_idx_list[0:-fragment_size]:
+        for frag_idx in range(0, self.n_residues - fragment_size): 
             tmp = []
             ctio.status_message("On range %i" % frag_idx, verbose)
 
@@ -1577,10 +1548,11 @@ class CTProtein:
 
         # compute number of frames exactly (this is empyrical but ensures we're always consistent with the projected
         # dimensions in the first for-loop)
-        tmp = self.calculate_all_CA_distances(residuesWithCA[0], stride=stride, onlyCterminalResidues=True, correctOffset=False)                                 
+        # note that this also assumes periodic is off, which is probably a good assumption...
+        tmp = self.calculate_all_CA_distances(residuesWithCA[0], stride=stride, only_C_terminal_residues=True)                                 
         n_frames =  np.shape(tmp)[0]
         
-        all_distances = np.zeros([len(residuesWithCA),len(residuesWithCA), n_frames])
+        all_distances = np.zeros([len(residuesWithCA), len(residuesWithCA), n_frames])
                 
         # first compute upper triangle only (lower traingle is identical and doesn't change the answer
         # so we stick with the upper traingle only)
@@ -1588,7 +1560,7 @@ class CTProtein:
         for resIndex in residuesWithCA[0:-1]:        
             ctio.status_message("Calculating non redundant distance for res. %i " % resIndex, verbose)
 
-            vals = self.calculate_all_CA_distances(resIndex, stride=stride, onlyCterminalResidues=True, correctOffset=False)                                 
+            vals = self.calculate_all_CA_distances(resIndex, stride=stride, only_C_terminal_residues=True)                                 
 
             # have to include a -1 here because we don't have a self:self distance
             all_distances[SM_index][0:(len(residuesWithCA)-1)-SM_index] = vals.transpose()
@@ -1653,7 +1625,7 @@ class CTProtein:
 
     # ........................................................................
     #
-    def get_RMSD(self, frame1, frame2=-1, region=None, backbone=True, correctOffset=True, stride=1):
+    def get_RMSD(self, frame1, frame2=-1, region=None, backbone=True, stride=1):
         """
         Function which will calculate the aligned RMSD between two frames, or between one frame and 
         all frames in the trajectory. This can be done over the entire protein but we can also
@@ -1679,11 +1651,6 @@ class CTProtein:
             Boolean flag for using either the full chain or just backbone. Generally backbone alone 
             is fine so default to True.
 
-        correctOffset : bool  {True}
-            Defines if we perform local protein offset correction or not. By default we do, but some 
-            internal functions may have already performed the correction and so don't need to perform it 
-            again
-
         stride : int {1}
             Defines the spacing between frames to compare - i.e. if comparing frame1 to a trajectory we'd compare
             frame 1 and every stride-th frame
@@ -1698,7 +1665,7 @@ class CTProtein:
         """
 
         # get the selection atoms (perform correction if required)
-        selectionatoms = self.__get_selection_atoms(region=region, backbone=backbone, correctOffset=correctOffset)
+        selectionatoms = self.__get_selection_atoms(region=region, backbone=backbone)
             
         # set the reference trajectory we're working with
         ref = self.traj
@@ -1726,7 +1693,6 @@ class CTProtein:
               beta_const = 50.0,
               lambda_const = 1.8,
               native_contact_threshold = 4.5,              
-              correctOffset = True, 
               stride = 1, 
               weights = False):
         """
@@ -1767,11 +1733,6 @@ class CTProtein:
         native_contact_threshold : float {4.5}
             Threshold in Angstroms typically used for all-atom simulations and again probably should not
             be changed without good reason
-
-        correctOffset : bool  {True}
-            Defines if we perform local protein offset correction or not. By default we do, but some 
-            internal functions may have already performed the correction and so don't need to perform it 
-            again. If you are unsure leave as True!
 
         stride : int {1}
             Defines the spacing between frames to compare - i.e. if comparing frame1 to a 
@@ -1822,7 +1783,7 @@ class CTProtein:
         # if we're using a subregion 
         # NOTE this is WAY more elegant than the previous way of doing this but there *used* to be problems with MDTraj doing
         # things like this...
-        selectionatoms = self.__get_selection_atoms(region, backbone=False, heavy=True, correctOffset=correctOffset)
+        selectionatoms = self.__get_selection_atoms(region, backbone=False, heavy=True)
         
         # extract out the native state frame
         native = self.traj.slice(native_state_frame)
@@ -2045,7 +2006,19 @@ class CTProtein:
 
         # compute the contactmap and square-form it (map per frame)
         # CMAP is a [N_FRAMES x N_RES x N_RES] array
-        CMAP_nonsquare = md.compute_contacts(subtraj.atom_slice(mainchain_atoms), scheme=mode)
+
+        try:
+            CMAP_nonsquare = md.compute_contacts(subtraj.atom_slice(mainchain_atoms), scheme=mode)
+        except ValueError as e:            
+            if str(e) == 'zero-size array to reduction operation minimum which has no identity':
+                if mode == 'sidechain-heavy':
+                    msg = "Failed computing contacts. This is likely because one of the residues has a glycine and\nthere are no heavy sidechain residues in glycine. Raising exception..."
+                    
+                    ctio.exception_message(msg, e, with_frills=True, raise_exception=False)
+                    raise CTException(msg)
+
+            raise e
+            
         CMAP = md.geometry.squareform(CMAP_nonsquare[0], CMAP_nonsquare[1])
 
         # extract the normalization factor used to compute fractional
@@ -2099,7 +2072,7 @@ class CTProtein:
     # ........................................................................
     #
     #
-    def get_clusters(self, region=None, n_clusters=10, backbone=True, correctOffset=True, stride=20):
+    def get_clusters(self, region=None, n_clusters=10, backbone=True, stride=20):
         """
         Function to determine the structural clusters associated with a trajectory. This can be useful for 
         identifying the most populated clusters. This approach uses Ward's hiearchical clustering, which means 
@@ -2145,15 +2118,10 @@ class CTProtein:
             Flag to determine if backbone atoms or full chain should be used. By default the backbone is used mainly
             because this makes things a lot computationally cheaper.
 
-        correctOffset : bool  {True}
-            Defines if we perform local protein offset correction or not. By default we do, but some 
-            internal functions may have already performed the correction and so don't need to perform it 
-            again. If you are unsure leave as True!
-
-        stride : int  {20}     
+        stride : int 
             Defines the spacing betwen frames to compare with - i.e. take every $stride-th frame. Setting stride=1 
             would mean every frame is used, which would mean you're doing an all vs. all comparions, which would be 
-            ideal BUT may be slow.
+            ideal BUT may be slow. Default = 20.
 
         Returns
         ---------------
@@ -2175,7 +2143,7 @@ class CTProtein:
         # build an all vs. all RMSD matrix based on the parameters provided for every
         # stride-th frame
         for i in range(0, self.n_frames, stride):
-            distances[idx] = self.get_RMSD(i, stride=stride, region=region, backbone=backbone, correctOffset=correctOffset)
+            distances[idx] = self.get_RMSD(i, stride=stride, region=region, backbone=backbone)
             idx=idx+1
 
         # CLUSTERING
@@ -2255,63 +2223,36 @@ class CTProtein:
     # ........................................................................
     #
     #
-    def get_inter_residue_COM_distance(self, R1, R2, correctOffset=True, stride=1):
+    def get_inter_residue_COM_distance(self, R1, R2, stride = 1):
         """
         Function which calculates the complete set of distances between two residues'
         centers of mass (COM) and returns a vector of the distances.
 
-        Distance is returned in Angstroms.
+        Distance is returned in Angstroms. Note no periodic option is currently
+        available here.
 
-        ........................................
-        OPTIONS 
-        ........................................
-        R1 [int]
-        Residue index of first residue
+        Parameters
+        -------------
+        R1 :  int
+            Resid of the first residue
 
-        R2 [int] 
-        Residue index of second residue
+        R2 : int
+            Resid of the second residue
+        
+        stride : int 
+            Defines the spacing betwen frames to compare with - i.e. take every $stride-th frame.
+            Default = 1.
 
-        correctOffset [Bool] {True}
-        Defines if we perform local protein offset correction
-        or not. By default we do, but some internal functions
-        may have already performed the correction and so don't
-        need to perform it again.
-
-        stride [int] {1}     
-        Defines the spacing betwen frames to compare with - i.e. take every $stride-th frame.
-        Setting stride=1 would mean every frame is used, which would mean you're doing an
-        all vs. all comparions, which would be ideal BUT may be slow.
-
+        Returns
+        ------------
+        np.ndarray
+           Returns an array of inter-residue distances in angstroms
 
         """
 
-        # first check that the residues we're working with make sense
-        if correctOffset:
-            R1 = self.get_offset_residue(R1)
-            R2 = self.get_offset_residue(R2)
-        else:
-            R1 = int(R1)
-            R2 = int(R2)
-
-        
-        # get COM of the two residues for every stride-th frame (only split
-    
-            
-        if R1 not in self.__residue_COM:
-            atoms1 = self.__residue_atom_lookup(R1)
-            TRJ_1 = self.traj.atom_slice(atoms1)        
-            TRJ_1 = self.__get_subtrajectory(TRJ_1, stride) 
-            self.__residue_COM[R1] = md.compute_center_of_mass(TRJ_1)
-        
-
-        if R2 not in self.__residue_COM:
-            atoms2 = self.__residue_atom_lookup(R2)
-            TRJ_2 = self.traj.atom_slice(atoms2)        
-            TRJ_2 = self.__get_subtrajectory(TRJ_2, stride) 
-            self.__residue_COM[R2] = md.compute_center_of_mass(TRJ_2)
-            
-        COM_1 = self.__residue_COM[R1]
-        COM_2 = self.__residue_COM[R2]
+        # get COM of the two residues for every stride-th frame (only split                
+        COM_1 = self.get_residue_COM(R1)
+        COM_2 = self.get_residue_COM(R2)
 
         
         # calculate distance
@@ -2327,7 +2268,7 @@ class CTProtein:
     # ........................................................................
     #
     #
-    def get_inter_residue_COM_vector(self, R1, R2, correctOffset=True, stride=1):
+    def get_inter_residue_COM_vector(self, R1, R2, stride=1):
         """
         Function which calculates the complete set of distances between two residues'
         centers of mass (COM) and returns the inter-residue distance vector. 
@@ -2335,46 +2276,37 @@ class CTProtein:
         NOTE: This gives a VECTOR and not the distance between the two centers of 
         mass (which is calculated by get_inter_residue_COM_distance)
         
+        Parameters
+        ----------------
+        
+        R1 : int
+            Residue index of first residue
 
-        ........................................
-        OPTIONS 
-        ........................................
-        R1 [int]
-        Residue index of first residue
+        R2 : int
+            Residue index of second residue
 
-        R2 [int] 
-        Residue index of second residue
+        stride : int 
+            Defines the spacing betwen frames to compare with - i.e. take every $stride-th frame.
+            Default = 1.
 
-        correctOffset [Bool] {True}
-        Defines if we perform local protein offset correction
-        or not. By default we do, but some internal functions
-        may have already performed the correction and so don't
-        need to perform it again.
-
-        stride [int] {20}     
-        Defines the spacing betwen frames to compare with - i.e. take every $stride-th frame.
-        Setting stride=1 would mean every frame is used, which would mean you're doing an
-        all vs. all comparions, which would be ideal BUT may be slow.
-
-
+        Returns
+        ------------
+        np.ndarray
+           Returns an array of inter-residue distances in angstroms
 
         """
-
-        if correctOffset:
-            R1 = self.get_offset_residue(R1)
-            R2 = self.get_offset_residue(R2)
+        if stride == 1:
+            COM_1 = self.get_residue_COM(R1)
+            COM_2 = self.get_residue_COM(R2)
         else:
-            R1 = int(R1)
-            R2 = int(R2)
+            TRJ_1 = self.traj.atom_slice(self.topology.select('resid %i' % R1 ))
+            TRJ_1 = self.__get_subtrajectory(TRJ_1, stride)  
 
-        TRJ_1 = self.traj.atom_slice(self.topology.select('resid %i' % R1 ))
-        TRJ_1 = TRJ_1.slice(list(range(0, self.n_frames, stride)))
-
-        TRJ_2 = self.traj.atom_slice(self.topology.select('resid %i'% R2 ))
-        TRJ_2 = TRJ_2.slice(list(range(0, self.n_frames, stride)))
+            TRJ_2 = self.traj.atom_slice(self.topology.select('resid %i'% R2 ))
+            TRJ_2 = self.__get_subtrajectory(TRJ_2, stride)  
         
-        COM_1 = md.compute_center_of_mass(TRJ_1)
-        COM_2 = md.compute_center_of_mass(TRJ_2)
+            COM_1 = md.compute_center_of_mass(TRJ_1)
+            COM_2 = md.compute_center_of_mass(TRJ_2)
 
         # note 10* to get Angstroms
         return (COM_1 - COM_2)
@@ -2383,7 +2315,7 @@ class CTProtein:
     # ........................................................................
     #
     #
-    def get_inter_residue_atomic_distance(self, R1, R2, A1='CA', A2='CA', mode='atom', correctOffset=True, stride=1):
+    def get_inter_residue_atomic_distance(self, R1, R2, A1='CA', A2='CA', mode='atom', periodic=False, stride=1):
         """
         Function which returns the distance between two specific atoms on two residues. The atoms
         selected are based on the 'name' field from the topology selection language. This defines
@@ -2428,15 +2360,15 @@ class CTProtein:
             'sidechain-heavy' - closest atom where that atom is in the sidechain and is heavy. 
                                 Note this requires mdtraj version 1.8.0 or higher.
 
-        correctOffset : bool  {True}
-            Defines if we perform local protein offset correction or not. By default we do, but some 
-            internal functions may have already performed the correction and so don't need to perform it 
-            again
-
-        stride : int {1}
+        periodic : bool
+            Flag which - if set to true - means we use minimum image convention for computing distances. 
+            Default = False.
+        
+        stride : int 
             Defines the spacing between frames to compare - i.e. if comparing frame1 to a trajectory 
             we'd compare frame 1 and every stride-th frame. Note this operation may scale poorly as 
             protein length increases at which point increasing the stride may become necessary.
+            Default = 1.
 
 
         Returns
@@ -2449,64 +2381,40 @@ class CTProtein:
         # check mode keyword is valid
         ctutils.validate_keyword_option(mode, ['atom', 'ca', 'closest-heavy', 'closest', 'sidechain', 'sidechain-heavy'] , 'mode')
         
-        # define R1 and R2 - if offset needed perform, else 
-        # define the first and last residue INCLUDING caps
-        if correctOffset:
-            R1 = self.get_offset_residue(R1)
-            R2 = self.get_offset_residue(R2)
-        else:
-            # cast...
-            R1 = int(R1)
-            R2 = int(R2)
+        ## if mode is atom...
+        ## 
 
-
-        try:
-            # if atom mode was used
-            if mode == 'atom':
-                if A1 == 'CA' and A2 == 'CA':
-
-                    subtraj = self.__get_subtrajectory(self.traj, stride)
-                    distances = 10*md.compute_contacts(subtraj, [[R1,R2]],scheme='ca')[0].ravel()
-                    
-                else:
-                    atom1 = self.__residue_atom_lookup(R1,A1)
-                    if len(atom1) == 0:
-                        raise CTException('Unable to find atom [%s] in residue R1 (%i)' % (A1, R1))
+        if mode == 'atom':            
+            try:            
+                atom1 = self.__residue_atom_lookup(R1,A1)
+                if len(atom1) == 0:
+                    raise CTException('Unable to find atom [%s] in residue R1 (%i)' % (A1, R1))
 
                     
-                    TRJ_1 = self.traj.atom_slice(atom1)
-                    TRJ_1 = self.__get_subtrajectory(TRJ_1, stride)
+                TRJ_1 = self.traj.atom_slice(atom1)
+                TRJ_1 = self.__get_subtrajectory(TRJ_1, stride)
                     
-                    atom2 = self.__residue_atom_lookup(R2,A2)
-                    if len(atom2) == 0:
-                        raise CTException('Unable to find atom [%s] in residue R1 (%i)' % (A2, R2))
+                atom2 = self.__residue_atom_lookup(R2,A2)
+                if len(atom2) == 0:
+                    raise CTException('Unable to find atom [%s] in residue R1 (%i)' % (A2, R2))
 
-                    TRJ_2 = self.traj.atom_slice(atom2)
-                    TRJ_2 = self.__get_subtrajectory(TRJ_2, stride)
+                TRJ_2 = self.traj.atom_slice(atom2)
+                TRJ_2 = self.__get_subtrajectory(TRJ_2, stride)
                     
-                    COM_1 = md.compute_center_of_mass(TRJ_1)
-                    COM_2 = md.compute_center_of_mass(TRJ_2)
+                COM_1 = md.compute_center_of_mass(TRJ_1)
+                COM_2 = md.compute_center_of_mass(TRJ_2)
 
-
-                    distances = 10*np.sqrt(np.square(np.transpose(COM_1)[0] - np.transpose(COM_2)[0]) + np.square(np.transpose(COM_1)[1] - np.transpose(COM_2)[1])+np.square(np.transpose(COM_1)[2] - np.transpose(COM_2)[2]))
+                distances = 10*np.sqrt(np.square(np.transpose(COM_1)[0] - np.transpose(COM_2)[0]) + np.square(np.transpose(COM_1)[1] - np.transpose(COM_2)[1])+np.square(np.transpose(COM_1)[2] - np.transpose(COM_2)[2]))
                 
+            except IndexError as e:            
+                ctio.exception_message("This is likely because one of [%s] or [%s] is not a valid atom type for the residue in question. Full error printed below\n%s" %( A1,A2, str(e)), e, with_frills=True)
 
-        except IndexError as e:
-            
-            ctio.exception_message("This is likely because one of [%s] or [%s] is not a valid atom type for the residue in question. Full error printed below\n%s" %( A1,A2, str(e)), e, with_frills=True)
-
-        # parse any of the allowed modes in compute_contacts (see http://mdtraj.org/1.8.0/api/generated/mdtraj.compute_contacts.html
-        # for more details!)
-        if mode == 'closest' or mode == 'ca' or mode == 'closest-heavy' or mode == 'sidechain' or mode == 'sidechain-heavy':
+        # if ANY of the other modes are passed
+        else:
             subtraj = self.__get_subtrajectory(self.traj, stride)
-            
-            try:
-                distances = 10*md.compute_contacts(subtraj, [[R1,R2]], scheme=mode)[0].ravel()
-            except ValueError as e:
-                raise CTException('Your current version of mdtraj does not support [%s] - please update mdtraj to 1.8.0 or later to facilitate support. Alternatively this may be because residue %i or %i is not parsed correctly by MDTraj. Original error:\n%s' % (mode(), R1, R2, str(e))) 
+            distances = 10*md.compute_contacts(subtraj, [[R1,R2]], scheme=mode, periodic=periodic)[0].ravel()
+                                    
 
-                        
-        # note 10* to get Angstroms
         return distances
         
 
@@ -2514,33 +2422,25 @@ class CTProtein:
     # ........................................................................
     #
     #
-    def get_residue_mass(self, R1, correctOffset=True):
+    def get_residue_mass(self, R1):
         """
         Returns the mass associated with a specific residue.
 
-        ........................................
-        OPTIONS 
-        ........................................
-        R1 [int]
-        Residue index of residue to examine
+        Parameters
+        --------------
+        R1 : int
+            Resid to be examined
 
-        correctOffset [Bool] {True}
-        Defines if we perform local protein offset correction
-        or not. By default we do, but some internal functions
-        may have already performed the correction and so don't
-        need to perform it again.
-
+        Returns
+        ----------
+        float
+            Returns the mass of the residue
         """
-
-        if correctOffset:
-            R1 = self.get_offset_residue(R1)
-        else:
-            R1 = int(R1)
             
         # get the atoms associated with the resite of interest
         res_atoms = self.topology.select('resid %i'%(R1))
 
-        totalMass=0
+        totalMass = 0
 
         for atom in res_atoms:
             totalMass = totalMass + self.topology.atom(atom).element.mass
@@ -2551,7 +2451,7 @@ class CTProtein:
     # ........................................................................
     #
     #
-    def get_asphericity(self, R1=None, R2=None, correctOffset=True, verbose=True):
+    def get_asphericity(self, R1=None, R2=None, verbose=True):
         """
         Returns the asphericity associated with the region defined by the intervening stretch of residues between
         R1 and R2. This can be a somewhat slow operation, so a status message is printed for the impatient
@@ -2561,54 +2461,37 @@ class CTProtein:
         Page 65 of Andreas Vitalis' thesis (Probing the Early Stages of Polyglutamine Aggregation with 
         Computational Methods, 2009, Washington University in St. Louis).
 
-        ........................................
-        OPTIONS 
-        ........................................
+        Parameters
+        --------------
 
-        R1 [int] {None}
-        Index value for first residue in the region of interest. If not 
-        provided (False) then first residue is used.
+        R1 : int
+            Index value for first residue in the region of interest. If not provided (None) then
+            the first residue in the sequence is used (including caps). Default = None.
 
-        R1 [int] {None}
-        Index value for last residue in the region of interest. If not
-        provided (False) then last residue is used.
-
-        correctOffset [Bool] {True}
-        Defines if we perform local protein offset correction
-        or not. By default we do, but some internal functions
-        may have already performed the correction and so don't
-        need to perform it again.
+        R2 : int
+            Index value for second residue in the region of interest. If not provided (None) then
+            the first residue in the sequence is used (including caps). Default = None.
+        
 
         verbose : bool
             Flag that by default is True determines if the function prints status updates. This is relevant because
             this function can be computationally expensive, so having some report on status can be comforting!
+            Default = True.
+
+        Returns
+        ----------
+        np.ndarray
+            Returns a numpy array with the asphericity for each frame of the protein
 
         
         """
-
-        # define R1 and R2 - if offset needed perform, else 
-        # define the first and last residue INCLUDING caps
-        if R1 is None:
-            R1 = 0
-        else:
-            if correctOffset:
-                R1 = self.get_offset_residue(R1)
-            else:
-                # cast...
-                R1 = int(R1)
-
-        if R2 is None:
-            R2 = self.n_residues - 1
-        else:
-            if correctOffset:
-                R2 = self.get_offset_residue(R2)
-            else:
-                R2 = int(R2)
         
-        # compute the gyration tensor
-        gyration_tensor_vector = self.get_gyration_tensor(R1, R2, correctOffset=correctOffset, verbose=verbose)
-        asph_vector = []
-            
+        # compute the gyration tensor NOTE that R1 and R2 rationalization are done in
+        # the get_gyration_tensor function
+        gyration_tensor_vector = self.get_gyration_tensor(R1, R2, verbose=verbose)
+
+        # finally for each gyration tensor value compute the asphericity
+        asph_vector = []            
         for gyr in gyration_tensor_vector:
 
             # calculate the eigenvalues of the gyration tensor!
@@ -2625,64 +2508,33 @@ class CTProtein:
     # ........................................................................
     #
     #
-    def get_gyration_tensor(self, R1=None, R2=None, correctOffset=True, verbose=True):
+    def get_gyration_tensor(self, R1=None, R2=None, verbose=True):
         """
         Returns the instantaneous gyration tensor associated with each frame.
 
         Parameters
         ---------------
-        R1 : int  {None}
-            Index value for first residue in the region of interest. If not provided (False) then first 
-            residue is used.
+        R1 : int  
+            Index value for first residue in the region of interest. If not provided (None) then first 
+            residue is used. Default = None
         
-
-        R1 : int {None}
+        R2 : int 
             Index value for last residue in the region of interest. If not provided (False) then last 
-            residue is used.
-            
-
-        correctOffset: bool {True}
-            Defines if we perform local protein offset correction or not. By default we do, but some 
-            internal functions may have already performed the correction and so don't need to perform 
-            it again
+            residue is used. Default = None
 
         verbose : bool
             Flag that by default is True determines if the function prints status updates. This is relevant because
             this function can be computationally expensive, so having some report on status can be comforting!
+            Default = True.
 
         Returns
         -----------
         np.ndarray
             Returns a numpy array where each position is the frame-specific gyration tensor value
         
-        
         """
+        (R1,R2, _) = self.__get_first_and_last(R1,R2, withCA=False)
 
-        # define R1 and R2 - if offset needed perform, else 
-        # define the first and last residue INCLUDING caps
-        if R1 is None:
-            R1 = 0
-        else:
-            if correctOffset:
-                R1 = self.get_offset_residue(R1)
-            else:
-                # cast...
-                R1 = int(R1)
-
-        if R2 is None:
-            R2 = self.n_residues - 1
-        else:
-            if correctOffset:
-                R2 = self.get_offset_residue(R2)
-            else:
-                R2 = int(R2)
-
-        # switch em around so the A to B syntax makes sense
-        if R1 > R2:
-            tmp = R2
-            R2 = R1
-            R1 = tmp        
-                            
         all_positions_all_frames = self.traj.atom_slice(self.topology.select('resid %i to %i'%(R1,R2)))
 
         gyration_tensor_vector = []
@@ -2728,35 +2580,39 @@ class CTProtein:
     #
     def get_end_to_end_distance(self, mode='COM'):
         """
-        Returns the vector assocaiated with the end-to-end distance for the 
-        simulation. 
-
-        The vector of End-to-end distances is returned in angstroms
+        Returns an array of end-to-end distances for the conformations in
+        the simulation. Note that this is calculated between residues that have 
+        CA atoms (i.e. not caps), which means the if mode COM or mode=CA will be
+        computing distances between the same residues.
+        
+        End-to-end distance is returned in Angstroms
 
         Parameters
         ---------------
-        mode [string] {'CA'}
-        String, must be one of either 'CA' or 'COM'.
-        'CA' = alpha carbon
-        'COM' = center of mass (associated withe the residue) 
+        mode : ['CA' or 'COM'] 
+            Defines the mode used to define the residue position, either the
+            residue center or mass or the residue CA atom. The provided mode
+            must be one of these two options. Default = 'COM'.
 
         Returns
         ---------
-            
+        np.ndarray
+            Returns an array of floats with the end-to-end distance of the 
+            chain in Angstroms
 
         """
         
         ctutils.validate_keyword_option(mode, ['CA', 'COM'], 'mode')
 
-        # extract first and last residue AFTER offset correction (i.e. residue number from original PDB file) 
+        # extract first and last residue that contain CA
         start = self.resid_with_CA[0]
         end = self.resid_with_CA[-1]
 
         if mode == 'CA':
-            distance = self.get_inter_residue_atomic_distance(start, end, stride=1, correctOffset=False)
+            distance = self.get_inter_residue_atomic_distance(start, end, stride=1)
             
         elif mode == 'COM':
-            distance = self.get_inter_residue_COM_distance(start, end, stride=1, correctOffset=False)
+            distance = self.get_inter_residue_COM_distance(start, end, stride=1)
 
         return distance
         
@@ -2764,7 +2620,7 @@ class CTProtein:
     # ........................................................................
     #
     #
-    def get_radius_of_gyration(self, R1=None, R2=None, correctOffset=True):
+    def get_radius_of_gyration(self, R1=None, R2=None):
         """
         Returns the radius of gyration associated with the region defined by the intervening stretch of residues between
         R1 and R2. When residues are not provided the full protein's radius of gyration (INCLUDING the caps,
@@ -2774,17 +2630,13 @@ class CTProtein:
         
         Parameters
         ---------------
-        R1 : int  {None}
+        R1 : int  
             Index value for first residue in the region of interest. If not 
-            provided (None) then first residue is used.
+            provided (None) then first residue is used. Default = None
 
-        R2 : int {None}
+        R2 : int 
             Index value for last residue in the region of interest. If not
-            provided (False) then last residue is used.
-
-        correctOffset : bool {True}
-            Defines if we perform local protein offset correction or not. By default we do, but some internal 
-            functions may have already performed the correction and so don't need to perform it again.
+            provided (False) then last residue is used. Default = None
         
         Returns
         -----------
@@ -2794,29 +2646,7 @@ class CTProtein:
 
         """
 
-        # define R1 and R2 - if offset needed perform, else 
-        # define the first and last residue INCLUDING caps
-        if R1 is None:
-            R1 = 0
-        else:
-            R1 = int(R1)
-
-        if R2 is None:
-            R2 = self.n_residues-1
-        else:
-            R2 = int(R2)
-
-
-        # note we correct offset regardless of if R1/R2 are passed or not
-        if correctOffset:
-            R1 = self.get_offset_residue(R1)
-            R2 = self.get_offset_residue(R2)
-
-        # switch em around so the A to B syntax makes sense
-        if R1 > R2:
-            tmp = R2
-            R2 = R1
-            R1 = tmp
+        (R1,R2, _) = self.__get_first_and_last(R1,R2, withCA=False)
 
         # in angstroms
         return 10*md.compute_rg(self.traj.atom_slice(self.topology.select('resid %i to %i'%(R1, R2))))
@@ -2825,7 +2655,7 @@ class CTProtein:
     # ........................................................................
     #
     #
-    def get_hydrodynamic_radius(self, R1=None, R2=None, alpha1=0.216, alpha2=4.06, alpha3=0.821, correctOffset=True):
+    def get_hydrodynamic_radius(self, R1=None, R2=None, alpha1=0.216, alpha2=4.06, alpha3=0.821):
         """
         Returns the apparent hydrodynamic radius as calculated based on the approximation
         derived by Nygaard et al. [1]. Returns a hydrodynamic radius in Angstroms.
@@ -2833,6 +2663,8 @@ class CTProtein:
         Parameters (alpha1/2/3 should not be altered to recapitulate behaviour defined
         by Nygaard et al.
 
+        NOTE that this approximation holds for fully flexible disordered proteins, but will likely 
+        become increasingly unreasonable in the context of larger and larger folded domains.
 
         References:
         -------------
@@ -2845,13 +2677,13 @@ class CTProtein:
 
         Parameters
         ---------------
-        R1 : int {False}
+        R1 : int 
             Index value for first residue in the region of interest. If not 
-            provided (False) then first residue is used.
+            provided (None) then first residue is used. Default = None
 
-        R2 : int {False}
+        R2 : int 
             Index value for last residue in the region of interest. If not
-            provided (False) then last residue is used.
+            provided (None) then last residue is used. Default = None
 
         alpha1 : float {0.216}
            First parameter in equation (7) from Nygaard et al.
@@ -2861,11 +2693,6 @@ class CTProtein:
 
         alpha3 : float {0.821}
            Third parameter in equation (7) from Nygaard et al.
-        
-        correctOffset : bool {True}
-            Defines if we perform local protein offset correction or not. By default we do, 
-            but some internal functions may have already performed the correction and so don't
-            need to perform it again.
 
         Returns
         -----------
@@ -2876,7 +2703,7 @@ class CTProtein:
         """
 
         # first compute the rg
-        rg = self.get_radius_of_gyration(R1, R2, correctOffset)
+        rg = self.get_radius_of_gyration(R1, R2)
 
         # precompute
         N_033 = np.power(self.n_residues, 0.33)
@@ -2890,7 +2717,7 @@ class CTProtein:
     # ........................................................................
     #
     #
-    def get_t(self, R1=None, R2=None, correctOffset=True):
+    def get_t(self, R1=None, R2=None):
         """
         Returns the <t>, a dimensionless parameter which describes the 
         size of the ensemble. 
@@ -2906,32 +2733,16 @@ class CTProtein:
             Index value for last residue in the region of interest. If not
             provided (False) then last residue is used.
 
-        correctOffset : bool {True}
-            Defines if we perform local protein offset correction or not. By 
-            default we do, but some internal functions may have already performed 
-            the correction and so don't need to perform it again.
-
         Returns
         -----------
         np.ndarray 
             Returns a numpy array with per-frame instantaneous t-values
 
         """
-
-        # define R1 and R2 - if offset needed perform, else 
-        # define the first and last residue INCLUDING caps
-        if R1 is None:
-            R1 = 0
-        else:
-            R1 = int(R1)
-
-        if R2 is None:
-            R2 = self.n_residues-1
-        else:
-            R2 = int(R2)
         
         # first get the instantanoues RG
-        rg = self.get_radius_of_gyration(R1, R2, correctOffset)
+        rg = self.get_radius_of_gyration(R1, R2)
+
         n_res = self.n_residues
         c_length = n_res * 3.6
 
@@ -2954,7 +2765,7 @@ class CTProtein:
     # ........................................................................
     #
     #    
-    def get_internal_scaling(self, R1=None, R2=None, mode='COM', mean_vals=False, correctOffset=True, stride=1, weights=False, verbose=True):
+    def get_internal_scaling(self, R1=None, R2=None, mode='COM', mean_vals=False, stride=1, weights=False, verbose=True):
         """
         Calculates the raw internal scaling info for the protein in the simulation.
         R1 and R2 define a sub-region to operate over if sub-regional analysis is
@@ -3016,50 +2827,51 @@ class CTProtein:
         * The exclusion of the caps is different to how this is calculated in CAMPARI, 
         which includes the caps, if present.
 
-        ........................................
-        OPTIONS 
-        ........................................
 
-        R1 [int] {False}
-        Index value for first residue in the region of interest. If not 
-        provided (False) then first residue is used.
+        Parameters
+        ---------------
+        R1 : int 
+            Index value for first residue in the region of interest. If not 
+            provided (None) then first residue is used. Default = None
 
-        R1 [int] {False}
-        Index value for last residue in the region of interest. If not
-        provided (False) then last residue is used.
+        R2 : int 
+            Index value for last residue in the region of interest. If not
+            provided (None) then last residue is used. Default = None
 
-        mode ['CA' or 'COM'] {'CA'}
-        Defines the mode used to define the residue position, either the
-        residue center or mass or the residue CA atom. The provided mode
-        must be one of these two options.
+        mode : ['CA','COM']
+            String, must be one of either 'CA' or 'COM'.
+            - 'CA' = alpha carbon.
+            - 'COM' = center of mass (associated withe the residue).
+            Default = 'CA'.
 
-        mean_vals [Book] {False}
-        This is False by default, but if true the mean IS is returned instead of 
-        the explicit values. In reality the non-default behaviour is probably
-        preferable...
+        mean_vals : bool
+            This is False by default, but if True the mean IS is returned instead of 
+            the explicit values. In reality the non-default behaviour is probably
+            preferable. Default = False
 
-        correctOffset [Bool] {True}
-        Defines if we perform local protein offset correction
-        or not. By default we do, but some internal functions
-        may have already performed the correction and so don't
-        need to perform it again.
-
-        stride : int {1}
+        stride : int 
             Defines the spacing between frames to compare - i.e. if comparing frame1 to a trajectory 
             we'd compare frame 1 and every stride-th frame. Note this operation may scale poorly as 
             protein length increases at which point increasing the stride may become necessary.
+            Default = 1
 
-
-        weights [list or array of floats] {False}
-        Defines the frame-specific weights if re-weighted analysis is required. This can be 
-        useful if an ensemble has been re-weighted to better match experimental data, or in
-        the case of analysing replica exchange data that is re-combined using T-WHAM.
-
+        weights : list/np.ndarray {False}
+            If provided this defines the frame-specific weights if re-weighted analysis is required. 
+            This can be useful if an ensemble has been re-weighted to better match experimental data, 
+            or in the case of analysing replica exchange data that is re-combined using T-WHAM. 
+            Default = False.
+                
         verbose : bool
             Flag that by default is True determines if the function prints status updates. This is relevant because
             this function can be computationally expensive, so having some report on status can be comforting!
+            Default = True
 
+        Returns
+        ----------
         
+        TODO
+        
+
         """
 
         if weights is not False:
@@ -3075,15 +2887,10 @@ class CTProtein:
         # check mode is OK
         ctutils.validate_keyword_option(mode, ['CA', 'COM'], 'mode')
 
-        # process the R1/R2 to set the position after offset correction
+        # process the R1/R2 to set the positions
         out =  self.__get_first_and_last(R1, R2, withCA = True)
         R1 = out[0]
         R2 = out[1]
-
-        # check the R1/R2 positions contina a CA (not R1 and R2 here are after
-        # offset has been applied. This throws an exception if no CA
-        self.__check_contains_CA(R1)
-        self.__check_contains_CA(R2)
         
         max_seq_sep = (R2 - R1) + 1
 
@@ -3108,10 +2915,10 @@ class CTProtein:
                 # get the distance for every stride-th frame between those two positions using either the CA
                 # mode or the COM mode
                 if mode == 'CA':
-                    distance = self.get_inter_residue_atomic_distance(A, B, stride=stride, correctOffset=False)
+                    distance = self.get_inter_residue_atomic_distance(A, B, stride=stride)
 
                 elif mode == 'COM':
-                    distance = self.get_inter_residue_COM_distance(A, B, stride=stride, correctOffset=False)
+                    distance = self.get_inter_residue_COM_distance(A, B, stride=stride)
 
                 # if weights were provided subsample from the set of distances using the weights vector
                 if weights is not False:
@@ -3132,7 +2939,7 @@ class CTProtein:
     # ........................................................................
     #
     #    
-    def get_internal_scaling_RMS(self, R1=None, R2=None, mode='COM', stride=1, correctOffset=True, weights=False, verbose=True):
+    def get_internal_scaling_RMS(self, R1=None, R2=None, mode='COM', stride=1, weights=False, verbose=True):
         """
         If :math:`r_{i,j} = \langle \langle \sum \sigma_{1}` equals :math:`\sigma_{2}` then etc, etc.
 
@@ -3193,42 +3000,53 @@ class CTProtein:
 
         * The exclusion of the caps is different to CAMPARI, which includes the caps, if present.
 
-        ........................................
-        OPTIONS 
-        ........................................
+        Parameters
+        ---------------
+        R1 : int 
+            Index value for first residue in the region of interest. If not 
+            provided (None) then first residue is used. Default = None
 
-        R1 [int] {None}
-        Index value for first residue in the region of interest. If not 
-        provided (False) then first residue is used.
+        R2 : int 
+            Index value for last residue in the region of interest. If not
+            provided (None) then last residue is used. Default = None
 
-        R1 [int] {None}
-        Index value for last residue in the region of interest. If not
-        provided (False) then last residue is used.
+        mode : ['CA','COM']
+            String, must be one of either 'CA' or 'COM'.
+            - 'CA' = alpha carbon.
+            - 'COM' = center of mass (associated withe the residue).
+            Default = 'CA'.
 
-        mode ['CA' or 'COM'] {'CA'}
-        Defines the mode used to define the residue position, either the
-        residue center or mass or the residue CA atom. The provided mode
-        must be one of these two options.
+        mean_vals : bool
+            This is False by default, but if True the mean IS is returned instead of 
+            the explicit values. In reality the non-default behaviour is probably
+            preferable. Default = False
 
-        correctOffset [Bool] {True}
-        Defines if we perform local protein offset correction
-        or not. By default we do, but some internal functions
-        may have already performed the correction and so don't
-        need to perform it again.
+        stride : int 
+            Defines the spacing between frames to compare - i.e. if comparing frame1 to a trajectory 
+            we'd compare frame 1 and every stride-th frame. Note this operation may scale poorly as 
+            protein length increases at which point increasing the stride may become necessary.
+            Default = 1
 
-        weights [list or array of floats] {False}
-        Defines the frame-specific weights if re-weighted analysis is required. This can be 
-        useful if an ensemble has been re-weighted to better match experimental data, or in
-        the case of analysing replica exchange data that is re-combined using T-WHAM.
-
+        weights : list/np.ndarray {False}
+            If provided this defines the frame-specific weights if re-weighted analysis is required. 
+            This can be useful if an ensemble has been re-weighted to better match experimental data, 
+            or in the case of analysing replica exchange data that is re-combined using T-WHAM. 
+            Default = False.
+                
         verbose : bool
             Flag that by default is True determines if the function prints status updates. This is relevant because
             this function can be computationally expensive, so having some report on status can be comforting!
+            Default = True
+
+        Returns
+        ----------
+        
+        TODO
         
         """
         
         # compute the non RMS internal scaling behaviour 
-        (seq_sep_vals, seq_sep_distances) = self.get_internal_scaling(R1=R1, R2=R2, mode=mode, stride=stride, correctOffset=correctOffset, weights=weights, verbose=verbose)
+        (seq_sep_vals, seq_sep_distances) = self.get_internal_scaling(R1=R1, R2=R2, mode=mode, mean_vals=False, stride=stride, weights=weights, verbose=verbose)
         
         # calculate RMS for each distance 
         mean_is = [np.sqrt(np.mean(i*i)) for i in seq_sep_distances]
@@ -3238,7 +3056,7 @@ class CTProtein:
 
     # ........................................................................
     #
-    def get_scaling_exponent(self, inter_residue_min=15, end_effect=5, correctOffset=True,  subdivision_batch_size=20, mode='COM', num_fitting_points=40, fraction_of_points=0.5, fraction_override=False, stride=1, weights=False, verbose=True):
+    def get_scaling_exponent(self, inter_residue_min=15, end_effect=5, subdivision_batch_size=20, mode='COM', num_fitting_points=40, fraction_of_points=0.5, fraction_override=False, stride=1, weights=False, verbose=True):
         """
         Estimation for the A0 and nu exponents for the standard polymer relationship
 
@@ -3283,6 +3101,7 @@ class CTProtein:
               assement of how your chain actually deviates from homopolymer behaviour, see the function
               get_polymer_scaled_distance_map()
 
+
         ........................................
         OPTIONS 
         ........................................
@@ -3296,11 +3115,6 @@ class CTProtein:
         5 chosen as it's around above the blob-length in a polypeptide. Note that for homopolymers this is much 
         less of an issue.
 
-        correctOffset [Bool] {True}
-        Defines if we perform local protein offset correction
-        or not. By default we do, but some internal functions
-        may have already performed the correction and so don't
-        need to perform it again.
 
         mode [string, either 'COM' or 'CA'] {'COM'}
         Defines the mode in which the internal scaling profile is calculated, can use either
@@ -3351,7 +3165,7 @@ class CTProtein:
 
         # compute max |i-j| distance being used...
         first = self.resid_with_CA[0]
-        last= self.resid_with_CA[-1]
+        last = self.resid_with_CA[-1]
         max_separation = (last-first)+1
 
         #  if we're not using fraction override check the number of points requested makes sense given sequence length
@@ -3410,10 +3224,10 @@ class CTProtein:
 
 
                 if mode == 'CA':
-                    distance = self.get_inter_residue_atomic_distance(A, B, stride=stride, correctOffset=False)
+                    distance = self.get_inter_residue_atomic_distance(A, B, stride=stride)
 
                 elif mode == 'COM':
-                    distance = self.get_inter_residue_COM_distance(A, B, stride=stride, correctOffset=False)
+                    distance = self.get_inter_residue_COM_distance(A, B, stride=stride)
 
                 # compute the ensemble average of the distances
                 if weights is not False:
@@ -3535,41 +3349,6 @@ class CTProtein:
 
 
 
-
-    # ........................................................................
-    #
-    #
-    def get_residue_COM(self, R1, correctOffset=True):
-        """
-        Returns the COM vector for the residue across the trajectory.
-
-        ........................................
-        OPTIONS 
-        ........................................
-        
-        R1 [int] 
-        Index value for the residue of interest
-
-        correctOffset [Bool] {True}
-        Defines if we perform local protein offset correction
-        or not. By default we do, but some internal functions
-        may have already performed the correction and so don't
-        need to perform it again.
-
-     
-        """
-
-        # correct the offset if necessary
-        if correctOffset:
-            R1 = self.get_offset_residue(R1)
-        else:
-            R1 = int(R1)
-        
-        # get the atoms associated with the resite of interest
-        return md.compute_center_of_mass(self.traj.atom_slice(self.topology.select('resid %i'%R1)))
-
-
-
     # ........................................................................
     #
     #
@@ -3608,18 +3387,17 @@ class CTProtein:
             all_areas = basis[0]*100
             all_atoms = list(basis[1])
 
-            # note these CA resids are after offset correction has been applied. NOTE we need to
-            # check if the atom selection here works for multichain protein systems
-            # TODO
-            CA_res = self.resid_with_CA
-            
-            # for each residue with a CA atom...
-            residue_SASA=[]
-            for i in CA_res:
+            # define initial SASA
+            residue_SASA = []
+
+            # for each residue with a CA atom...                        
+            for i in self.resid_with_CA:
                 
                 # get the atomic indices 
                 if passed_mode == 'sidechain':
-                    # for some reason 'sidechain' selection includes the backbone hydrogen atoms??!?!
+
+                    # for some reason 'sidechain' selection includes the backbone hydrogen atoms??!?! This may be a CAMPARI-specific
+                    # issue?
                     relevant_atom_idx = self.topology.select('resid %i and %s and (not name H HA HA2 HA3)' % (i,passed_mode)) 
                     
 
@@ -3726,52 +3504,44 @@ class CTProtein:
         ## First check mode is valid and then sanity check input
         ctutils.validate_keyword_option(mode, ['residue_type', 'resid'], 'mode')
 
+        
+        # empty list of residues we're going to examine (resids)
+        resid_list = []
+        
         # if we're in 'residue_type' mode
         if mode == 'residue_type':
 
+            ## First check all the passed residue types are valid...
             # set the list of valid residues to the 20 AAs + the caps            
             for res in input_list:
                 if res not in ALL_VALID_RESIDUE_NAMES:
                     raise CTException("Error: Tried to use get_site_accessibility in 'residue_type' mode but residue %s not found in list of valid residues %s" % (res, str(ALL_VALID_RESIDUE_NAMES)))
 
-        # if we're in resid mode
-        elif mode.lower() == 'resid':
-            
-            offset_input_idx=[]
-
-            for res in input_list:
-                R1 = int(res)
-
-                # check residue makes sense and then calculate the offset
-                self.__check_single_residue(R1)
-                offset_input_idx.append(self.get_offset_residue(R1))
-
-            
-
-        ## if we get here all input has been validated
-        if mode == 'residue_type':
 
             # get AA list and convert into an ordered list of each 
             # AA residue type
             SEQS = self.get_amino_acid_sequence(numbered=False)
 
-            # initialze the empty idx v
-            offset_input_idx = []
+            # initialze the empty idx 
+            
             idx=0
             for res in SEQS:
                 if res in input_list:
-                    offset_input_idx.append(idx)
+                    resid_list.append(idx)
+                idx = idx + 1
 
-                idx=idx+1
 
+        # if we're in resid mode
+        elif mode == 'resid':
+            resid_list = input_list
         
         # next compute ALL SASA for all residues (need the full protein based SASA        
         ALL_SASA = np.transpose(self.get_all_SASA(stride=stride, probe_radius=probe_radius))
 
         lookup = self.get_amino_acid_sequence()
 
-        return_data={}
-        for i in offset_input_idx:
+        return_data = {}
+        for i in resid_list:
             return_data[lookup[i]] = [np.mean(ALL_SASA[i]), np.std(ALL_SASA[i])]
             
         return return_data
@@ -3779,7 +3549,7 @@ class CTProtein:
     # ........................................................................
     #
     #
-    def get_regional_SASA(self, R1, R2, probe_radius=0.14, correctOffset=True, stride=20):
+    def get_regional_SASA(self, R1, R2, probe_radius=0.14, stride=20):
         """
         Returns the Solvent Accessible Surface Area (SASA) for a local region in
         every stride-th frame. SASA is determined using shrake_rupley algorithm.
@@ -3800,22 +3570,12 @@ class CTProtein:
         Radius of the solvent probe used in nm. Uses the Golden-Spiral algorithm. 
         0.14 nm is pretty standard. NOTE - the probe radius must be in nanometers
 
-        correctOffset [Bool] {True}
-        Defines if we perform local protein offset correction
-        or not. By default we do, but some internal functions
-        may have already performed the correction and so don't
-        need to perform it again.
-
         stride [int] {20}
         Defines the spacing between frames to compare - i.e. if comparing frame1 
         to a trajectory we'd compare frame 1 and every stride-th frame
         
                       
         """
-
-        if correctOffset:
-            R1 = self.get_offset_residue(R1)
-            R2 = self.get_offset_residue(R2)
 
         # NOTE - we HAVE to compute SASA over the full ensemble to take into acount
         # atoms OUTSIDE the region getting in the way of the regional SASA
@@ -3834,7 +3594,7 @@ class CTProtein:
     # ........................................................................
     #
     #
-    def get_sidechain_alignment_angle(self, R1, R2, sidechain_atom_1='default', sidechain_atom_2='default', correctOffset=True):
+    def get_sidechain_alignment_angle(self, R1, R2, sidechain_atom_1='default', sidechain_atom_2='default'):
         """
         Function that computes the angle alignment between two residue sidechains. Sidechain vectors are defined as the unit vector between the
         CA of the residue and a designated 'sidechain' atom on the sidechain. The default sidechain atoms are listed below, but custom atom
@@ -3874,15 +3634,7 @@ class CTProtein:
             except KeyError:
                 raise CTException('Cannot parse residue at position %i (residue name = %s) ' % (R2, resname_2))
 
-        ### At this point we have reasonable atom names defined!
-
-        # 
-        if correctOffset:
-            R1 = self.get_offset_residue(R1)
-            R2 = self.get_offset_residue(R2)
-
-        
-
+        ### At this point we have reasonable atom names defined!        
         TRJ_1_SC = self.traj.atom_slice(self.topology.select('resid %i and name %s' % (R1, sidechain_atom_1) ))
         TRJ_1_CA = self.traj.atom_slice(self.topology.select('resid %i and name CA' % (R1) ))
 
@@ -4092,10 +3844,10 @@ class CTProtein:
 
         ctutils.validate_keyword_option(mode, ['CA', 'COM'], 'mode')
 
-        # note start and end here are after offset correction
+        # define first and last residue that has a CA  
         start = self.resid_with_CA[0] 
         end = self.resid_with_CA[-1]
-    
+   
         FIRST_CHECK = True
 
         # start with a sequence separation of 1
@@ -4111,10 +3863,10 @@ class CTProtein:
                 # get the distance for every stride-th frame between those two positions using either the CA
                 # mode or the COM mode
                 if mode == 'CA':
-                    distance = self.get_inter_residue_atomic_distance(A, B, stride=stride, correctOffset=False)
+                    distance = self.get_inter_residue_atomic_distance(A, B, stride=stride)
 
                 elif mode == 'COM':
-                    distance = self.get_inter_residue_COM_distance(A, B, stride=stride, correctOffset=False)
+                    distance = self.get_inter_residue_COM_distance(A, B, stride=stride)
 
                 if FIRST_CHECK:
                     all_distances = distance
@@ -4232,7 +3984,7 @@ class CTProtein:
     # ........................................................................
     #
     #
-    def get_secondary_structure_DSSP(self, R1=None, R2=None, correctOffset=True):
+    def get_secondary_structure_DSSP(self, R1=None, R2=None):
         """
         Returns the a 4 by n numpy array inwhich column 1 gives residue number, column 2 is local helicity,  
         column 3 is local 'extended' (beta strand/sheet) and column 4 is local coil on a per-residue
@@ -4255,12 +4007,6 @@ class CTProtein:
              Default value is None. Defines the value for last residue in the region of 
              interest. If not provided (False) then last residue is used.
              
-        correctOffset : Bool
-             Defines if we perform local protein offset correction or not. By default we do, 
-             but some internal functions may have already performed the correction and so don't
-             need to perform it again. If you're calling this function you can probably ignore
-             this variable.
-
 
         Returns
         -------
@@ -4304,7 +4050,7 @@ class CTProtein:
     # ........................................................................
     #
     #
-    def get_secondary_structure_BBSEG(self, R1=None, R2=None, correctOffset=True):
+    def get_secondary_structure_BBSEG(self, R1=None, R2=None):
         """      
         Returns a dictionary where eack key-value pair is keyed by a BBSEG classification
         type (0-9) and each value is a vector showing the fraction of time each residue
@@ -4340,12 +4086,6 @@ class CTProtein:
              Default value is False. Defines the value for last residue in the region of 
              interest. If not provided (False) then last residue is used.
              
-
-        correctOffset : Bool
-             Defines if we perform local protein offset correction or not. By default we do, 
-             but some internal functions may have already performed the correction and so don't
-             need to perform it again. If you're calling this function you can probably ignore
-             this variable.
 
         Returns
         -------

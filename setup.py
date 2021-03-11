@@ -44,9 +44,10 @@ setup(
 
     # dependencies camparitraj requires
     install_requires=[
-        "numpy>=1.12.0",
+        "numpy>=1.20.0",
+        "scipy>=1.5.0",
         "cython",
-        "mdtraj>=1.9.1",
+        "mdtraj>=1.9.5",
         "pandas>=0.23.0"
     ],
 
