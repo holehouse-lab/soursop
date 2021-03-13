@@ -1128,8 +1128,10 @@ to lookup the atomic index of a specific residues atom. Originally I'd assumed
         
 
         # initialize empty matrices that we're gonna fill up
-        distanceMap = np.zeros([len(residuesWithCA),len(residuesWithCA),])
-        stdMap = np.zeros([len(residuesWithCA),len(residuesWithCA),])
+        n_res = len(self.resid_with_CA)
+
+        distanceMap = np.zeros([n_res, n_res])
+        stdMap = np.zeros([n_res, n_res])
           
         # cycle over CA-containing residues
         SM_index = 0
