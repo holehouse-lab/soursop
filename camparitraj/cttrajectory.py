@@ -29,6 +29,8 @@ from .ctexceptions import CTException
 from . import ctutils
 from . import ctio
 
+from copy import copy
+
 
 class CTTrajectory:
     """
@@ -464,28 +466,39 @@ class CTTrajectory:
         P2 = self.proteinTrajectoryList[proteinID2]
 
         # create the empty distance maps
-        distanceMap = np.zeros([len(P1.resid_with_CA[0:-1]),len(P2.resid_with_CA[0:-1]),])
-        stdMap      = np.zeros([len(P1.resid_with_CA[0:-1]),len(P2.resid_with_CA[0:-1]),])
+        p1_residues = P1.resid_with_CA
+        p2_residues = P2.resid_with_CA
+        map_shape   = (len(p1_residues), len(p2_residues))
+        distanceMap = np.zeros(map_shape)
+        stdMap      = np.zeros(map_shape)
 
-        for r1 in P1.resid_with_CA[0:-1]:
-
+        for r1 in p1_residues:
             if mode == 'COM':
                 COM_1 = P1.get_residue_COM(r1)
             else:
                 COM_1 = P1.get_residue_COM(r1, atom_name='CA')
 
-            for r2 in P2.resid_with_CA[0:-1]:
+            p1_index = copy(r1)
+            if P1.ncap:
+                p1_index = r1 - 1
+
+            for r2 in p2_residues:
 
                 if mode == 'COM':
                     COM_2 = P2.get_residue_COM(r2)
                 else:
                     COM_2 = P2.get_residue_COM(r2, atom_name='CA')
+
+                p2_index = copy(r2)
+                if P2.ncap:
+                    p2_index = r2 - 1
                 
                 # compute distance...
                 d = 10*np.sqrt(np.square(np.transpose(COM_1)[0] - np.transpose(COM_2)[0]) + np.square(np.transpose(COM_1)[1] - np.transpose(COM_2)[1])+np.square(np.transpose(COM_1)[2] - np.transpose(COM_2)[2]))
 
-                distanceMap[r1,r2] =  np.mean(d, 0)
-                stdMap[r1,r2]    =  np.std(d, 0)
+                
+                distanceMap[p1_index, p2_index] =  np.mean(d, 0)
+                stdMap[p1_index, p2_index]    =  np.std(d, 0)
                 
         return (distanceMap, stdMap)
 

@@ -1126,6 +1126,8 @@ to lookup the atomic index of a specific residues atom. Originally I'd assumed
         
         weights = self.__check_weights(weights, stride)
         
+        # use the previously identified residues with CA
+        residuesWithCA = self.resid_with_CA
 
         # initialize empty matrices that we're gonna fill up
         distanceMap = np.zeros([len(residuesWithCA),len(residuesWithCA),])
