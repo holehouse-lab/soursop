@@ -8,7 +8,7 @@
 ##
 ## Alex Holehouse (Pappu Lab and Holehouse Lab)
 ## Simulation analysis package
-## Copyright 2014 - 2010
+## Copyright 2014 - 2021
 ##
 
 import numpy
@@ -40,6 +40,7 @@ def validate_keyword_option(keyword, allowed_vals, keyword_name, error_message=N
 
     Parameters
     -----------
+
     keyword : str
         The actual passed keyword value
 
@@ -50,7 +51,7 @@ def validate_keyword_option(keyword, allowed_vals, keyword_name, error_message=N
         the name of the keyword as the user would select it in the function call
 
     error_message : str
-        Allows the user to pass a custom error message
+        Allows the user to pass a custom error message. Default is None.
 
 
     Returns

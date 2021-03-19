@@ -121,6 +121,8 @@ class CTTrajectory:
         else:
             self.proteinTrajectoryList = self.__get_proteins_by_residue(self.traj, protein_grouping, debug)
 
+        self.__single_protein_traj = self.__get_all_proteins(self.traj)
+
         
         self.num_proteins = len(self.proteinTrajectoryList)
         self.n_frames = len(self.traj)
@@ -214,6 +216,51 @@ class CTTrajectory:
         return traj
 
 
+
+    def __get_all_proteins(self, trajectory):
+        """
+        Internal function that builds a single trajectory which contains all protein
+        residues. 
+
+        Parameters
+        -----------
+        trajectory : mdtraj.Trajectory
+            An already parsed trajectory object (i.e. checked for CAMPARI-
+            relevant defects such as unitcell issues etc)
+
+        Returns
+        ----------
+        ctprotein.CTProtein
+            Returns a single CTProtein object
+        
+        """
+
+        # extract full system topology
+        topology = trajectory.topology
+
+        protein_atoms = []
+        
+        # for each chain in this toplogy determine if the 
+        # first residue is protein or not. If it's protein we parse it if 
+        # not it gets skipped
+        for chain in topology.chains:
+
+            # if the first residue in the chain is protein
+            # note that a formic acid cap ('FOR') is not recognized as protein
+            # so we include an edgecase here for that
+            if chain.residue(0).name in ALL_VALID_RESIDUE_NAMES:
+
+                # intialize an empty list of atoms
+                local_atoms = []
+
+                # get every atom in this chain
+                for atom in chain.atoms:
+                    protein_atoms.append(atom.index)
+
+                protein_atoms.extend(local_atoms)
+
+        return CTProtein(trajectory.atom_slice(protein_atoms))
+        
 
     #oxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxo
     #
@@ -401,6 +448,77 @@ class CTTrajectory:
     #oxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxo
     #
     #
+    def get_overall_radius_of_gyration(self):
+        """
+        Function which returns the per-frame OVERALL radius of gyration for every 
+        protein residue in the trajectory. For systems with multiple protein chains, 
+        all chains are combined together. For systems with a single protein chain,
+        this function offers no advantage over interacting directly with the
+        CTProtein object in the .proteinTrajectoryList.
+
+        Parameters
+        -------------
+        None
+
+        Returns
+        ----------
+        np.ndarray 
+            Returns a numpy array with per-frame instantaneous radius of gyration
+        
+        """
+
+        return self.__single_protein_traj.get_radius_of_gyration()
+
+    #oxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxo
+    #
+    #
+    def get_overall_asphericity(self):
+        """
+        Function which returns the per-frame OVERALL asphericity for every
+        protein residue in the trajectory. For systems with multiple protein chains, 
+        all chains are combined together. For systems with a single protein chain,
+        this function offers no advantage over interacting directly with the
+        CTProtein object in the .proteinTrajectoryList.
+
+        Parameters
+        -------------
+        None
+
+        Returns
+        ----------
+        np.ndarray 
+            Returns a numpy array with per-frame instantaneous asphericity
+        """
+
+        return self.__single_protein_traj.get_asphericity()
+
+    #oxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxo
+    #
+    #
+    def get_overall_hydrodynamic_radius(self):
+        """
+        Function which returns the per-frame OVERALL hydrodynamic radius for every
+        protein residue in the trajectory. For systems with multiple protein chains, 
+        all chains are combined together. For systems with a single protein chain,
+        this function offers no advantage over interacting directly with the
+        CTProtein object in the .proteinTrajectoryList.
+
+        Parameters
+        -------------
+        None
+
+        Returns
+        ----------
+        np.ndarray 
+            Returns a numpy array with per-frame instantaneous asphericity
+        """
+
+        return self.__single_protein_traj.get_hydrodynamic_radius()
+
+
+    #oxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxo
+    #
+    #
     def get_interchain_distance_map(self, proteinID1, proteinID2, mode='CA'):
         """        
         Function which returns two matrices with the mean and standard deviation distances
@@ -581,8 +699,7 @@ class CTTrajectory:
         else:
             raise CTException("Provided mode keyword must be one of 'closest', 'ca', 'closest-heavy', 'sidechain', sidechain-heavy', or 'atom'. Provided keyword was [%s]" % (mode))
 
-        # get CTProtein objects for the two IDs passed (could be the same)
-        
+        # get CTProtein objects for the two IDs passed (could be the same)        
         try:
             P1 = self.proteinTrajectoryList[proteinID1]        
             P2 = self.proteinTrajectoryList[proteinID2]        
@@ -601,7 +718,6 @@ class CTTrajectory:
         if len(local_atoms2) == 0:
             raise CTException("In get_interchain_distance(): When selecting resid %i from proteinID2 found no atoms" %(R2))
             
-
         subtraj_p1 = P1.traj.atom_slice(local_atoms1)
         subtraj_p2 = P2.traj.atom_slice(local_atoms2)
         

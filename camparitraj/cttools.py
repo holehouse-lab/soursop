@@ -12,7 +12,7 @@ cttools contains misc. numerical python functions which provide some useful func
 ##
 ## Alex Holehouse (Pappu Lab and Holehouse Lab)
 ## Simulation analysis package
-## Copyright 2014 - 2019
+## Copyright 2014 - 2021
 ##
 
 import numpy as np
