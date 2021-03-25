@@ -574,7 +574,7 @@ def __set_sequence(sequence, key1, key3):
     regex = re.findall(r"\(([^)]+)\)|(.)", inp)
     for i in range(len(regex)):
         set = regex[i]
-        if set[0] is '':
+        if set[0] == '':
             aa1 = set[1]
             aminos.append(aa1)
             code = ord(aa1[0]) - 65

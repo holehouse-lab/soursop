@@ -1,10 +1,9 @@
+import os
+import sys
+import pytest
 import camparitraj
 from camparitraj import cttrajectory
-import pytest
-import sys
 
-
-test_data_dir = camparitraj.get_data('test_data')
 
 #NAMES = ['ACE_NH2', 'ACE_NME', 'ACE_UCAP', 'FOR_NH2',  'FOR_NME',  'FOR_UCAP', 'UCAP_NH2', 'UCAP_NME',  'UCAP_UCAP', 'ACE_NME_start_at_5', 'ACE_NME_multichain']
 
@@ -13,43 +12,36 @@ test_data_dir = camparitraj.get_data('test_data')
 #CCAP = ['ACE_NH2', 'ACE_NME', 'FOR_NH2',  'FOR_NME', 'UCAP_NH2', 'UCAP_NME', 'ACE_NME_start_at_5', 'ACE_NME_multichain']
 #NCAP = ['ACE_NH2', 'ACE_NME', 'ACE_UCAP', 'FOR_NH2',  'FOR_NME',  'FOR_UCAP', 'ACE_NME_start_at_5', 'ACE_NME_multichain']
 
-NAMES = ['ACE_NME_multichain', 'ACE_NME_start_at_5']
+
 
 
 def test_cap_DSSP():
     """
     Tests DSSP (and hence R1/R2 selection) works
     """
+
+    test_data_dir = camparitraj.get_data('test_data')
+    pdb_files = ['ACE_NME_multichain', 'ACE_NME_start_at_5']
+    for cap_name in pdb_files:
+        cap_path = os.path.join(test_data_dir, 'cap_tests', '{}.pdb'.format(cap_name))
+        cap_trajectory = cttrajectory.CTTrajectory(cap_path, cap_path)
+        # print(cap_trajectory)
+        # for cap_protein in cap_trajectory.proteinTrajectoryList:
+        #     res_string = ''
+        #     for i in cap_protein.topology.residues:
+        #         #res_string = res_string + " %s " %(str(i.index))
+        #         print(i)
+
+        #     #atom_string = ''
+        #     #for i in CP.topology.atoms:
+        #     #    atom_string = atom_string + " " + str(i)
+
+        #     print(cap_protein)
+        #     print(res_string)
+        #     print("Residue 1: %s" %(cap_protein.topology.select('residue 1')))
+        #     print("Resid 1: %s" %(cap_protein.topology.select('resid 1')))
             
-    for CN in NAMES:
-        CT = cttrajectory.CTTrajectory("%s/cap_tests/%s.pdb"%(test_data_dir, CN), "%s/cap_tests/%s.pdb"%(test_data_dir, CN))
-        for CP in CT.proteinTrajectoryList:  
-
-            res_string = ''
-            for i in CP.topology.residues:
-                res_string = res_string + " %s " %(str(i.index))
-
-            #atom_string = ''
-            #for i in CP.topology.atoms:
-            #    atom_string = atom_string + " " + str(i)
-
-            print(CP)
-            print(res_string)
-            print("Residue 1: %s" %(CP.topology.select('residue 1')))
-            print("Resid 1: %s" %(CP.topology.select('resid 1')))
+        #     # print(CP.atom_offset)
+        #     # print(atom_string)
             
-            # print(CP.atom_offset)
-            # print(atom_string)
-            
-            print('')
 
-    return CP
-                        
-
-                
-
- 
-
-
-
-CP = test_cap_DSSP()

@@ -694,7 +694,7 @@ class CTProtein:
         # if atom-name not yet associated with this resid lookup
         # the atomname from the underlying topology 
         if atomname not in self.__residue_atom_table[resid]:
-            self.__residue_atom_table[resid][atomname] = self.topology.select('resid %i and name %s'%(resid, atomname))
+            self.__residue_atom_table[resid][atomname] = self.topology.select('resid %i and name "%s"'%(resid, atomname))
             
         # at this point we know the resid-atomname pair is in the table
         # so goahead and look it up!
@@ -754,25 +754,25 @@ class CTProtein:
         if not region == None and len(region) == 2:
             if backbone:                
                 if heavy:
-                    selectionatoms = self.topology.select('backbone and resid %i to %i and not type H)' % (region[0], region[1]))
+                    selectionatoms = self.topology.select('backbone and resid %i to %i and not type "H")' % (region[0], region[1]))
                 else:
                     selectionatoms = self.topology.select('backbone and resid %i to %i' % (region[0], region[1]))
             else:
                 if heavy:
-                    selectionatoms = self.topology.select('resid %i to %i and not type H' % (region[0], region[1]))
+                    selectionatoms = self.topology.select('resid %i to %i and not type "H"' % (region[0], region[1]))
                 else:
                     selectionatoms = self.topology.select('resid %i to %i' % (region[0], region[1]))
 
         else:
             if backbone:
                 if heavy:
-                    selectionatoms = self.topology.select('backbone and resid %i to %i and not type H' % ( self.residue_offset, self.residue_offset + self.n_residues))
+                    selectionatoms = self.topology.select('backbone and resid %i to %i and not type "H"' % ( self.residue_offset, self.residue_offset + self.n_residues))
                 else:
                     selectionatoms = self.topology.select('backbone and resid %i to %i' % ( self.residue_offset, self.residue_offset + self.n_residues))
 
             else:
                 if heavy:
-                    selectionatoms = self.topology.select('resid %i to %i and not type H' % (self.residue_offset, self.residue_offset + self.n_residues))
+                    selectionatoms = self.topology.select('resid %i to %i and not type "H"' % (self.residue_offset, self.residue_offset + self.n_residues))
                 else:
                     selectionatoms = self.topology.select('resid %i to %i' % (self.residue_offset, self.residue_offset + self.n_residues))
 
@@ -2041,7 +2041,7 @@ class CTProtein:
 
         # ensure we only select main chain atoms (no termini) - NOTE, this is a REALLY useful design pattern - 
         # should consider re-writing the code to use this...
-        mainchain_atoms = self.topology.select('(not resname NME) and (not resname ACE)')
+        mainchain_atoms = self.topology.select('(not resname "NME") and (not resname "ACE")')
 
         # compute the contactmap and square-form it (map per frame)
         # CMAP is a [N_FRAMES x N_RES x N_RES] array
@@ -3620,12 +3620,12 @@ class CTProtein:
                 # get the atomic indices 
                 if passed_mode == 'sidechain':
                     # for some reason 'sidechain' selection includes the backbone hydrogen atoms??!?!
-                    relevant_atom_idx = self.topology.select('resid %i and %s and (not name H HA HA2 HA3)' % (i,passed_mode)) 
+                    relevant_atom_idx = self.topology.select('resid %i and %s and (not name "H" "HA" "HA2" "HA3")' % (i,passed_mode)) 
                     
 
                 if passed_mode == 'backbone':
                     # for some reason 'backbone' ignores the backbone hydrogen atoms ?!?!?
-                    relevant_atom_idx = self.topology.select('(resid %i and %s) or (resid %i and name H HA HA2 HA3)' % (i,passed_mode, i)) 
+                    relevant_atom_idx = self.topology.select('(resid %i and %s) or (resid %i and name "H" "HA" "HA2" "HA3")' % (i,passed_mode, i)) 
 
                 # no atoms so create an empty list
                 if len(relevant_atom_idx) == 0:
