@@ -579,8 +579,9 @@ class CTProtein:
                                 
         # if atom-name not yet associated with this resid lookup
         # the atom_name from the underlying topology 
-        if atom_name not in self.__residue_atom_table[resid]:
-            self.__residue_atom_table[resid][atom_name] = self.topology.select('resid %i and name %s'%(resid, atom_name))
+        # the atomname from the underlying topology 
+        if atomname not in self.__residue_atom_table[resid]:
+            self.__residue_atom_table[resid][atomname] = self.topology.select('resid %i and name "%s"'%(resid, atomname))
             
         # at this point we know the resid-atom_name pair is in the table
         # so goahead and look it up!
@@ -644,17 +645,28 @@ class CTProtein:
         elif len(region) == 2:
             if backbone:                
                 if heavy:
-                    selectionatoms = self.topology.select('backbone and resid %i to %i and not type H)' % (region[0], region[1]))
+                    selectionatoms = self.topology.select('backbone and resid %i to %i and not type "H")' % (region[0], region[1]))
                 else:
                     selectionatoms = self.topology.select('backbone and resid %i to %i' % (region[0], region[1]))
             else:
                 if heavy:
-                    selectionatoms = self.topology.select('resid %i to %i and not type H' % (region[0], region[1]))
+                    selectionatoms = self.topology.select('resid %i to %i and not type "H"' % (region[0], region[1]))
                 else:
                     selectionatoms = self.topology.select('resid %i to %i' % (region[0], region[1]))
 
         else:
             CTException("Trying to select a subsection of atoms, but the provided 'region' tuple/list is not of exactly length two [region=%s].\nCould indicate a problem, so be safe raising an exception" % (str(region)))
+            if backbone:
+                if heavy:
+                    selectionatoms = self.topology.select('backbone and resid %i to %i and not type "H"' % ( self.residue_offset, self.residue_offset + self.n_residues))
+                else:
+                    selectionatoms = self.topology.select('backbone and resid %i to %i' % ( self.residue_offset, self.residue_offset + self.n_residues))
+
+            else:
+                if heavy:
+                    selectionatoms = self.topology.select('resid %i to %i and not type "H"' % (self.residue_offset, self.residue_offset + self.n_residues))
+                else:
+                    selectionatoms = self.topology.select('resid %i to %i' % (self.residue_offset, self.residue_offset + self.n_residues))
 
         return selectionatoms
 
@@ -2006,7 +2018,7 @@ to lookup the atomic index of a specific residues atom. Originally I'd assumed
 
         # ensure we only select main chain atoms (no termini) - NOTE, this is a REALLY useful design pattern - 
         # should consider re-writing the code to use this...
-        mainchain_atoms = self.topology.select('(not resname NME) and (not resname ACE)')
+        mainchain_atoms = self.topology.select('(not resname "NME") and (not resname "ACE")')
 
         # compute the contactmap and square-form it (map per frame)
         # CMAP is a [N_FRAMES x N_RES x N_RES] array
@@ -3399,15 +3411,20 @@ to lookup the atomic index of a specific residues atom. Originally I'd assumed
                 
                 # get the atomic indices 
                 if passed_mode == 'sidechain':
+<<<<<<< HEAD
 
                     # for some reason 'sidechain' selection includes the backbone hydrogen atoms??!?! This may be a CAMPARI-specific
                     # issue?
                     relevant_atom_idx = self.topology.select('resid %i and %s and (not name H HA HA2 HA3)' % (i,passed_mode)) 
+=======
+                    # for some reason 'sidechain' selection includes the backbone hydrogen atoms??!?!
+                    relevant_atom_idx = self.topology.select('resid %i and %s and (not name "H" "HA" "HA2" "HA3")' % (i,passed_mode)) 
+>>>>>>> unittests
                     
 
                 if passed_mode == 'backbone':
                     # for some reason 'backbone' ignores the backbone hydrogen atoms ?!?!?
-                    relevant_atom_idx = self.topology.select('(resid %i and %s) or (resid %i and name H HA HA2 HA3)' % (i,passed_mode, i)) 
+                    relevant_atom_idx = self.topology.select('(resid %i and %s) or (resid %i and name "H" "HA" "HA2" "HA3")' % (i,passed_mode, i)) 
 
                 # no atoms so create an empty list
                 if len(relevant_atom_idx) == 0:
