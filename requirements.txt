@@ -6,5 +6,5 @@ setuptools==44.0.0
 cx_Freeze==6.1
 py2exe==0.9.2.2
 ruamel_yaml==0.16.5
-PyYAML==5.3
+PyYAML==5.4
 numpydoc==1.1.0
