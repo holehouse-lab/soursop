@@ -577,11 +577,10 @@ class CTProtein:
             # return set of all atoms
             return self.__residue_atom_table[resid]['all_atoms']
                                 
-        # if atom-name not yet associated with this resid lookup
+        # if atom_ame not yet associated with this resid lookup
         # the atom_name from the underlying topology 
-        # the atomname from the underlying topology 
-        if atomname not in self.__residue_atom_table[resid]:
-            self.__residue_atom_table[resid][atomname] = self.topology.select('resid %i and name "%s"'%(resid, atomname))
+        if atom_name not in self.__residue_atom_table[resid]:
+            self.__residue_atom_table[resid][atom_name] = self.topology.select('resid %i and name "%s"'%(resid, atom_name))
             
         # at this point we know the resid-atom_name pair is in the table
         # so goahead and look it up!
@@ -3411,16 +3410,8 @@ to lookup the atomic index of a specific residues atom. Originally I'd assumed
                 
                 # get the atomic indices 
                 if passed_mode == 'sidechain':
-<<<<<<< HEAD
-
-                    # for some reason 'sidechain' selection includes the backbone hydrogen atoms??!?! This may be a CAMPARI-specific
-                    # issue?
-                    relevant_atom_idx = self.topology.select('resid %i and %s and (not name H HA HA2 HA3)' % (i,passed_mode)) 
-=======
                     # for some reason 'sidechain' selection includes the backbone hydrogen atoms??!?!
                     relevant_atom_idx = self.topology.select('resid %i and %s and (not name "H" "HA" "HA2" "HA3")' % (i,passed_mode)) 
->>>>>>> unittests
-                    
 
                 if passed_mode == 'backbone':
                     # for some reason 'backbone' ignores the backbone hydrogen atoms ?!?!?

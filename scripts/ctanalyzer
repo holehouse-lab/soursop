@@ -20,7 +20,7 @@ import os, errno
 from camparitraj.ctanalyzer.analyzer_analysis import *
 
 VERSION_MAJ=2
-VERSION_MIN=2
+VERSION_MIN=3
 
 def welcome():
     print("")
@@ -79,6 +79,7 @@ if __name__=="__main__":
         
     # polymer analysis
     parser.add_argument("--rg", help="Radius of gyration", dest='rg', action='store_true')
+    parser.add_argument("--t_inst", help="Instantanous t", dest='t_inst', action='store_true')
     parser.add_argument("--rh", help="Hydrodynamic radius", dest='rh', action='store_true')
     parser.add_argument("--e2e", help="End to end distance", dest='e2e', action='store_true')
     parser.add_argument("--asph", help="Asphericity", dest='asph', action='store_true')
@@ -238,6 +239,10 @@ if __name__=="__main__":
     # radius of gyration
     if args.rg:
         run_RG(CP, outdir)
+
+    # radius of gyration
+    if args.t_inst:
+        run_t_inst(CP, outdir)
 
 
     # radius of gyration

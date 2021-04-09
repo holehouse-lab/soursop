@@ -35,6 +35,15 @@ def run_RG(CP, outdir):
     np.savetxt('%s/RG_mean.csv'%(outdir), MEAN_RG, delimiter=', ')
     np.savetxt('%s/RG_std.csv'%(outdir), STD_RG, delimiter=', ')
 
+def run_t_inst(CP, outdir):
+    status_message('Instantaneous t', outdir)        
+    T = CP.get_t()
+    MEAN_T = arrayfy(np.mean(T))
+    STD_T  = arrayfy(np.std(T))
+    np.savetxt('%s/t_inst.csv'%(outdir), T, delimiter=',')
+    np.savetxt('%s/t_mean.csv'%(outdir), MEAN_T, delimiter=', ')
+    np.savetxt('%s/t_std.csv'%(outdir), STD_T, delimiter=', ')
+
 def run_RH(CP, outdir):
     status_message('Hydrodynamic radius', outdir)        
     RH = CP.get_hydrodynamic_radius()
