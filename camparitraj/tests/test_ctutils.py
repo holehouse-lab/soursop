@@ -17,22 +17,17 @@ def test_mkl_set_num_threads():
 
     num_threads = 2
     mkl_path = None
-    openblas_path = None
-    other = None
     for lib in info:
         filepath = lib['filepath']
         base_filepath = os.path.basename(filepath)
         if 'mkl' in base_filepath:
             mkl_path = filepath[:]
-        elif 'openblas' in base_filepath:
-            openblas_path = filepath[:]
-        else:
-            other = filepath[:]
+            break
 
     if mkl_path is not None:
         # Traditional UNIX-like systems will have shared objects available.
         if 'bsd' in sys.platform or 'lin' in sys.platform:
-            mkl_rt = ctypes.CDLL('libmkl_rt.so')
+            mkl_rt = ctypes.CDLL(mkl_path)
         
         # Darwin / Apple uses `*.dylib` by default for included Intel compiler libraries.
         # Traditional UNIX-like shared objects can be created (`*.so`), but are more
@@ -41,19 +36,20 @@ def test_mkl_set_num_threads():
         elif sys.platform == 'darwin':
             mkl_rt = ctypes.CDLL(mkl_path)
         ctutils.mkl_set_num_threads(num_threads)
-        num_threads_set = mkl_rt.mkl_get_max_threads
+        num_threads_set = mkl_rt.mkl_get_max_threads()
         assert num_threads_set == num_threads
+    else:
+        # While it may seem to be a good idea to raise an error at this point,
+        # doing so puts the user in a catch-22, therefor no error should be
+        # generated. A warning should be printed.
+        print('Warning: No Intel BLAS implementation found.')
 
-    # Most BLAS implementations use OpenBLAS, this section will likely be used the most
-    # in production.
-    elif openblas_path is not None:
-        openblas_lib = ctypes.cdll.LoadLibrary(openblas_path)
-        openblas_lib.openblas_set_num_threads(num_threads)
-        num_threads_set = openblas_lib.openblas_get_num_threads()
-        assert num_threads_set == num_threads
 
-    elif other is None:
-        raise RuntimeError('No supported libraries found.')
+def test_set_numpy_threads():
+    num_threads = 2
+    blas_library, set_threads = ctutils.set_numpy_threads(num_threads)
+    assert blas_library != 'unknown'
+    assert set_threads == num_threads
 
 
 def test_validate_keyword_option():
