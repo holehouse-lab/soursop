@@ -731,13 +731,13 @@ class CTTrajectory:
         # if we're looking at a specific pair of atoms (note we use resid 0 and 1 because we KNOW this trajectory only has 2 residues and we know R1 is 0 and R2 is 1
         if mode == 'atom':
 
-            atom1 = full_subtraj.topology.select('resid 0 and name %s'%(A1))
+            atom1 = full_subtraj.topology.select('resid 0 and name "%s"' % A1)
             if len(atom1) != 1:
                 raise CTException("In get_interchain_distance() when selecting atom %s from residue %i in protein %i no atoms were found " % (A1, R1,  proteinID1))                
 
             COM_1 = md.compute_center_of_mass(full_subtraj.atom_slice(atom1))
 
-            atom2 = full_subtraj.topology.select('resid 1 and name %s'%(A2))
+            atom2 = full_subtraj.topology.select('resid 1 and name "%s"' % A2)
             if len(atom2) != 1:
                 raise CTException("In get_interchain_distance() when selecting atom %s from residue %i in protein %i no atoms were found " % (A2, R2,  proteinID2))                
 
