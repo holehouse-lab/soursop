@@ -631,13 +631,13 @@ class CTProtein:
 
             if backbone:
                 if heavy:
-                    selectionatoms = self.topology.select('backbone and resid %i to %i and not type H' % (R1, R2))
+                    selectionatoms = self.topology.select('backbone and resid %i to %i and not type "H"' % (R1, R2))
                 else:
                     selectionatoms = self.topology.select('backbone and resid %i to %i' % (R1, R2))
 
             else:
                 if heavy:
-                    selectionatoms = self.topology.select('resid %i to %i and not type H' % (R1, R2))
+                    selectionatoms = self.topology.select('resid %i to %i and not type "H"' % (R1, R2))
                 else:
                     selectionatoms = self.topology.select('resid %i to %i' % (R1, R2))
 
