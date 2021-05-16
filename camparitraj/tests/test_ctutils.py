@@ -4,6 +4,7 @@ Unit and regression test for the cttrajectory module.
 # Import package, test suite, and other packages as needed
 import os
 import sys
+import pytest
 import ctypes
 import numpy as np
 import camparitraj.ctutils as ctutils
@@ -59,26 +60,13 @@ def test_validate_keyword_option():
         ctutils.validate_keyword_option(mode, allowed_modes, 'mode', 'Unsupported mode.')
 
     # Attempt a test which will fail - i.e. mismatched keyword.
-    keyword_not_found = False
-    try:
+    with pytest.raises(CTException):
         ctutils.validate_keyword_option('invalid_mode', allowed_modes, 'mode')
-    except CTException as e:
-        keyword_not_found = True
-    assert keyword_not_found == True
 
     # Attempt a test which will fail, but including a custom string error message.
-    keyword_not_found = False
-    try:
+    with pytest.raises(CTException):
         ctutils.validate_keyword_option('invalid_mode', allowed_modes, 'mode', 'Unsupported mode.')
-    except CTException as e:
-        keyword_not_found = True
-    assert keyword_not_found == True
-
 
     # Attempt a test which will fail, including a non-string error message.
-    keyword_not_found = False
-    try:
+    with pytest.raises(RuntimeError):
         ctutils.validate_keyword_option('invalid_mode', allowed_modes, 'mode', 123)
-    except RuntimeError as e:
-        keyword_not_found = True
-    assert keyword_not_found == True
