@@ -617,6 +617,7 @@ def __round3(num, asFloat=False):
     strng = "" + str(round(num * 1000 + 10**(-len(str(num * 1000)) - 1)) / 1000)
     strng2 = "" + str(round(num + 10**(-len(str(num)) - 1)))
     delta = len(strng) - len(strng2)
+    print(strng, strng2, delta)
 
     if delta == 0:
         strng += ".000"
@@ -626,8 +627,8 @@ def __round3(num, asFloat=False):
         strng += "0"
 
     if asFloat:
-        return strng
-    else:
         return float(strng)
+    else:
+        return strng
 
 
