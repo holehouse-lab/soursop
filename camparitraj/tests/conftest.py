@@ -47,6 +47,27 @@ def NTL9_CP(request):
     return NTL9_CP
 
 @pytest.fixture(scope='session', autouse=True)
-def GMX_2CHAINS(request):    
-    GMX_2CHAINS = cttrajectory.CTTrajectory("%s/%s"%(test_data_dir, GROMACS_2_CHAINS[1]), "%s/%s"%(test_data_dir, GROMACS_2_CHAINS[0])) 
+def GMX_2CHAINS(request):
+    GMX_2CHAINS = cttrajectory.CTTrajectory("%s/%s"%(test_data_dir, GROMACS_2_CHAINS[1]), "%s/%s"%(test_data_dir, GROMACS_2_CHAINS[0]))
     return GMX_2CHAINS
+
+
+# This is implemented for use in unittests for `ctanalyzer`.
+# Adapted from:
+# https://stackoverflow.com/questions/33508060/create-and-import-helper-functions-in-tests-without-creating-packages-in-test-di
+class PrefixFilenameHelper:
+    @staticmethod
+    def determine_filenames(prefix, names, extension):
+        expected_filenames = list()
+        for name in names:
+            name_parts = [prefix]
+            if len(name) > 0:
+                name_parts.append(name)
+            savename = '%s.%s' % ('_'.join(name_parts), extension)
+            expected_filenames.append(savename)
+        return expected_filenames
+
+
+@pytest.fixture(scope='session', autouse=True)
+def cta_output_files_helper():
+    return PrefixFilenameHelper

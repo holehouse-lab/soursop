@@ -17,6 +17,7 @@ camparitraj module
 
 from ._version import get_versions
 
+
 def version():
     """
     Prints the full version and the git hash of the current commit
@@ -35,6 +36,7 @@ def version():
     print(__version__)
     print(__git_revision__)
 
+
 def version_full():
     """
     Returns the full camparitraj version as a string
@@ -46,6 +48,7 @@ def version_full():
     """
     versions = get_versions()
     return versions['version']
+
 
 def version_git_revision():
     """
@@ -62,5 +65,5 @@ def version_git_revision():
     
 
 if __name__ == "__main__":
-    # Do something if this file is invoked on its own
-    pass
+    # Do something if this file is invoked on its own - e.g. print the version.
+    print(version_full())
