@@ -329,7 +329,6 @@ def test_run_scaling_exponent_power_CA_nondefault_end_effect(NTL9_CP, cta_output
                 assert np.allclose(data, d)
 
 
-# ===
 def test_run_motif_RG(GS6_CP, NTL9_CP, cta_output_files_helper):
     ext = 'csv'
     for protein in [GS6_CP, NTL9_CP]:
@@ -369,6 +368,24 @@ def test_run_DSSP_analysis(GS6_CP, NTL9_CP, cta_output_files_helper):
                     assert np.allclose(data, d)
 
 
+def test_run_old_DSSP_analysis(GS6_CP, NTL9_CP, cta_output_files_helper):
+    ext = 'csv'
+    prefix = 'DSSP'
+    names = 'H,E,C'.split(',')
+    expected_filenames = cta_output_files_helper.determine_filenames(prefix, names, ext)
+    for protein in [GS6_CP, NTL9_CP]:
+        with tempfile.TemporaryDirectory() as outdir:
+            cta_aa.run_DSSP_analysis_OLD(protein, outdir)
+            for expected_filename in expected_filenames:
+                savename = os.path.join(outdir, expected_filename)
+                
+                assert os.path.getsize(savename) > 0  # implicit check for file existence
+                with open(savename) as f:
+                    data = np.loadtxt(f, delimiter=',')  # numpy is operating on a buffer b/c of the temporaryfile.
+                    d = np.frombuffer(data).reshape(data.shape)  # convert the buffer back to an array, and compare.
+                    assert np.allclose(data, d)
+                    
+
 def test_run_BBSEG_analysis(GS6_CP, NTL9_CP):
     expected_filenames = ['BBSEG_%d.csv' % num for num in range(9)]
     for protein in [GS6_CP, NTL9_CP]:
@@ -405,3 +422,84 @@ def test_run_linear_heterogeneity(GS6_CP, NTL9_CP, cta_output_files_helper):
                 data = np.loadtxt(f, delimiter=',')  # numpy is operating on a buffer b/c of the temporaryfile.
                 d = np.frombuffer(data).reshape(data.shape)  # convert the buffer back to an array, and compare.
                 assert np.allclose(data, d)
+
+
+def test_run_heterogeneity_analysis(GS6_CP, NTL9_CP, cta_output_files_helper):
+    initial_stride_val = 20
+    ext = 'csv'
+    prefix = 'D'
+    names = 'vector,mean,std'.split(',')
+    expected_filenames = cta_output_files_helper.determine_filenames(prefix, names, ext)
+
+    for protein_traj in [GS6_CP, NTL9_CP]:
+        trajectories = [protein_traj.traj, protein_traj.traj, protein_traj.traj, protein_traj.traj, protein_traj.traj]
+        traj = protein_traj.traj.join(trajectories)
+        protein = CTProtein(traj)
+
+        with tempfile.TemporaryDirectory() as outdir:
+            for strideval in range(initial_stride_val, protein.n_frames - 1):
+                cta_aa.run_heterogeneity_analysis(protein, strideval, outdir)
+                for expected_filename in expected_filenames:
+                    savename = os.path.join(outdir, expected_filename)
+
+                    assert os.path.getsize(savename) > 0  # implicit check for file existence
+                    with open(savename) as f:
+                        data = np.loadtxt(f, delimiter=',')  # numpy is operating on a buffer b/c of the temporaryfile.
+                        d = np.frombuffer(data).reshape(data.shape)  # convert the buffer back to an array, and compare.
+                        assert np.allclose(data, d)
+
+
+'''
+def test_run_cluster_analysis(GS6_CP, NTL9_CP):
+    initial_stride_val = 20
+    expected_filenames = 'cluster_size.csv,cluster_centroid_traj.xtc,cluster_centroid_traj.pdb'.split(',')
+    for protein_traj in [NTL9_CP]:
+        trajectories = [protein_traj.traj, protein_traj.traj, protein_traj.traj, protein_traj.traj, protein_traj.traj]
+        traj = protein_traj.traj.join(trajectories)
+        protein = CTProtein(traj)
+
+        with tempfile.TemporaryDirectory() as outdir:
+            for strideval in range(initial_stride_val, protein.n_frames - 1):
+                cta_aa.run_cluster_analysis(protein, strideval, outdir)
+                for expected_filename in expected_filenames:
+                    savename = os.path.join(outdir, expected_filename)
+
+                    assert os.path.getsize(savename) > 0  # implicit check for file existence
+                    with open(savename) as f:
+                        data = np.loadtxt(f, delimiter=',')  # numpy is operating on a buffer b/c of the temporaryfile.
+                        d = np.frombuffer(data).reshape(data.shape)  # convert the buffer back to an array, and compare.
+                        assert np.allclose(data, d)
+'''
+
+
+def test_run_dihedral_extraction(GS6_CP, NTL9_CP):
+    expected_filenames = 'PHI_matrix.csv,PSI_matrix.csv,OMEGA_matrix.csv'.split(',')
+    for protein in [GS6_CP, NTL9_CP]:
+        with tempfile.TemporaryDirectory() as outdir:
+            cta_aa.run_dihedral_extraction(protein, outdir)
+            for expected_filename in expected_filenames:
+                savename = os.path.join(outdir, expected_filename)
+
+                assert os.path.getsize(savename) > 0  # implicit check for file existence
+                with open(savename) as f:
+                    data = np.loadtxt(f, delimiter=',')  # numpy is operating on a buffer b/c of the temporaryfile.
+                    d = np.frombuffer(data).reshape(data.shape)  # convert the buffer back to an array, and compare.
+                    assert np.allclose(data, d)
+
+
+def test_run_angle_mutual_information(GS6_CP, NTL9_CP):
+    base_filename = '%s_mutual_information.csv'
+    angles = 'chi1,phi,psi,omega'.split(',')
+    
+    for protein in [GS6_CP, NTL9_CP]:
+        with tempfile.TemporaryDirectory() as outdir:
+            for angle in angles:
+                expected_filename = os.path.join(outdir, base_filename % angle)
+                cta_aa.run_angle_mutual_information(protein, outdir, angle)
+                savename = os.path.join(outdir, expected_filename)
+
+                assert os.path.getsize(savename) > 0  # implicit check for file existence
+                with open(savename) as f:
+                    data = np.loadtxt(f, delimiter=',')  # numpy is operating on a buffer b/c of the temporaryfile.
+                    d = np.frombuffer(data).reshape(data.shape)  # convert the buffer back to an array, and compare.
+                    assert np.allclose(data, d)
