@@ -394,9 +394,8 @@ def run_cluster_analysis(CP, strideval, outdir):
 
         centroid_traj = centroid_traj + t[c]
 
-
-    centroid_traj[0].save_pdb('cluster_centroid_traj.pdb')
-    centroid_traj.save_xtc('cluster_centroid_traj.xtc')
+    centroid_traj[0].save_pdb('%s/cluster_centroid_traj.pdb' % outdir)
+    centroid_traj.save_xtc('%s/cluster_centroid_traj.xtc' % outdir)
 
 
 def run_dihedral_extraction(CP, outdir):
