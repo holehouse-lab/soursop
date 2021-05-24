@@ -1,8 +1,10 @@
 import os
 import sys
+import numpy as np
 import pytest
 import camparitraj
 from camparitraj import cttrajectory
+from camparitraj import ctprotein
 
 
 GS6_FILES=['gs6.pdb','gs6.xtc']
@@ -55,7 +57,7 @@ def GMX_2CHAINS(request):
 # This is implemented for use in unittests for `ctanalyzer`.
 # Adapted from:
 # https://stackoverflow.com/questions/33508060/create-and-import-helper-functions-in-tests-without-creating-packages-in-test-di
-class PrefixFilenameHelper:
+class ProteinHelper:
     @staticmethod
     def determine_filenames(prefix, names, extension):
         expected_filenames = list()
@@ -67,7 +69,22 @@ class PrefixFilenameHelper:
             expected_filenames.append(savename)
         return expected_filenames
 
+    @staticmethod
+    def lengthen_protein_trajectory(protein_traj, num_copies):
+        trajectories = [protein_traj.traj for i in range(num_copies)]
+        traj = protein_traj.traj.join(trajectories)
+        protein = ctprotein.CTProtein(traj)
+        return protein
+
+    @staticmethod
+    def validate_exported_csv_data(savename):
+        assert os.path.getsize(savename) > 0  # implicit check for file existence
+        with open(savename) as f:
+            data = np.loadtxt(f, delimiter=',')  # numpy is operating on a buffer b/c of the temporaryfile.
+            d = np.frombuffer(data).reshape(data.shape)  # convert the buffer back to an array, and compare.
+            assert np.allclose(data, d)
+
 
 @pytest.fixture(scope='session', autouse=True)
-def cta_output_files_helper():
-    return PrefixFilenameHelper
+def cta_protein_helper():
+    return ProteinHelper
