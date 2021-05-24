@@ -378,13 +378,13 @@ def test_run_old_DSSP_analysis(GS6_CP, NTL9_CP, cta_output_files_helper):
             cta_aa.run_DSSP_analysis_OLD(protein, outdir)
             for expected_filename in expected_filenames:
                 savename = os.path.join(outdir, expected_filename)
-                
+
                 assert os.path.getsize(savename) > 0  # implicit check for file existence
                 with open(savename) as f:
                     data = np.loadtxt(f, delimiter=',')  # numpy is operating on a buffer b/c of the temporaryfile.
                     d = np.frombuffer(data).reshape(data.shape)  # convert the buffer back to an array, and compare.
                     assert np.allclose(data, d)
-                    
+
 
 def test_run_BBSEG_analysis(GS6_CP, NTL9_CP):
     expected_filenames = ['BBSEG_%d.csv' % num for num in range(9)]
@@ -490,7 +490,7 @@ def test_run_dihedral_extraction(GS6_CP, NTL9_CP):
 def test_run_angle_mutual_information(GS6_CP, NTL9_CP):
     base_filename = '%s_mutual_information.csv'
     angles = 'chi1,phi,psi,omega'.split(',')
-    
+
     for protein in [GS6_CP, NTL9_CP]:
         with tempfile.TemporaryDirectory() as outdir:
             for angle in angles:
@@ -503,3 +503,70 @@ def test_run_angle_mutual_information(GS6_CP, NTL9_CP):
                     data = np.loadtxt(f, delimiter=',')  # numpy is operating on a buffer b/c of the temporaryfile.
                     d = np.frombuffer(data).reshape(data.shape)  # convert the buffer back to an array, and compare.
                     assert np.allclose(data, d)
+
+
+def test_run_SASA_default_probe_radius(GS6_CP, NTL9_CP, cta_output_files_helper):
+    probe_radius = 0.14
+    num_copies = 5
+    initial_stride_val = 20
+    ext = 'csv'
+    prefix = 'SASA'
+    names1 = 'mean,std'.split(',')
+    names2 = 'BB_mean,BB_std'.split(',')
+    names3 = 'SC_mean,SC_std'.split(',')
+    names4 = 'BB_mean_norm,BB_std_norm'.split(',')
+    names5 = 'SC_mean_norm,SC_std_norm'.split(',')
+    expected_files = list()
+    for names in [names1, names2, names3, names4, names5]:
+        expected_files += cta_output_files_helper.determine_filenames(prefix, names, ext)
+
+    for protein_traj in [GS6_CP, NTL9_CP]:
+        trajectories = [protein_traj.traj for i in range(num_copies)]
+        traj = protein_traj.traj.join(trajectories)
+        protein = CTProtein(traj)
+
+        with tempfile.TemporaryDirectory() as outdir:
+            for strideval in range(initial_stride_val, protein.n_frames - 1):
+                cta_aa.run_SASA(protein, outdir, strideval, probe_radius)
+
+                for expected_file in expected_files:
+                    savename = os.path.join(outdir, expected_file)
+
+                    assert os.path.getsize(savename) > 0  # implicit check for file existence
+                    with open(savename) as f:
+                        data = np.loadtxt(f, delimiter=',')  # numpy is operating on a buffer b/c of the temporaryfile.
+                        d = np.frombuffer(data).reshape(data.shape)  # convert the buffer back to an array, and compare.
+                        assert np.allclose(data, d)
+
+
+def test_run_SASA_custom_probe_radius(GS6_CP, NTL9_CP, cta_output_files_helper):
+    probe_radius = 0.20
+    num_copies = 5
+    initial_stride_val = 20
+    ext = 'csv'
+    prefix = 'SASA'
+    names1 = f'mean_radius_{probe_radius:2.2f},std_radius_{probe_radius:2.2f}'.split(',')
+    names2 = f'BB_mean_radius_{probe_radius:2.2f},BB_std_radius_{probe_radius:2.2f}'.split(',')
+    names3 = f'SC_mean_radius_{probe_radius:2.2f},SC_std_radius_{probe_radius:2.2f}'.split(',')
+    expected_files = list()
+    for names in [names1, names2, names3]:
+        expected_files += cta_output_files_helper.determine_filenames(prefix, names, ext)
+    print(expected_files)
+
+    for protein_traj in [GS6_CP, NTL9_CP]:
+        trajectories = [protein_traj.traj for i in range(num_copies)]
+        traj = protein_traj.traj.join(trajectories)
+        protein = CTProtein(traj)
+
+        with tempfile.TemporaryDirectory() as outdir:
+            for strideval in range(initial_stride_val, protein.n_frames - 1):
+                cta_aa.run_SASA(protein, outdir, strideval, probe_radius)
+
+                for expected_file in expected_files:
+                    savename = os.path.join(outdir, expected_file)
+
+                    assert os.path.getsize(savename) > 0  # implicit check for file existence
+                    with open(savename) as f:
+                        data = np.loadtxt(f, delimiter=',')  # numpy is operating on a buffer b/c of the temporaryfile.
+                        d = np.frombuffer(data).reshape(data.shape)  # convert the buffer back to an array, and compare.
+                        assert np.allclose(data, d)
