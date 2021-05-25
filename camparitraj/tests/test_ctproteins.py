@@ -7,8 +7,9 @@ import numpy as np
 import camparitraj
 import pytest
 import sys
-from camparitraj import cttrajectory
+from camparitraj import cttrajectory, ctprotein
 from camparitraj.ctexceptions import CTException
+from camparitraj.configs import DEBUGGING
 
 
 def test_contacts_special(NTL9_CP):
@@ -194,3 +195,39 @@ def test_get_hydrodynamic_radius(GS6_CO):
     assert (11.840569781179006 - rh[0]) < 0.001
 
     
+# ====
+def test_init_from_trajectory(GS6_CO, NTL9_CO, GS6_CP, NTL9_CP):
+    trajs = [GS6_CO, NTL9_CO]
+    proteins = [GS6_CP, NTL9_CP]
+    for ct_traj, ct_protein in zip(trajs, proteins):
+        protein_from_md = ctprotein.CTProtein(ct_traj)
+        assert protein_from_md.n_frames > 0
+        assert protein_from_md.n_residues > 0
+        assert protein_from_md.length() == ct_protein.length()
+
+        protein_from_ct = ctprotein.CTProtein(ct_traj.traj)
+        assert protein_from_ct.n_frames > 0
+        assert protein_from_ct.n_residues > 0
+        assert protein_from_ct.length() == ct_protein.length()
+
+
+def test_init_from_trajectory_invalid():
+    args = [1, 1.0, 'test', None]
+    for arg in args:
+        with pytest.raises(RuntimeError):
+            protein = ctprotein.CTProtein(arg)
+
+
+def test_init_from_trajectory_debug(GS6_CO, NTL9_CO, GS6_CP, NTL9_CP):
+    trajs = [GS6_CO, NTL9_CO]
+    proteins = [GS6_CP, NTL9_CP]
+    for ct_traj, ct_protein in zip(trajs, proteins):
+        protein_from_md = ctprotein.CTProtein(ct_traj, debug=True)
+        assert protein_from_md.n_frames > 0
+        assert protein_from_md.n_residues > 0
+        assert protein_from_md.length() == ct_protein.length()
+
+        protein_from_ct = ctprotein.CTProtein(ct_traj.traj, debug=True)
+        assert protein_from_ct.n_frames > 0
+        assert protein_from_ct.n_residues > 0
+        assert protein_from_ct.length() == ct_protein.length()

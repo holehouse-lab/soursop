@@ -28,7 +28,7 @@ from numpy.random import choice
 from .configs import DEBUGGING
 from .ctdata import THREE_TO_ONE, DEFAULT_SIDECHAIN_VECTOR_ATOMS, ALL_VALID_RESIDUE_NAMES
 from .ctexceptions import CTException
-from . import ctmutualinformation, ctio, cttools, ctpolymer, ctutils
+from . import ctmutualinformation, ctio, cttools, ctpolymer, ctutils, cttrajectory
 
 from . _internal_data import BBSEG2
 
@@ -86,7 +86,7 @@ class CTProtein:
 
     # ........................................................................
     #
-    def __init__(self, traj):
+    def __init__(self, traj, debug=DEBUGGING):
         """
         Initialize a CTProtein object instance using trajectory information.
 
@@ -96,23 +96,28 @@ class CTProtein:
             An instance of a system's trajectory populated via `cttrajectory.CTTrajectory`.
 
         """
-        
-        # set the trajectory object for easy access
-        self.traj     = traj
-        self.topology = traj.topology
 
+        # This is necessary to support cttrajectory.Trajectory as well as the default `mdtraj`.
+        if isinstance(traj, cttrajectory.CTTrajectory):
+            self.traj = traj.traj
+            self.topology = traj.traj.topology
+        elif isinstance(traj, md.core.trajectory.Trajectory):
+            # set the trajectory object for easy access
+            self.traj     = traj
+            self.topology = traj.topology
+        else:
+            raise RuntimeError('The argument passed as `traj` is not a supported Trajectory object. Please use an mdtraj or CTTrjactory object.')
 
-        if DEBUGGING:
+        if debug:
             ctio.debug_message("Creating protein")            
-            r_string = ''
+            residues_strings = list()
             for r in self.topology.chain(0).residues:
-                r_string = r_string + (str)
+                residues_strings.append(str(r))
+            r_string = '-'.join(residues_strings)
             ctio.debug_message("Residue string from residues in self.topology.chain(0).residues: %s" %(r_string))
 
             # delete the vaiable to avoid any possible introduction of this var into the namespace
             del r_string
-            
-                
         
         # initialze various protein-centric data
         self.__num_residues       = sum( 1 for _ in self.topology.residues)
@@ -250,7 +255,15 @@ class CTProtein:
     def  __repr__(self):
         return "CTProtein (%s): %i res and %i frames" % (hex(id(self)), self.n_residues, self.n_frames)
 
+
     def __len__(self):
+        # Edited to mimic the behavior of `mdtraj` trajectory objects.
+        # Originally: `return (self.n_residues, self.n_frames)`
+        return self.n_frames
+
+
+    def length(self):
+        # Implemented a method that encapsulates the data output by the original `__len__` method.
         return (self.n_residues, self.n_frames)
 
         

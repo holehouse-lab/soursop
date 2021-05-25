@@ -131,11 +131,16 @@ class CTTrajectory:
     def  __repr__(self):
         return "CTTrajectory (%s): %i proteins and %i frames" % (hex(id(self)), self.num_proteins, self.n_frames)
 
+
     def __len__(self):
         # Edited to mimic the behavior of `mdtraj` trajectory objects.
         # Originally: `return (self.num_proteins, self.n_frames)`
         return self.n_frames
 
+
+    def length(self):
+        # Implemented a method that encapsulates the data output by the original `__len__` method.
+        return (self.num_proteins, self.n_frames)
 
 
     #oxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxo
