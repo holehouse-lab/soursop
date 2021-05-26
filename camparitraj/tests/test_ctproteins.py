@@ -14,7 +14,7 @@ from camparitraj.configs import DEBUGGING
 
 def test_contacts_special(NTL9_CP):
 
-    with pytest.raises(CTException) as error: 
+    with pytest.raises(CTException) as error:
         a = NTL9_CP.get_contact_map(distance_thresh=2, stride=1, mode='sidechain-heavy')
 
 def test_code_coverage(NTL9_CP):
@@ -25,8 +25,8 @@ def test_code_coverage(NTL9_CP):
     a = NTL9_CP.residue_index_list
     a = NTL9_CP.n_residues
     a = NTL9_CP.n_frames
-    
-    
+
+
 
     a = NTL9_CP.get_amino_acid_sequence()
     a = NTL9_CP.get_CA_index(10)
@@ -51,7 +51,7 @@ def test_code_coverage(NTL9_CP):
     a = NTL9_CP.get_polymer_scaled_distance_map(nu=0.54,A0=6,min_separation=20, mode='signed-fractional-change')
     a = NTL9_CP.get_polymer_scaled_distance_map(nu=0.54,A0=6,min_separation=20, mode='signed-absolute-change')
     a = NTL9_CP.get_polymer_scaled_distance_map(nu=0.54,A0=6,min_separation=20, mode='scaled')
-    
+
     a = NTL9_CP.get_local_heterogeneity(stride=1)
     a = NTL9_CP.get_local_heterogeneity(fragment_size=5, stride=1)
     a = NTL9_CP.get_local_heterogeneity(fragment_size=20, stride=2)
@@ -100,19 +100,19 @@ def test_code_coverage(NTL9_CP):
     a = NTL9_CP.get_angle_decay()
 
 
-def test_get_radius_of_gyration(GS6_CP):    
+def test_get_radius_of_gyration(GS6_CP):
 
     assert len(GS6_CP.get_radius_of_gyration()) == 5
     assert abs(GS6_CP.get_radius_of_gyration()[0] - 5.728453763896514) < 0.0001
     assert abs(GS6_CP.get_radius_of_gyration(R1=1,R2=3)[0] - 2.8815625777553278) < 0.0001
 
-def test_get_t(GS6_CP):    
+def test_get_t(GS6_CP):
 
     assert len(GS6_CP.get_t()) == 5
     assert abs(GS6_CP.get_t()[0] - 0.30286034750848245) < 0.0001
     assert abs(GS6_CP.get_t(R1=1,R2=3)[0] - 0.0766270900235029) < 0.0001
 
-def test_get_internal_scaling(GS6_CP):    
+def test_get_internal_scaling(GS6_CP):
 
     assert len(GS6_CP.get_internal_scaling()[0]) == 6
     assert abs(np.mean(GS6_CP.get_internal_scaling()[1][1]) - 3.784701967415692) < 0.0001
@@ -120,7 +120,7 @@ def test_get_internal_scaling(GS6_CP):
     assert abs(np.mean(GS6_CP.get_internal_scaling(R1=1,R2=4)[1][1]) - 3.7353248) < 0.001
 
 
-def test_get_internal_scaling_RMS(GS6_CP):    
+def test_get_internal_scaling_RMS(GS6_CP):
 
     assert len(GS6_CP.get_internal_scaling_RMS()[0]) == 6
     assert abs(np.mean(GS6_CP.get_internal_scaling_RMS()[1][1]) - 3.793829294427209) < 0.0001
@@ -128,7 +128,7 @@ def test_get_internal_scaling_RMS(GS6_CP):
     assert abs(np.mean(GS6_CP.get_internal_scaling_RMS(R1=1,R2=4)[1][1]) - 3.7455646317574534) < 0.001
 
 
-def test_get_internal_scaling_RMS(GS6_CP):    
+def test_get_internal_scaling_RMS(GS6_CP):
 
     assert len(GS6_CP.get_internal_scaling_RMS()[0]) == 6
     assert abs(np.mean(GS6_CP.get_internal_scaling_RMS()[1][1]) - 3.793829294427209) < 0.0001
@@ -149,8 +149,8 @@ def test_DSSP(NTL9_CP):
 def test_BBSEG(NTL9_CP):
     SS = NTL9_CP.get_secondary_structure_BBSEG()
     print(SS[0])
-    
-    
+
+
 
 def test_phi_psi_bbseg(NTL9_CP):
     """
@@ -163,17 +163,17 @@ def test_phi_psi_bbseg(NTL9_CP):
     bbseg_file = camparitraj.get_data('bbseg2.dat')
     with open(bbseg_file,'r') as fh:
         content = fh.readlines()
-    
+
     idx=0
     for psi in range(179,-180, -10):
 
         local = ''
-        for phi in range(-179,180, 10):            
+        for phi in range(-179,180, 10):
             local = local + '%i ' %(NTL9_CP._CTProtein__phi_psi_bbseg([phi],[psi])[0])
 
         assert(content[idx].strip() == local.strip())
         idx=idx+1
-    
+
 
 
 def test_get_distance_map(GS6_CO):
@@ -194,7 +194,7 @@ def test_get_hydrodynamic_radius(GS6_CO):
     rh = CP.get_hydrodynamic_radius()
     assert (11.840569781179006 - rh[0]) < 0.001
 
-    
+
 # ====
 def test_init_from_trajectory(GS6_CO, NTL9_CO, GS6_CP, NTL9_CP):
     trajs = [GS6_CO, NTL9_CO]
@@ -242,7 +242,7 @@ def test_properties(GS6_CO, NTL9_CO, GS6_CP, NTL9_CP):
 
         for prop in properties:
             assert getattr(protein_from_ct, prop) == getattr(ct_protein, prop)
-        
+
 
 def test_repr(GS6_CP, NTL9_CP):
     proteins = [GS6_CP, NTL9_CP]
@@ -250,7 +250,7 @@ def test_repr(GS6_CP, NTL9_CP):
         repr_string = repr(protein)
         rebuilt_repr = "CTProtein (%s): %i res and %i frames" % (hex(id(protein)), protein.n_residues, protein.n_frames)
         assert rebuilt_repr == repr_string
-        
+
 
 def test_len(GS6_CP, NTL9_CP):
     proteins = [GS6_CP, NTL9_CP]
@@ -260,4 +260,81 @@ def test_len(GS6_CP, NTL9_CP):
         assert length == protein.n_frames
         assert attributes == (protein.n_residues, protein.n_frames)
 
+
+def test_check_weights_invalid_weights_type(GS6_CP, NTL9_CP):
+    proteins = [GS6_CP, NTL9_CP]
+    for protein in proteins:
+        weights = 'abcdefgh'
+        with pytest.raises(ValueError):
+            protein._CTProtein__check_weights(weights=weights)
+
+
+def test_check_weights_valid_uniform_weights_length(GS6_CP, NTL9_CP):
+    default_weight = 1.0
+    proteins = [GS6_CP, NTL9_CP]
+    for protein in proteins:
+        weights = [default_weight for frame in range(protein.n_frames)]
+        normalized_weights = [w/protein.n_frames for w in weights]
+        protein._CTProtein__check_weights(weights=normalized_weights)
+
+
+def test_check_weights_valid_uniform_weights_length_low_etol(GS6_CP, NTL9_CP):
+    default_weight = 1.0
+    tolerance = np.finfo(np.longdouble).precision
+    proteins = [GS6_CP, NTL9_CP]
+    for protein in proteins:
+        weights = [default_weight for frame in range(protein.n_frames)]
+        normalized_weights = [w/protein.n_frames for w in weights]
+        protein._CTProtein__check_weights(weights=normalized_weights, etol=tolerance)
+
+
+def test_check_weights_valid_uniform_weights_length_large_etol(GS6_CP, NTL9_CP):
+    default_weight = 1.0
+    tolerance = 0.1
+    proteins = [GS6_CP, NTL9_CP]
+    for protein in proteins:
+        weights = [default_weight for frame in range(protein.n_frames)]
+        normalized_weights = [w/protein.n_frames for w in weights]
+        out = protein._CTProtein__check_weights(weights=normalized_weights, etol=tolerance)
+        assert np.allclose(out, normalized_weights)
+
+
+def test_check_weights_valid_nonuniform_weights_length_low_etol(GS6_CP, NTL9_CP):
+    tolerance = np.finfo(np.longdouble).precision
+    proteins = [GS6_CP, NTL9_CP]
+    for protein in proteins:
+        weights = [w for w in range(1, protein.n_frames + 1)]
+        normalized_weights = [w/sum(weights) for w in weights]
+        protein._CTProtein__check_weights(weights=normalized_weights, etol=tolerance)
+
+
+def test_check_weights_invalid_uniform_weights_length(GS6_CP, NTL9_CP):
+    default_weight = 1.0
+    proteins = [GS6_CP, NTL9_CP]
+    for protein in proteins:
+        weights = [default_weight for frame in range(protein.n_frames - 1)]
+        normalized_weights = [w/protein.n_frames for w in weights]
+        with pytest.raises(CTException):
+            protein._CTProtein__check_weights(weights=normalized_weights)
+
+
+def test_check_weights_valid_uniform_weights_nondefault_stride(GS6_CP, NTL9_CP):
+    stride = 2  # default stride is None
+    default_weight = 1.0
+    proteins = [GS6_CP, NTL9_CP]
+    for protein in proteins:
+        weights = [default_weight for frame in range(protein.n_frames)]
+        normalized_weights = [w/protein.n_frames for w in weights]
+        protein._CTProtein__check_weights(weights=normalized_weights, stride=stride)
+
+
+def test_check_weights_short_uniform_weights_nondefault_stride(GS6_CP, NTL9_CP):
+    stride = 2  # default stride is None
+    default_weight = 1.0
+    proteins = [GS6_CP, NTL9_CP]
+    for protein in proteins:
+        weights = [default_weight for frame in range(0, protein.n_frames, stride)]
+        normalized_weights = [w/protein.n_frames for w in weights]
+        with pytest.raises(CTException):
+            protein._CTProtein__check_weights(weights=normalized_weights, stride=stride)
 
