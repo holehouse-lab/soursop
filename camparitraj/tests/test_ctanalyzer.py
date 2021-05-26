@@ -130,7 +130,7 @@ def test_run_internal_scaling(GS6_CP, NTL9_CP, cta_protein_helper):
     for protein in [GS6_CP, NTL9_CP]:
         with tempfile.TemporaryDirectory() as outdir:
             cta_aa.run_internal_scaling(protein, outdir)
-            
+
             csv_savename = os.path.join(outdir, expected_filename)
             cta_protein_helper.validate_exported_csv_data(csv_savename)
 
@@ -219,7 +219,7 @@ def test_run_scaling_exponent_power_nondefault_end_effect(NTL9_CP, cta_protein_h
     expected_filenames = cta_protein_helper.determine_filenames(prefix, names, ext)
     with tempfile.TemporaryDirectory() as outdir:
         cta_aa.run_scaling_exponent_power(NTL9_CP, outdir, end_effect)
-        
+
         for expected_filename in expected_filenames:
             csv_savename = os.path.join(outdir, expected_filename)
             cta_protein_helper.validate_exported_csv_data(csv_savename)
@@ -386,7 +386,7 @@ def test_run_angle_mutual_information(GS6_CP, NTL9_CP, cta_protein_helper):
             for angle in angles:
                 expected_filename = os.path.join(outdir, base_filename % angle)
                 cta_aa.run_angle_mutual_information(protein, outdir, angle)
-                
+
                 csv_savename = os.path.join(outdir, expected_filename)
                 cta_protein_helper.validate_exported_csv_data(csv_savename)
 

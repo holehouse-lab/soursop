@@ -7,6 +7,8 @@ import numpy as np
 import camparitraj
 import pytest
 import sys
+import random
+import itertools
 from camparitraj import cttrajectory, ctprotein
 from camparitraj.ctexceptions import CTException
 from camparitraj.configs import DEBUGGING
@@ -338,3 +340,84 @@ def test_check_weights_short_uniform_weights_nondefault_stride(GS6_CP, NTL9_CP):
         with pytest.raises(CTException):
             protein._CTProtein__check_weights(weights=normalized_weights, stride=stride)
 
+
+# == CTProtein.__get_first_and_last
+# Should there be a test for R1 == R2?
+def test_get_first_and_last_flip_residue_indices(GS6_CP, NTL9_CP):
+    proteins = [GS6_CP, NTL9_CP]
+    for protein in proteins:
+        residue_indices = list(range(protein.n_residues))
+        mid_point = (protein.n_residues//2) - 1
+        lower = residue_indices[:mid_point]
+        upper = residue_indices[mid_point+1:]
+
+        # Shuffle to ensure that the indices chosen, whilst random
+        # are always where R1 > R2.
+        random.shuffle(lower)
+        random.shuffle(upper)
+        r1 = random.choice(upper)
+        r2 = random.choice(lower)
+        protein._CTProtein__get_first_and_last(r1, r2)
+
+
+# == CTProtein.__check_stride
+def test_check_invalid_strides(GS6_CP, NTL9_CP):
+    strides = [-1, 0, 100]  # none of the proteins have more than 100 frames.
+    proteins = [GS6_CP, NTL9_CP]
+    for protein in proteins:
+        for stride in strides:
+            with pytest.raises(CTException):
+                protein._CTProtein__check_stride(stride)
+
+
+# == CTProtein.__check_single_residue
+def test_check_invalid_single_residue(GS6_CP, NTL9_CP):
+    invalid_residues = [-1, 100]  # none of the proteins have more than 100 residues
+    proteins = [GS6_CP, NTL9_CP]
+    for protein in proteins:
+        for invalid_residue_index in invalid_residues:
+            with pytest.raises(CTException):
+                protein._CTProtein__check_single_residue(invalid_residue_index)
+
+
+# == CTProtein.__check_contains_CA
+'''
+def test_check_contains_CA_raises_exception(GS6_CP, NTL9_CP):
+    # Requires modifying the protein topology to insert one or more fake residues where CA is missing
+    # or replaced by something else.
+    proteins = [GS6_CP, NTL9_CP]
+    for protein in proteins:
+        residues_no_CA = protein.topology.select('resid %i to %i and atom not type "CA"' % (0, protein.n_residues - 1))
+        print(residues_no_CA)
+        for residue in residues_no_CA:
+            with pytest.raises(CTException):
+                protein._CTProtein__check_contains_CA(residue)
+'''
+
+def test_check_contains_CA_successful(GS6_CP, NTL9_CP):
+    proteins = [GS6_CP, NTL9_CP]
+    for protein in proteins:
+        residues_CA = protein.resid_with_CA
+        for residue in residues_CA:
+            return_value = protein._CTProtein__check_contains_CA(residue)
+            assert return_value == None
+
+
+# == CTProtein.__get_selection_atoms
+def test_get_selection_atoms_region_of_size_2(GS6_CP, NTL9_CP):
+    proteins = [GS6_CP, NTL9_CP]
+    for protein in proteins:
+        region = (0, protein.n_residues - 1)
+        choices = itertools.product([True, False], repeat=2)
+        for backbone, heavy in choices:
+            protein._CTProtein__get_selection_atoms(region, backbone, heavy)
+
+
+def test_get_selection_atoms_invalid_region_of_size_3(GS6_CP, NTL9_CP):
+    proteins = [GS6_CP, NTL9_CP]
+    for protein in proteins:
+        region = (0, protein.n_residues - 1, 0)  # the last index doesn't matter (will raise exception regardless)
+        choices = itertools.product([True, False], repeat=2)
+        for backbone, heavy in choices:
+            with pytest.raises(CTException):
+                protein._CTProtein__get_selection_atoms(region, backbone, heavy)

@@ -656,7 +656,7 @@ class CTProtein:
         elif len(region) == 2:
             if backbone:
                 if heavy:
-                    selectionatoms = self.topology.select('backbone and resid %i to %i and not type "H")' % (region[0], region[1]))
+                    selectionatoms = self.topology.select('backbone and resid %i to %i and not type "H"' % (region[0], region[1]))
                 else:
                     selectionatoms = self.topology.select('backbone and resid %i to %i' % (region[0], region[1]))
             else:
@@ -666,18 +666,7 @@ class CTProtein:
                     selectionatoms = self.topology.select('resid %i to %i' % (region[0], region[1]))
 
         else:
-            CTException("Trying to select a subsection of atoms, but the provided 'region' tuple/list is not of exactly length two [region=%s].\nCould indicate a problem, so be safe raising an exception" % (str(region)))
-            if backbone:
-                if heavy:
-                    selectionatoms = self.topology.select('backbone and resid %i to %i and not type "H"' % ( self.residue_offset, self.residue_offset + self.n_residues))
-                else:
-                    selectionatoms = self.topology.select('backbone and resid %i to %i' % ( self.residue_offset, self.residue_offset + self.n_residues))
-
-            else:
-                if heavy:
-                    selectionatoms = self.topology.select('resid %i to %i and not type "H"' % (self.residue_offset, self.residue_offset + self.n_residues))
-                else:
-                    selectionatoms = self.topology.select('resid %i to %i' % (self.residue_offset, self.residue_offset + self.n_residues))
+            raise CTException("Trying to select a subsection of atoms, but the provided 'region' tuple/list is not of exactly length two [region=%s].\nCould indicate a problem, so be safe raising an exception" % (str(region)))
 
         return selectionatoms
 
