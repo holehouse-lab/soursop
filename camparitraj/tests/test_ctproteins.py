@@ -222,12 +222,42 @@ def test_init_from_trajectory_debug(GS6_CO, NTL9_CO, GS6_CP, NTL9_CP):
     trajs = [GS6_CO, NTL9_CO]
     proteins = [GS6_CP, NTL9_CP]
     for ct_traj, ct_protein in zip(trajs, proteins):
-        protein_from_md = ctprotein.CTProtein(ct_traj, debug=True)
+        protein_from_md = ctprotein.CTProtein(ct_traj.traj, debug=True)
         assert protein_from_md.n_frames > 0
         assert protein_from_md.n_residues > 0
         assert protein_from_md.length() == ct_protein.length()
 
-        protein_from_ct = ctprotein.CTProtein(ct_traj.traj, debug=True)
+        protein_from_ct = ctprotein.CTProtein(ct_traj, debug=True)
         assert protein_from_ct.n_frames > 0
         assert protein_from_ct.n_residues > 0
         assert protein_from_ct.length() == ct_protein.length()
+
+
+def test_properties(GS6_CO, NTL9_CO, GS6_CP, NTL9_CP):
+    properties = 'resid_with_CA,ncap,ccap,n_frames,n_residues,residue_index_list'.split(',')
+    trajs = [GS6_CO, NTL9_CO]
+    proteins = [GS6_CP, NTL9_CP]
+    for ct_traj, ct_protein in zip(trajs, proteins):
+        protein_from_ct = ctprotein.CTProtein(ct_traj)
+
+        for prop in properties:
+            assert getattr(protein_from_ct, prop) == getattr(ct_protein, prop)
+        
+
+def test_repr(GS6_CP, NTL9_CP):
+    proteins = [GS6_CP, NTL9_CP]
+    for protein in proteins:
+        repr_string = repr(protein)
+        rebuilt_repr = "CTProtein (%s): %i res and %i frames" % (hex(id(protein)), protein.n_residues, protein.n_frames)
+        assert rebuilt_repr == repr_string
+        
+
+def test_len(GS6_CP, NTL9_CP):
+    proteins = [GS6_CP, NTL9_CP]
+    for protein in proteins:
+        length = len(protein)
+        attributes = protein.length()
+        assert length == protein.n_frames
+        assert attributes == (protein.n_residues, protein.n_frames)
+
+

@@ -99,8 +99,9 @@ class CTProtein:
 
         # This is necessary to support cttrajectory.Trajectory as well as the default `mdtraj`.
         if isinstance(traj, cttrajectory.CTTrajectory):
-            self.traj = traj.traj
-            self.topology = traj.traj.topology
+            self.traj       = traj.traj
+            self.topology   = traj.traj.topology
+
         elif isinstance(traj, md.core.trajectory.Trajectory):
             # set the trajectory object for easy access
             self.traj     = traj
@@ -114,7 +115,7 @@ class CTProtein:
             for r in self.topology.chain(0).residues:
                 residues_strings.append(str(r))
             r_string = '-'.join(residues_strings)
-            ctio.debug_message("Residue string from residues in self.topology.chain(0).residues: %s" %(r_string))
+            ctio.debug_message("Residue string from residues in self.topology.chain(0).residues: %s" % (r_string))
 
             # delete the vaiable to avoid any possible introduction of this var into the namespace
             del r_string
