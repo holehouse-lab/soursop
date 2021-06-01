@@ -736,29 +736,7 @@ class CTProtein:
             or, the residue corresponding to the atom name (`atom_name`).
 
         """
-
-        # if resid is not yet in table, create an empty dicitionary
-        if resid not in self.__residue_atom_table:
-            self.__residue_atom_table[resid] = {}
-
-        # if we haven't specified an atom look up ALL the atoms associated with this residue
-        if atom_name is None:
-
-            # if all_atoms not yet associated with this residue
-            if 'all_atoms' not in self.__residue_atom_table[resid]:
-                self.__residue_atom_table[resid]['all_atoms'] = self.topology.select('resid %i'%(resid))
-
-            # return set of all atoms
-            return self.__residue_atom_table[resid]['all_atoms']
-
-        # if atom-name not yet associated with this resid lookup
-        # the atom_name from the underlying topology
-        if atom_name not in self.__residue_atom_table[resid]:
-            self.__residue_atom_table[resid][atom_name] = self.topology.select('resid %i and name %s'%(resid, atom_name))
-
-        # at this point we know the resid-atom_name pair is in the table
-        # so goahead and look it up!
-        return self.__residue_atom_table[resid][atom_name]
+        self.__residue_atom_lookup(resid, atom_name)
 
 
 
