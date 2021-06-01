@@ -421,3 +421,68 @@ def test_get_selection_atoms_invalid_region_of_size_3(GS6_CP, NTL9_CP):
         for backbone, heavy in choices:
             with pytest.raises(CTException):
                 protein._CTProtein__get_selection_atoms(region, backbone, heavy)
+
+
+# == CTProtein.get_amino_acid_sequence
+def test_get_amino_acid_sequence(GS6_CP, NTL9_CP):
+    proteins = [GS6_CP, NTL9_CP]
+    for protein in proteins:
+        seq1 = protein.get_amino_acid_sequence(oneletter=True, numbered=False)
+
+        # should there be a check for caps?
+        assert len(seq1) == protein.n_residues
+
+        seq2 = protein.get_amino_acid_sequence(oneletter=False, numbered=True)
+        assert len(seq2) == protein.n_residues
+
+        start_residue_number    = int(seq2[0].split('-')[-1])
+        end_residue_number      = int(seq2[-1].split('-')[-1])
+
+        assert start_residue_number == 1
+        assert end_residue_number == len(seq2)
+        assert (end_residue_number - start_residue_number) == len(seq2) - 1
+
+
+def test_get_multiple_CA_index_existing(GS6_CP, NTL9_CP):
+    proteins = [GS6_CP, NTL9_CP]
+    for protein in proteins:
+        for residue_id in protein.resid_with_CA:
+            atom_index = protein.get_multiple_CA_index(residue_id)
+
+            # Validate the results and ensure they are ints
+            assert len(atom_index) == 1
+            assert residue_id in protein.resid_with_CA
+            assert residue_id in protein._CTProtein__resid_with_CA
+            assert type(atom_index[0]) in [np.int16, np.int32, np.int64]
+            assert atom_index[0] > 0
+
+
+def test_get_multiple_CA_index_invalid_residue_number(GS6_CP, NTL9_CP):
+    proteins = [GS6_CP, NTL9_CP]
+    for protein in proteins:
+        max_residue = protein.n_residues
+        for residue_index in range(max_residue + 1, max_residue + protein.n_residues):
+            with pytest.raises(CTException):
+                protein.get_multiple_CA_index(residue_index)
+
+
+def test_get_multiple_CA_index_invalid_residue_number_list(GS6_CP, NTL9_CP):
+    proteins = [GS6_CP, NTL9_CP]
+    for protein in proteins:
+        max_residue = protein.n_residues
+        residue_list = list(range(max_residue + 1, max_residue + protein.n_residues))
+        atoms_with_CA = protein.get_multiple_CA_index(resID_list=residue_list)
+
+        assert type(atoms_with_CA) == list
+        assert len(atoms_with_CA) == 0
+
+
+def test_calculate_all_CA_distances_invalid_residue_number(GS6_CP, NTL9_CP):
+    proteins = [GS6_CP, NTL9_CP]
+    for protein in proteins:
+        max_residue = protein.n_residues
+        for residue_index in range(max_residue + 1, max_residue + protein.n_residues):
+            index = protein.calculate_all_CA_distances(residue_index)
+
+            # Invalid indices return -1
+            assert index == -1

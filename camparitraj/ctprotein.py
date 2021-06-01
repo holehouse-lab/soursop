@@ -713,9 +713,7 @@ class CTProtein:
     #
     def residue_atom_com(self, resid, atom_name=None):
         """
-        Memoisation function th
-
-to lookup the atomic index of a specific residues atom. Originally I'd assumed
+        Memoisation function to lookup the atomic index of a specific residues atom. Originally I'd assumed
         the underlying MDTraj `topology.select()` operation was basically a lookup, BUT it turns out it's
         actually *really* expensive, so this method converts atom/residue lookup information into a
         dynamic O(1) operation, greatly improving the performance of a number of different methods
