@@ -131,9 +131,16 @@ class CTTrajectory:
     def  __repr__(self):
         return "CTTrajectory (%s): %i proteins and %i frames" % (hex(id(self)), self.num_proteins, self.n_frames)
 
-    def __len__(self):
-        return (self.num_proteins, self.n_frames)
 
+    def __len__(self):
+        # Edited to mimic the behavior of `mdtraj` trajectory objects.
+        # Originally: `return (self.num_proteins, self.n_frames)`
+        return self.n_frames
+
+
+    def length(self):
+        # Implemented a method that encapsulates the data output by the original `__len__` method.
+        return (self.num_proteins, self.n_frames)
 
 
     #oxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxo
@@ -694,23 +701,22 @@ class CTTrajectory:
         """
 
         # check mode keyword is valid
-        if mode in [ 'closest', 'ca',  'closest-heavy',  'sidechain', 'sidechain-heavy',  'atom']:
-            pass
-        else:
-            raise CTException("Provided mode keyword must be one of 'closest', 'ca', 'closest-heavy', 'sidechain', sidechain-heavy', or 'atom'. Provided keyword was [%s]" % (mode))
+        allowed_modes = [ 'atom', 'ca', 'closest', 'closest-heavy', 'sidechain', 'sidechain-heavy' ]
+        if mode not in allowed_modes:
+            raise CTException("Provided mode keyword must be one of 'atom', 'ca', 'closest', 'closest-heavy', 'sidechain', or 'sidechain-heavy'. Provided keyword was [%s]" % (mode))
 
         # get CTProtein objects for the two IDs passed (could be the same)        
         try:
-            P1 = self.proteinTrajectoryList[proteinID1]        
-            P2 = self.proteinTrajectoryList[proteinID2]        
+            P1 = self.proteinTrajectoryList[proteinID1]
+            P2 = self.proteinTrajectoryList[proteinID2]
 
         except IndexError as e:
             raise CTException('In get_interchain_distance(): When selecting protein indices %i and %i at least one of these was out of range (indices are from 0...%i)' % (proteinID1, proteinID2, len(self.proteinTrajectoryList)-1))
             
 
         # next build a new trajectory that contains ONLY the two residues selected
-        local_atoms1 = P1.topology.select('resid %i'%(R1))
-        local_atoms2 = P2.topology.select('resid %i'%(R2))
+        local_atoms1 = P1.topology.select('resid %i' % (R1))
+        local_atoms2 = P2.topology.select('resid %i' % (R2))
 
         if len(local_atoms1) == 0:
             raise CTException("In get_interchain_distance(): When selecting resid %i from proteinID1 found no atoms" %(R1))
@@ -724,20 +730,21 @@ class CTTrajectory:
         # this is now a subtrajectory which in principle contains just two residues. We can check
         # this to ensure that the trajectory has exactly 2 residues
         full_subtraj = subtraj_p1.stack(subtraj_p2)
-        if len([i for i in full_subtraj.topology.residues]) != 2:
-            raise CTException("In get_interchain_distance(): When passed in two residues (R1=%i, R2=%i) in proteins %i and %i found multiple residues (%i)...these resids could not be found " %(R1, R2, proteinID1, proteinID2))
+        full_subtraj_residues = [i for i in full_subtraj.topology.residues]
+        if len(full_subtraj_residues) != 2:
+            raise CTException("In get_interchain_distance(): When passed in two residues (R1=%i, R2=%i) in proteins %i and %i found multiple residues (%i)...these resids could not be found " %(R1, R2, proteinID1, proteinID2, len(full_subtraj_residues)))
 
         
         # if we're looking at a specific pair of atoms (note we use resid 0 and 1 because we KNOW this trajectory only has 2 residues and we know R1 is 0 and R2 is 1
         if mode == 'atom':
 
-            atom1 = full_subtraj.topology.select('resid 0 and name %s'%(A1))
+            atom1 = full_subtraj.topology.select('resid 0 and name "%s"' % A1)
             if len(atom1) != 1:
                 raise CTException("In get_interchain_distance() when selecting atom %s from residue %i in protein %i no atoms were found " % (A1, R1,  proteinID1))                
 
             COM_1 = md.compute_center_of_mass(full_subtraj.atom_slice(atom1))
 
-            atom2 = full_subtraj.topology.select('resid 1 and name %s'%(A2))
+            atom2 = full_subtraj.topology.select('resid 1 and name "%s"' % A2)
             if len(atom2) != 1:
                 raise CTException("In get_interchain_distance() when selecting atom %s from residue %i in protein %i no atoms were found " % (A2, R2,  proteinID2))                
 
@@ -748,8 +755,9 @@ class CTTrajectory:
 
         else:
 
+            # TODO: Documentation missing!
             # use the compute_contacts() function from mdtraj, multiplying by 10 because this will
-            # by default give you numbers that 
+            # by default give you numbers that... 
             distances = 10*md.compute_contacts(full_subtraj, [[0, 1]], scheme=mode, periodic=periodic)[0].ravel()
 
         return distances

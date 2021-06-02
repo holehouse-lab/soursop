@@ -29,29 +29,58 @@ from . import conftest
 #       `__get_proteins`
 #       `__get_proteins_by_residue`
 
+def test_trajectory_repr_string(GS6_CO):
+    repr_string = (hex(id(GS6_CO)), GS6_CO.num_proteins, GS6_CO.n_frames)
+    return repr_string == repr(GS6_CO)
+
+
+def test_trajectory_len(GS6_CO):
+    assert len(GS6_CO) == len(GS6_CO.traj)
+    assert len(GS6_CO) == GS6_CO.n_frames
+
 
 def test_read_in_no_trajectory_and_no_topology():
-    with pytest.raises(CTException) as error:
-        traj = cttrajectory.CTTrajectory()
+    with pytest.raises(CTException):
+        cttrajectory.CTTrajectory()
+
+
+def test_read_in_no_trajectory_and_no_topology_but_use_custom_trajectory(GS6_CO):
+    trajectory = GS6_CO.traj
+    cttrajectory.CTTrajectory(TRJ=trajectory)
 
 
 def test_read_in_no_trajectory():
     pdb_filename = os.path.join(camparitraj.get_data('test_data'), 'gs6.pdb')
-    with pytest.raises(CTException) as error:
-        trajectory = cttrajectory.CTTrajectory(pdb_filename=pdb_filename)
+    with pytest.raises(CTException):
+        cttrajectory.CTTrajectory(pdb_filename=pdb_filename)
+
+
+def test_read_in_trajectory_pdblead(GS6_CO):
+    pdb_filename = os.path.join(camparitraj.get_data('test_data'), 'gs6.pdb')
+    traj_filename = os.path.join(camparitraj.get_data('test_data'), 'gs6.xtc')
+    traj = cttrajectory.CTTrajectory(pdb_filename=pdb_filename, trajectory_filename=traj_filename, pdblead=True)
+
+    # Since we're using the PDB as an initial frame, the number of frames should have increased by 1.
+    assert len(traj) == len(GS6_CO) + 1
+
+
+def test_trajectory_initialization_debug():
+    pdb_filename = os.path.join(camparitraj.get_data('test_data'), 'gs6.pdb')
+    traj_filename = os.path.join(camparitraj.get_data('test_data'), 'gs6.xtc')
+    cttrajectory.CTTrajectory(pdb_filename=pdb_filename, trajectory_filename=traj_filename, debug=True)
 
 
 def test_read_in_no_topology_xtc():
     traj_filename = os.path.join(camparitraj.get_data('test_data'), 'gs6.xtc')
-    with pytest.raises(CTException) as error:
-        trajectory = cttrajectory.CTTrajectory(trajectory_filename=traj_filename)
+    with pytest.raises(CTException):
+        cttrajectory.CTTrajectory(trajectory_filename=traj_filename)
 
 
 def test_read_in_no_topology_dcd():
     """The `CTTrajectory.__init__` references that `.dcd` files are supported too."""
     traj_filename = os.path.join(camparitraj.get_data('test_data'), 'gs6.dcd')
-    with pytest.raises(CTException) as error:
-        trajectory = cttrajectory.CTTrajectory(trajectory_filename=traj_filename)
+    with pytest.raises(CTException):
+        cttrajectory.CTTrajectory(trajectory_filename=traj_filename)
 
 
 def test_read_in_compare_trajectories(GS6_CO):
@@ -86,6 +115,19 @@ def test_read_in_protein_grouping_multiple():
     assert trajectory.num_proteins == len(protein_groups)
 
 
+def test_read_in_protein_grouping_invalid_residues():
+    protein_groups = [[1000, 1001, 1002], [1003, 1004, 1005], [1006, 1007, 1008]]
+    pdb_filename = os.path.join(camparitraj.get_data('test_data'), 'ntl9.pdb')
+    traj_filename = os.path.join(camparitraj.get_data('test_data'), 'ntl9.xtc')  # ntl9 has 56 residues
+    trajectory = cttrajectory.CTTrajectory(trajectory_filename=traj_filename,
+                                           pdb_filename=pdb_filename,
+                                           protein_grouping=protein_groups)
+
+    # Since this is a failing but non-disruptive test (i.e. no Exceptions), we
+    # check the number of proteins which should be 0.
+    assert trajectory.num_proteins == 0
+
+
 def test_read_in_protein_grouping_multiple_mixed_order():
     # TODO: This test passes - it shouldn't. Look into this further.
     protein_groups = [[1, 2, 0], [10, 3, 7], [11, 1, 3]]
@@ -102,14 +144,19 @@ def test_read_in_protein_grouping_multiple_mixed_order():
 # -------------------------------------------------------------------------------------------------
 
 
-
 def test_get_intra_chain_distance_map_zero(GS6_CO):
     # TODO: This returns an upper triangle copy of the original distance map. Investigate further.
     distance_map_zero, stddev_map_zero = GS6_CO.get_interchain_distance_map(0, 0)
     distance_map, stddev_map = GS6_CO.proteinTrajectoryList[0].get_distance_map()
-    print(stddev_map_zero)
-    print()
-    print(stddev_map)
+
+    assert np.allclose(np.triu(distance_map_zero), distance_map)
+    assert np.allclose(np.triu(stddev_map_zero), stddev_map, atol=1e-6)
+
+
+def test_get_intra_chain_distance_map_zero_using_center_of_mass(GS6_CO):
+    # TODO: This returns an upper triangle copy of the original distance map. Investigate further.
+    distance_map_zero, stddev_map_zero = GS6_CO.get_interchain_distance_map(0, 0, mode='COM')
+    distance_map, stddev_map = GS6_CO.proteinTrajectoryList[0].get_distance_map(mode='COM')
 
     assert np.allclose(np.triu(distance_map_zero), distance_map)
     assert np.allclose(np.triu(stddev_map_zero), stddev_map, atol=1e-6)
@@ -131,7 +178,7 @@ def test_get_intra_chain_distance_map_protein_groups():
 
 
 def test_get_intra_chain_distance_map_protein_groups_with_residue_indices():
-    # Note that the residues for the resID1 and resID2 indices are respect to the residues of the protein chain
+    # Note that the residues for the resID1 and resID2 indices are with respect to the residues of the protein chain
     # and not the full protein itself.
     protein_groups_residues = [[0, 1, 2, 3, 4, 5, 6, 7, 8],
                                [10, 11, 12, 13, 14, 15, 16, 17, 18],
@@ -165,7 +212,7 @@ def test_get_intra_chain_distance_map_protein_groups_with_residue_indices():
 
 
 def test_export_intra_chain_distance_map_protein_groups_with_residue_indices():
-    # Note that the residues for the resID1 and resID2 indices are respect to the residues of the protein chain
+    # Note that the residues for the resID1 and resID2 indices are with respect to the residues of the protein chain
     # and not the full protein itself.
     protein_groups_residues = [[0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
                                [10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
@@ -268,7 +315,139 @@ def test_intrachain_inter_residue_atomic_distance_by_name():
     pass
 
 
+def test_get_interchain_distance():
+    protein_groups = [[0, 1, 2, 3, 4], [5, 6, 7, 8, 9], [10, 11, 12, 13, 14]]
+    pdb_filename = os.path.join(camparitraj.get_data('test_data'), 'ntl9.pdb')
+    traj_filename = os.path.join(camparitraj.get_data('test_data'), 'ntl9.xtc')  # ntl9 has 56 residues
+    trajectory = cttrajectory.CTTrajectory(trajectory_filename=traj_filename,
+                                           pdb_filename=pdb_filename,
+                                           protein_grouping=protein_groups)
 
+    for protein_group in itertools.combinations(range(len(protein_groups)), r=2):
+        protein_a, protein_b = protein_group
+
+        # There appears to be an issue where R1 > R2 - the calculation crashes for sidechain-heavy.
+        R1 = 0 #random.choice(range(len(protein_groups[protein_a])))
+        R2 = 1 #random.choice(range(len(protein_groups[protein_b])))
+        A1 = 'CA'
+        A2 = 'CA'
+        modes = 'atom,ca,closest,closest-heavy,sidechain,sidechain-heavy'.split(',')
+        for mode in modes:
+            distances = trajectory.get_interchain_distance(protein_a, protein_b, R1, R2, A1, A2, mode)
+            assert len(distances) > 0
+
+
+def test_get_interchain_distance_invalid_mode():
+    protein_groups = [[0, 1, 2, 3, 4], [5, 6, 7, 8, 9], [10, 11, 12, 13, 14]]
+    pdb_filename = os.path.join(camparitraj.get_data('test_data'), 'ntl9.pdb')
+    traj_filename = os.path.join(camparitraj.get_data('test_data'), 'ntl9.xtc')  # ntl9 has 56 residues
+    trajectory = cttrajectory.CTTrajectory(trajectory_filename=traj_filename,
+                                           pdb_filename=pdb_filename,
+                                           protein_grouping=protein_groups)
+
+    mode = 'unknown'
+    for protein_group in itertools.combinations(range(len(protein_groups)), r=2):
+        protein_a, protein_b = protein_group
+
+        # There appears to be an issue where R1 > R2 - the calculation crashes for sidechain-heavy.
+        R1 = 0 #random.choice(range(len(protein_groups[protein_a])))
+        R2 = 1 #random.choice(range(len(protein_groups[protein_b])))
+        A1 = 'CA'
+        A2 = 'CA'
+        
+        with pytest.raises(CTException):
+            trajectory.get_interchain_distance(protein_a, protein_b, R1, R2, A1, A2, mode)
+
+
+def test_get_interchain_distance_failing_atom():
+    protein_groups = [[0, 1, 2, 3, 4], [5, 6, 7, 8, 9], [10, 11, 12, 13, 14]]
+    pdb_filename = os.path.join(camparitraj.get_data('test_data'), 'ntl9.pdb')
+    traj_filename = os.path.join(camparitraj.get_data('test_data'), 'ntl9.xtc')  # ntl9 has 56 residues
+    trajectory = cttrajectory.CTTrajectory(trajectory_filename=traj_filename,
+                                           pdb_filename=pdb_filename,
+                                           protein_grouping=protein_groups)
+
+    mode = 'atom'
+    atoms1 = ['X', 'CA']
+    atoms2 = atoms1[::-1]
+    for protein_group in itertools.combinations(range(len(protein_groups)), r=2):
+        protein_a, protein_b = protein_group
+
+        # There appears to be an issue where R1 > R2 - the calculation crashes for sidechain-heavy.
+        # See `test_get_interchain_distance`
+        R1 = 0 #random.choice(range(len(protein_groups[protein_a])))
+        R2 = 1 #random.choice(range(len(protein_groups[protein_b])))
+
+        for A1, A2 in zip(atoms1, atoms2):
+            with pytest.raises(CTException):
+                trajectory.get_interchain_distance(protein_a, protein_b, R1, R2, A1, A2, mode)
+
+
+def test_get_interchain_distance_failing_residues():
+    protein_groups = [[0, 1, 2, 3, 4], [5, 6, 7, 8, 9], [10, 11, 12, 13, 14]]
+    pdb_filename = os.path.join(camparitraj.get_data('test_data'), 'ntl9.pdb')
+    traj_filename = os.path.join(camparitraj.get_data('test_data'), 'ntl9.xtc')  # ntl9 has 56 residues
+    trajectory = cttrajectory.CTTrajectory(trajectory_filename=traj_filename,
+                                           pdb_filename=pdb_filename,
+                                           protein_grouping=protein_groups)
+
+    residues1 = [0, 100]
+    residues2 = residues1[::-1]
+    A1 = 'CA'
+    A2 = 'CA'
+    modes = 'atom,ca,closest,closest-heavy,sidechain,sidechain-heavy'.split(',')
+    
+    for protein_group in itertools.combinations(range(len(protein_groups)), r=2):
+        protein_a, protein_b = protein_group
+        for mode in modes:
+            for R1, R2 in zip(residues1, residues2):
+                with pytest.raises(CTException):
+                    trajectory.get_interchain_distance(protein_a, protein_b, R1, R2, A1, A2, mode)
+
+
+def test_get_interchain_distance_invalid_protein_ids():
+    protein_groups = [[0, 1, 2, 3, 4], [5, 6, 7, 8, 9], [10, 11, 12, 13, 14]]
+    pdb_filename = os.path.join(camparitraj.get_data('test_data'), 'ntl9.pdb')
+    traj_filename = os.path.join(camparitraj.get_data('test_data'), 'ntl9.xtc')  # ntl9 has 56 residues
+    trajectory = cttrajectory.CTTrajectory(trajectory_filename=traj_filename,
+                                           pdb_filename=pdb_filename,
+                                           protein_grouping=protein_groups)
+
+    R1 = 0
+    R2 = 1
+    A1 = 'CA'
+    A2 = 'CA'
+    modes = 'atom,ca,closest,closest-heavy,sidechain,sidechain-heavy'.split(',')
+    
+    protein_a = 100
+    protein_b = 101
+    for mode in modes:
+        with pytest.raises(CTException):
+            trajectory.get_interchain_distance(protein_a, protein_b, R1, R2, A1, A2, mode)
+
+
+# -------------------------------------------------------------------------------------------------
+
+
+def test_get_overall_hydrodynamic_radius(GS6_CO, NTL9_CO):
+    gs6_radius = GS6_CO.get_overall_hydrodynamic_radius()
+    ntl9_radius = NTL9_CO.get_overall_hydrodynamic_radius()
+    assert len(gs6_radius) == GS6_CO.n_frames
+    assert len(ntl9_radius) == NTL9_CO.n_frames
+
+
+def test_get_overall_radius_of_gyration(GS6_CO, NTL9_CO):
+    gs6_gyration = GS6_CO.get_overall_radius_of_gyration()
+    ntl9_gyration = NTL9_CO.get_overall_radius_of_gyration()
+    assert len(gs6_gyration) == GS6_CO.n_frames
+    assert len(ntl9_gyration) == NTL9_CO.n_frames
+
+
+def test_get_overall_asphericity(GS6_CO, NTL9_CO):
+    gs6_asphericity = GS6_CO.get_overall_asphericity()
+    ntl9_asphericity = NTL9_CO.get_overall_asphericity()
+    assert len(gs6_asphericity) == GS6_CO.n_frames
+    assert len(ntl9_asphericity) == NTL9_CO.n_frames
 
 
 # -------------------------------------------------------------------------------------------------

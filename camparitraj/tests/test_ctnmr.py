@@ -11,7 +11,7 @@ import camparitraj.ctnmr as nmr
 #
 
 def test_simple_test():
-    output = nmr.compute_random_coil_chemical_shifts("ACDE", 15, 6.5, True, False)
+    output = nmr.compute_random_coil_chemical_shifts("ACDE", temperature=15, pH=6.5, use_ggxgg=True, use_perdeuteration=False, asFloat=True)
     control = [
         {"Res": "A", "Index": 0, "CA": 52.695, "CB": 18.967, "CO": 177.864, "N": 126.057, "HN": 8.519, "HA": 4.357},
         {"Res": "C", "Index": 1, "CA": 58.584, "CB": 29.752, "CO": 174.436, "N": 118.754, "HN": 8.466, "HA": 4.500},
@@ -19,8 +19,8 @@ def test_simple_test():
         {"Res": "E", "Index": 3, "CA": 56.941, "CB": 30.167, "CO": 176.755, "N": 121.337, "HN": 8.426, "HA": 4.263}]
 
     for i in range(4):
-        amino = output[i]
-        assert output[i] == control[i]
+        amino_acid = output[i]
+        assert amino_acid == control[i]
 
 
 def test_simple_types():
@@ -28,7 +28,7 @@ def test_simple_types():
     
     """
 
-    output = nmr.compute_random_coil_chemical_shifts("ACDEFGHIKLMNPQRSTVWY", 25, 6.5, True, False)
+    output = nmr.compute_random_coil_chemical_shifts("ACDEFGHIKLMNPQRSTVWY", temperature=25, pH=6.5, use_ggxgg=True, use_perdeuteration=False, asFloat=True)
     control = [
         {"Res": "A", "Index": 0, "CA": 52.673, "CB": 19.015, "CO": 177.793, "N": 126.005, "HN": 8.429, "HA": 4.364},
         {"Res": "C", "Index": 1, "CA": 58.575, "CB": 29.764, "CO": 174.410, "N": 118.672, "HN": 8.396, "HA": 4.500},
@@ -53,15 +53,15 @@ def test_simple_types():
         {"Res": "Y", "Index": 19, "CA": 57.632, "CB": 38.892, "CO": 174.936, "N": 122.232, "HN": 7.732, "HA": 4.438}]
 
     for i in range(20):
-        amino = output[i]
-        assert output[i] == control[i]
+        amino_acid = output[i]
+        assert amino_acid == control[i]
 
 
 def test_simple_deut():
     """Tests the ability of the function randCoilChemShifts to accurately predict random coil chemical shifts for perdeuterated proteins.
     
     """
-    output = nmr.compute_random_coil_chemical_shifts("ACDE", 25, 6.5, True, True)
+    output = nmr.compute_random_coil_chemical_shifts("ACDE", temperature=25, pH=6.5, use_ggxgg=True, use_perdeuteration=True, asFloat=True)
     control = [
         {"Res": "A", "Index": 0, "CA": 51.993, "CB": 18.015, "CO": 177.793, "N": 126.005, "HN": 8.429, "HA": "*.***"},
         {"Res": "C", "Index": 1, "CA": 58.025, "CB": 29.054, "CO": 174.410, "N": 118.672, "HN": 8.396, "HA": "*.***"},
@@ -69,15 +69,15 @@ def test_simple_deut():
         {"Res": "E", "Index": 3, "CA": 56.260, "CB": 29.243, "CO": 176.706, "N": 121.300, "HN": 8.362, "HA": "*.***"}]
 
     for i in range(4):
-        amino = output[i]
-        assert output[i] == control[i]
+        amino_acid = output[i]
+        assert amino_acid == control[i]
 
 
 def test_simple_undeut():
     """Tests the ability of the function randCoilChemShifts to accurately predict random coil chemical shifts for unperdeuterated proteins
 
     """
-    output = nmr.compute_random_coil_chemical_shifts("ACDE", 25, 6.5, True, False)
+    output = nmr.compute_random_coil_chemical_shifts("ACDE", temperature=25, pH=6.5, use_ggxgg=True, use_perdeuteration=False, asFloat=True)
 
     control = [
         {"Res": "A", "Index": 0, "CA": 52.673, "CB": 19.015, "CO": 177.793, "N": 126.005, "HN": 8.429, "HA": 4.364},
@@ -86,8 +86,8 @@ def test_simple_undeut():
         {"Res": "E", "Index": 3, "CA": 56.950, "CB": 30.213, "CO": 176.706, "N": 121.300, "HN": 8.362, "HA": 4.266}]
 
     for i in range(4):
-        amino = output[i]
-        assert output[i] == control[i]
+        amino_acid = output[i]
+        assert amino_acid == control[i]
 
 
 def test_simple_phos():
@@ -95,7 +95,7 @@ def test_simple_phos():
 
     """
 
-    output = nmr.compute_random_coil_chemical_shifts("(sep)(tpo)(ptr)", 25, 6.5, True, False)
+    output = nmr.compute_random_coil_chemical_shifts("(sep)(tpo)(ptr)", temperature=25, pH=6.5, use_ggxgg=True, use_perdeuteration=False, asFloat=True)
 
     control = [
         {"Res": "SEP", "Index": 0, "CA": 58.483, "CB": 65.876, "CO": 174.762, "N": 119.143, "HN": 9.005, "HA": 4.440},
@@ -103,9 +103,8 @@ def test_simple_phos():
         {"Res": "PTR", "Index": 2, "CA": 57.802, "CB": 38.635, "CO": 175.690, "N": 122.211, "HN": 8.087, "HA": 4.585}]
 
     for i in range(3):
-        amino = output[i]
-
-        assert output[i] == control[i]
+        amino_acid = output[i]
+        assert amino_acid == control[i]
 
 
 def test_simple_ph():
@@ -113,7 +112,7 @@ def test_simple_ph():
 
     """
 
-    output = nmr.compute_random_coil_chemical_shifts("ACDE", 25, 4, True, False)
+    output = nmr.compute_random_coil_chemical_shifts("ACDE", temperature=25, pH=4, use_ggxgg=True, use_perdeuteration=False, asFloat=True)
 
     control = [
         {"Res": "A", "Index": 0, "CA": 52.673, "CB": 19.015, "CO": 177.793, "N": 126.005, "HN": 8.429, "HA": 4.364},
@@ -122,8 +121,8 @@ def test_simple_ph():
         {"Res": "E", "Index": 3, "CA": 56.281, "CB": 29.080, "CO": 176.324, "N": 120.696, "HN": 8.281, "HA": 4.340}]
 
     for i in range(4):
-        amino = output[i]
-        assert output[i] == control[i]
+        amino_acid = output[i]
+        assert amino_acid == control[i]
 
 
 # ----------
@@ -132,7 +131,7 @@ def test_simple_temp():
 
     """
 
-    output = nmr.compute_random_coil_chemical_shifts("ACDE", 15, 6.5, True, False)
+    output = nmr.compute_random_coil_chemical_shifts("ACDE", temperature=15, pH=6.5, use_ggxgg=True, use_perdeuteration=False, asFloat=True)
 
     control = [
         {"Res": "A", "Index": 0, "CA": 52.695, "CB": 18.967, "CO": 177.864, "N": 126.057, "HN": 8.519, "HA": 4.357},
@@ -141,8 +140,8 @@ def test_simple_temp():
         {"Res": "E", "Index": 3, "CA": 56.941, "CB": 30.167, "CO": 176.755, "N": 121.337, "HN": 8.426, "HA": 4.263}]
 
     for i in range(4):
-        amino = output[i]
-        assert output[i] == control[i]
+        amino_acid = output[i]
+        assert amino_acid == control[i]
 
 
 # ----------
@@ -155,7 +154,7 @@ def test_unit_round3():
     control = [110.700, 103.911, 112.738, 114.841, 112.568, 107.959, 105.920, 108.218, 112.563, 112.016]
 
     for i in range(10):
-        assert nmr.__round3(raw[i]) == control[i]
+        assert nmr.__round3(raw[i], asFloat=True) == control[i]
 
 
 # ----------

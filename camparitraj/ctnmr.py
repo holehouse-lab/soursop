@@ -626,8 +626,8 @@ def __round3(num, asFloat=False):
         strng += "0"
 
     if asFloat:
-        return strng
-    else:
         return float(strng)
+    else:
+        return strng
 
 
