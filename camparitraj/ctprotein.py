@@ -3595,6 +3595,11 @@ class CTProtein:
         # The initial section is responsible for selecting/defining the sidechain atom and catching any
         # bad inputs. It's a litte drawn out but useful for code clarity reasons.
         # note need to do this with the un-corrected residue index values, hence why it comes first
+        if R1 not in self.__residue_atom_table:
+            raise CTException('Residue index for R1: %d does not exist in the protein.' % R1)
+
+        if R2 not in self.__residue_atom_table:
+            raise CTException('Residue index for R2: %d does not exist in the protein.' % R2)
 
 
         if sidechain_atom_1 == 'default':
@@ -3609,6 +3614,8 @@ class CTProtein:
 
             except KeyError:
                 raise CTException('Cannot parse residue at position %i (residue name = %s) ' % (R1, resname_1))
+        else:
+            raise CTException('Unsupported sidechain atom name: "%s". Please use: "default".' % sidechain_atom_1)
 
         if sidechain_atom_2 == 'default':
             resname_2 = self.get_amino_acid_sequence(numbered=False)[R2]
@@ -3622,13 +3629,15 @@ class CTProtein:
 
             except KeyError:
                 raise CTException('Cannot parse residue at position %i (residue name = %s) ' % (R2, resname_2))
+        else:
+            raise CTException('Unsupported sidechain atom name: "%s". Please use: "default".' % sidechain_atom_1)
 
         ### At this point we have reasonable atom names defined!
-        TRJ_1_SC = self.traj.atom_slice(self.topology.select('resid %i and name %s' % (R1, sidechain_atom_1) ))
-        TRJ_1_CA = self.traj.atom_slice(self.topology.select('resid %i and name CA' % (R1) ))
+        TRJ_1_SC = self.traj.atom_slice(self.topology.select('resid %i and name "%s"' % (R1, sidechain_atom_1) ))
+        TRJ_1_CA = self.traj.atom_slice(self.topology.select('resid %i and name "CA"' % (R1) ))
 
-        TRJ_2_SC = self.traj.atom_slice(self.topology.select('resid %i and name %s' % (R2, sidechain_atom_2) ))
-        TRJ_2_CA = self.traj.atom_slice(self.topology.select('resid %i and name CA' % (R2) ))
+        TRJ_2_SC = self.traj.atom_slice(self.topology.select('resid %i and name "%s"' % (R2, sidechain_atom_2) ))
+        TRJ_2_CA = self.traj.atom_slice(self.topology.select('resid %i and name "CA"' % (R2) ))
 
 
         # compute CA-SC vector

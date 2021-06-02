@@ -593,8 +593,191 @@ def test_get_angle_decay_return_full_matrix(GS6_CP, NTL9_CP):
         assert full_matrix.shape[0] == protein.n_residues - num_caps
 
 
-#get_local_to_global_correlation(self, mode='COM', n_cycles=100, max_num_pairs=10, stride=20, weights=False, verbose=True)
-def test_get_local_to_global_correlation(GS6_CP, NTL9_CP):
+def test_get_angle_decay_no_return_full_matrix(GS6_CP, NTL9_CP):
     proteins = [GS6_CP, NTL9_CP]
     for protein in proteins:
-        pass
+        return_matrix = protein.get_angle_decay(return_full_matrix=False)
+
+        assert len(return_matrix[0]) == 3
+
+        num_caps = 0
+        if protein.ncap:
+            num_caps += 1
+        if protein.ccap:
+            num_caps += 1
+
+        assert len(return_matrix) == protein.n_residues - num_caps
+
+
+# CTProtein.get_contact_map
+def test_get_contact_map_weights(GS6_CP, NTL9_CP):
+    default_weight = 1.0
+    modes = 'ca,closest,closest-heavy,sidechain'.split(',')
+    proteins = [GS6_CP, NTL9_CP]
+    for protein in proteins:
+        weights = [default_weight for frame in range(protein.n_frames)]
+        normalized_weights = [w/protein.n_frames for w in weights]
+        for mode in modes:
+            results = protein.get_contact_map(mode=mode, weights=normalized_weights)  # the other options have been test
+            contact_map, contact_map_order = results
+
+            protein_residues = len(protein.resid_with_CA)
+            expected_shape = (protein_residues, protein_residues)
+
+            assert contact_map.shape == expected_shape
+            assert len(contact_map_order.shape) == 1
+            assert contact_map_order.shape[0] == protein_residues
+
+
+def test_get_contact_map_weights_sidechain_heavy(GS6_CP, NTL9_CP):
+    default_weight = 1.0
+    proteins = [GS6_CP, NTL9_CP]
+    mode = 'sidechain-heavy'
+    for protein in proteins:
+        weights = [default_weight for frame in range(protein.n_frames)]
+        normalized_weights = [w/protein.n_frames for w in weights]
+
+        with pytest.raises(CTException):
+            protein.get_contact_map(mode=mode, weights=normalized_weights)  # the other options have been tested
+
+
+# CTProtein.get_sidechain_alignment_angle
+def test_get_sidechain_alignment_angle_unsupported_angle(GS6_CP, NTL9_CP):
+    proteins = [GS6_CP, NTL9_CP]
+    R1 = 0
+    R2 = 0
+    for protein in proteins:
+        with pytest.raises(CTException):
+            protein.get_sidechain_alignment_angle(R1, R2, sidechain_atom_1='invalid_atom')
+
+        with pytest.raises(CTException):
+            protein.get_sidechain_alignment_angle(R1, R2, sidechain_atom_2='invalid_atom')
+
+
+def test_get_sidechain_alignment_angle_successful_random(GS6_CP, NTL9_CP):
+    proteins = [GS6_CP, NTL9_CP]
+    for protein in proteins:
+        residue_indices = list(range(protein.n_residues))
+        mid_point = (protein.n_residues//2) - 1
+        lower = residue_indices[1:mid_point]
+        upper = residue_indices[mid_point+1:-1]
+
+        # Shuffle to ensure that the indices chosen, whilst random
+        # are always where R1 > R2.
+        random.shuffle(lower)
+        random.shuffle(upper)
+        r1 = random.choice(upper)
+        r2 = random.choice(lower)
+
+        alignment = protein.get_sidechain_alignment_angle(r1, r2)
+        assert len(alignment) == protein.n_frames
+
+
+def test_get_sidechain_alignment_angle_invalid_r1(GS6_CP, NTL9_CP):
+    proteins = [GS6_CP, NTL9_CP]
+    for protein in proteins:
+        max_residue = protein.n_residues
+        r1 = max_residue + protein.n_residues
+        r2 = 0
+
+        with pytest.raises(CTException):
+            protein.get_sidechain_alignment_angle(r1, r2)
+
+
+def test_get_sidechain_alignment_angle_invalid_r2(GS6_CP, NTL9_CP):
+    proteins = [GS6_CP, NTL9_CP]
+    for protein in proteins:
+        max_residue = protein.n_residues
+        r1 = 0
+        r2 = max_residue + protein.n_residues
+
+        with pytest.raises(CTException):
+            protein.get_sidechain_alignment_angle(r1, r2)
+
+
+#get_local_to_global_correlation(self, mode='COM', n_cycles=100, max_num_pairs=10, stride=20, weights=False, verbose=True)
+def test_get_local_to_global_correlation_unsupported_modes(GS6_CP, NTL9_CP):
+    proteins = [GS6_CP, NTL9_CP]
+    invalid_modes = 'unknown,unsupported'.split(',')
+    for protein in proteins:
+        for mode in invalid_modes:
+            with pytest.raises(CTException):
+                protein.get_local_to_global_correlation(mode=mode)
+
+
+"""
+# Requires additional work. Exception raised:
+# "raise CTException('Something when wrong when comparing stride-derived Rg and internal distances, this is a bug in the code...)')"
+def test_get_local_to_global_correlation_defaults(GS6_CP, NTL9_CP, cta_protein_helper):
+    num_copies = 5
+    proteins = [GS6_CP, NTL9_CP]
+    modes = 'CA,COM'.split(',')
+    for protein_obj in proteins:
+        protein = cta_protein_helper.lengthen_protein_trajectory(protein_obj, num_copies)
+        for mode in modes:
+            results = protein.get_local_to_global_correlation(mode=mode)
+
+            assert len(results) == 4
+            for result in results:
+                assert len(result) > 0
+"""
+
+
+def test_get_local_to_global_correlation_valid_weights(GS6_CP, NTL9_CP, cta_protein_helper):
+    num_copies = 5
+    stride = 1
+    default_weight = 1.0
+    proteins = [GS6_CP, NTL9_CP]
+    modes = 'CA,COM'.split(',')
+    for protein_obj in proteins:
+        protein = cta_protein_helper.lengthen_protein_trajectory(protein_obj, num_copies)
+        weights = [default_weight for frame in range(protein.n_frames)]
+        normalized_weights = [w/protein.n_frames for w in weights]
+        for mode in modes:
+            results = protein.get_local_to_global_correlation(mode=mode, stride=stride, weights=normalized_weights)
+
+            assert len(results) == 4
+            for result in results:
+                assert len(result) > 0
+
+
+def test_get_regional_SASA(GS6_CP, NTL9_CP, cta_protein_helper):
+    num_copies = 5
+    proteins = [GS6_CP, NTL9_CP]
+    for protein_obj in proteins:
+        protein = cta_protein_helper.lengthen_protein_trajectory(protein_obj, num_copies)
+
+        residue_indices = list(range(protein.n_residues))
+        mid_point = (protein.n_residues//2) - 1
+        lower = residue_indices[1:mid_point]
+        upper = residue_indices[mid_point+1:-1]
+
+        # Shuffle to ensure that the indices chosen, whilst random
+        # are always where R1 > R2.
+        random.shuffle(lower)
+        random.shuffle(upper)
+        r1 = random.choice(upper)
+        r2 = random.choice(lower)
+
+        rsasa = protein.get_regional_SASA(r1, r2)
+        assert rsasa != None
+
+
+def test_get_site_accessibility_resid(GS6_CP, NTL9_CP, cta_protein_helper):
+    num_copies = 5
+    proteins = [GS6_CP, NTL9_CP]
+    for protein_obj in proteins:
+        protein = cta_protein_helper.lengthen_protein_trajectory(protein_obj, num_copies)
+
+        residue_indices = list(range(protein.n_residues))
+        protein.get_site_accessibility(residue_indices, mode='resid')
+
+
+def test_get_site_accessibility_residue_names(GS6_CP, NTL9_CP, cta_protein_helper):
+    num_copies = 5
+    proteins = [GS6_CP, NTL9_CP]
+    residue_names = ['GLY']
+    for protein_obj in proteins:
+        protein = cta_protein_helper.lengthen_protein_trajectory(protein_obj, num_copies)
+
+        protein.get_site_accessibility(residue_names, mode='residue_type')
