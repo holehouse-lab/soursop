@@ -4349,6 +4349,15 @@ class CTProtein:
             except ValueError:
                 raise CTException('Passed bins could not be converted to a numpy array of floats')
 
+            # Check whether the bins are evenly spaced. If the bins are evenly spaced, subtracting the leading
+            # value of the discrete difference from itself should yield a sum of 0 (within the floating point epsilon).
+            diff = np.diff(bins)
+            bins_delta = diff - diff[0]
+            fpe = np.finfo(diff[0].dtype).eps
+            evenly_spaced = np.isclose(np.sum(bins_delta), 0, rtol=fpe)
+            if not evenly_spaced:
+                raise CTException('The spacing between bins is uneven, or you may using bins widths less than: %f' % fpe)
+
         n_residues = self.n_residues
         n_frames   = self.n_frames
 

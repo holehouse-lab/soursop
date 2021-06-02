@@ -9,6 +9,7 @@ import pytest
 import sys
 import random
 import itertools
+from copy import deepcopy
 from camparitraj import cttrajectory, ctprotein
 from camparitraj.ctexceptions import CTException
 from camparitraj.configs import DEBUGGING
@@ -486,3 +487,105 @@ def test_calculate_all_CA_distances_invalid_residue_number(GS6_CP, NTL9_CP):
 
             # Invalid indices return -1
             assert index == -1
+
+
+# == CTProtein._CTProtein__residue_atom_com
+def test_residue_atom_com_new_resid_atom_name_None(GS6_CO, NTL9_CO):
+    trajs = [GS6_CO, NTL9_CO]
+    for traj in trajs:
+        # instantiate a new protein object since the previous reference is modified
+        # elsewhere - hence our residue count will be off.
+        protein = ctprotein.CTProtein(traj)
+        unavailable_residue_index = protein.n_residues + 1
+        protein.residue_atom_com(unavailable_residue_index, atom_name=None)
+        assert len(protein._CTProtein__residue_atom_table) == protein.n_residues + 1
+
+
+def test_residue_atom_com_new_resid_atom_name_CA(GS6_CO, NTL9_CO):
+    trajs = [GS6_CO, NTL9_CO]
+    for traj in trajs:
+        # instantiate a new protein object since the previous reference is modified
+        # elsewhere - hence our residue count will be off.
+        protein = ctprotein.CTProtein(traj)
+        unavailable_residue_index = protein.n_residues + 1
+        protein.residue_atom_com(unavailable_residue_index, atom_name='CA')
+        assert len(protein._CTProtein__residue_atom_table) == protein.n_residues + 1
+
+
+
+def test_get_distance_map_weights(GS6_CP, NTL9_CP):
+    default_weight = 1.0
+    modes = 'CA,COM'.split(',')
+    rms_options = [False, True]
+    proteins = [GS6_CP, NTL9_CP]
+    for protein in proteins:
+        weights = [default_weight for frame in range(protein.n_frames)]
+        normalized_weights = [w/protein.n_frames for w in weights]
+        for mode in modes:
+            for rms_option in rms_options:
+                results = protein.get_distance_map(mode=mode, RMS=rms_option, weights=normalized_weights)
+                distance_map, std_dev = results
+
+                protein_residues = len(protein.resid_with_CA)
+                expected_shape = (protein_residues, protein_residues)
+
+                assert distance_map.shape == expected_shape
+                assert std_dev.shape == expected_shape
+
+                if rms_option is True:
+                    assert np.count_nonzero(np.tril(std_dev, -1)) == 0
+
+
+def test_get_local_collapse_invalid_bins(GS6_CP, NTL9_CP):
+    proteins = [GS6_CP, NTL9_CP]
+    for protein in proteins:
+        # Wrong number of bins
+        with pytest.raises(CTException):
+            protein.get_local_collapse(bins=[1])
+
+        # Wrong bins type
+        with pytest.raises(CTException):
+            protein.get_local_collapse(bins='a,b,c,d'.split(','))
+
+        # Uneven bins spacing
+        bins = [1,2,4,6]
+        with pytest.raises(CTException):
+            protein.get_local_collapse(bins=bins)
+
+
+def test_get_local_collapse_invalid_window_size(GS6_CP, NTL9_CP):
+    proteins = [GS6_CP, NTL9_CP]
+    for protein in proteins:
+        number_of_residues = protein.n_residues + 1
+        with pytest.raises(CTException):
+            protein.get_local_collapse(window_size=number_of_residues)
+
+
+def test_get_local_collapse_successful_run(NTL9_CP):
+    # get_local_collapse(self, window_size=10, bins=None, verbose=True)
+    window_size = 10
+    meanData, stdData, histo, bins = NTL9_CP.get_local_collapse()
+
+    expected_length = NTL9_CP.n_residues - (window_size - 1)
+    assert len(meanData) == expected_length
+    assert len(stdData) == expected_length
+    assert len(histo) == expected_length
+    assert type(bins) != None
+
+
+# CTProtein.get_angle_decay
+def test_get_angle_decay_return_full_matrix(GS6_CP, NTL9_CP):
+    proteins = [GS6_CP, NTL9_CP]
+    for protein in proteins:
+        result = protein.get_angle_decay(return_full_matrix=True)
+        assert len(result) == 2
+
+        return_matrix, full_matrix = result
+        assert full_matrix.shape == return_matrix.shape
+
+
+#get_local_to_global_correlation(self, mode='COM', n_cycles=100, max_num_pairs=10, stride=20, weights=False, verbose=True)
+def test_get_local_to_global_correlation(GS6_CP, NTL9_CP):
+    proteins = [GS6_CP, NTL9_CP]
+    for protein in proteins:
+        pass
