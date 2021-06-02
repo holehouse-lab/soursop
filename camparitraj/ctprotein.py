@@ -4276,16 +4276,17 @@ class CTProtein:
             full_matrix = np.zeros((len(return_matrix),len(return_matrix)))
 
             # for 0 to the number of residues (i.e. each row in the [nres x nres] matrix
-            for i in range(0, len(return_matrix)):
+            #for i in range(0, len(return_matrix)):
+            for i in all_vals:
 
                 # set the column selector (c) to zero
                 c = 0
                 # iterate through
                 for j in range(0, len(all_vals[i])):
-                    full_matrix[i,c] = all_vals[i][j]
+                    full_matrix[i-1,c] = all_vals[i][j]
 
                 for j in range(len(all_vals[i]), len(return_matrix)):
-                    full_matrix[i,c] = 0.0
+                    full_matrix[i-1,c] = 0.0
 
             return (return_matrix, full_matrix)
         else:

@@ -581,7 +581,16 @@ def test_get_angle_decay_return_full_matrix(GS6_CP, NTL9_CP):
         assert len(result) == 2
 
         return_matrix, full_matrix = result
-        assert full_matrix.shape == return_matrix.shape
+        assert full_matrix.shape[0] == len(return_matrix)
+        assert len(return_matrix[0]) == 3
+
+        num_caps = 0
+        if protein.ncap:
+            num_caps += 1
+        if protein.ccap:
+            num_caps += 1
+
+        assert full_matrix.shape[0] == protein.n_residues - num_caps
 
 
 #get_local_to_global_correlation(self, mode='COM', n_cycles=100, max_num_pairs=10, stride=20, weights=False, verbose=True)
