@@ -2777,10 +2777,12 @@ class CTProtein:
         2) The sequence separation associated with each set of measurements (i.e. a single
            list which will normally be 0,1,2,3,...n where n = number of residues in sequence.
 
-        The internal scaling profile is a plot of sequence separation vs. mean through-space distance for
-        all pairs of residues at a given sequence separation. What this means is that if we had a 6 residue
-        peptide the internal scaling profile would be calculated as follows.
-
+        The internal scaling profile is a plot of sequence separation vs. mean through-space 
+        distance for all pairs of residues at a given sequence separation. What this means is 
+        that if we had a 6 residue peptide the internal scaling profile would be calculated as 
+        follows.
+        
+        
         sequence separation = 0
         average distance(average distance of 1-to-1, 2-to-2, 3-to-3, etc.)
 
@@ -3687,9 +3689,9 @@ class CTProtein:
         Mutual information matrix ( n x n) where n is the number of that type of
         bonds in the protein.
 
-        ........................................
-        OPTIONS
-        ........................................
+       
+        Parameter
+        -------------
 
         angle_name
         String, must be one of the following options
@@ -3982,7 +3984,7 @@ class CTProtein:
     # ........................................................................
     #
     #
-    def get_secondary_structure_DSSP(self, R1=None, R2=None):
+    def get_secondary_structure_DSSP(self, R1=None, R2=None, return_per_frame=False):
         """
         Returns the a 4 by n numpy array inwhich column 1 gives residue number, column 2 is local helicity,
         column 3 is local 'extended' (beta strand/sheet) and column 4 is local coil on a per-residue
@@ -3990,8 +3992,22 @@ class CTProtein:
 
         Parameter R1 and R2 define a local region if only a sub-region is required.
 
-        Return vector provides normalized secondary structure (between 0 and 1) which reflects
-        the fraction of the simulation each residue is in that particular secondary structure type.
+        The function return depends on if return_per_frame is set to True or False.
+
+        If False (default), a tuple is returned where the 4 internal vectors are
+        [0] - residue ID list - integers counting the resid for each element in the 
+              other lists
+        [1] - per residue factional helicity content
+        [2] - per residue factional extended content
+        [3] - per residue fractional coil content
+
+        If True, returns a tuple where the 4 elements are
+        [0] - residue ID list - integers counting the resid for each element in the 
+              other lists
+        [1] - frame vs. residue matrix where 1 = helix and 0 = not helix
+        [2] - frame vs. residue matrix where 1 = extended and 0 = not extended
+        [3] - frame vs. residue matrix where 1 = coil and 0 = not coil
+        
 
         Parameters
         ----------
@@ -4005,16 +4021,19 @@ class CTProtein:
              Default value is None. Defines the value for last residue in the region of
              interest. If not provided (False) then last residue is used.
 
+        return_per_frame : bool {False}
+            Default value is False. Defines if the function should, instead of returning average
+            data, return three N x F (N = number of residues, F number of frames) where 1 = the 
+            associated secondary structure is seen and 0 not seen
+
 
         Returns
         -------
-
-        ddsp_vector : np.array
-             A 4xn numpy array (where n is the number of residues) in which column 1 defines the
-             residue index and column 2-4 defines the fractional occupancy of helical (H),
-             extended (E) (beta-like) and coil (C) states. Note the three classifications will
-             sum to 1 (within numerical precision).
-
+                
+        tuple
+            Returns a 4x tuple, where the meaning of the elements depend on if the return_per_frame 
+            is set to to True or False. See function description for further explanation.
+             
         """
 
         # build R1/R2 values
@@ -4027,34 +4046,44 @@ class CTProtein:
 
         # compute DSSP over the selected subtrajectory
         dssp_data = md.compute_dssp(ats)
+        reslist    = list(range(R1_real, R2_real+1))
 
         C_vector = []
         E_vector = []
         H_vector = []
 
+        # if we want per-frame 
+        if return_per_frame is True:
+            for f in dssp_data:
+                C_vector.append(np.array(f=='C',dtype=int).tolist())
+                E_vector.append(np.array(f=='E',dtype=int).tolist())
+                H_vector.append(np.array(f=='H',dtype=int).tolist())
+                
+            return (reslist, np.array(H_vector), np.array(E_vector), np.array(C_vector))
+
         # note the + 1 because the R1 and R2 positions are INCLUSIVE whereas
-        reslist    = list(range(R1_real, R2_real+1))
-        n_frames   = self.n_frames
+        else:
+            n_frames   = self.n_frames
 
-        for i in range(len(reslist)):
-            C_vector.append(float(sum(dssp_data.transpose()[i] == 'C'))/n_frames)
-            E_vector.append(float(sum(dssp_data.transpose()[i] == 'E'))/n_frames)
-            H_vector.append(float(sum(dssp_data.transpose()[i] == 'H'))/n_frames)
+            for i in range(len(reslist)):
+                C_vector.append(float(sum(dssp_data.transpose()[i] == 'C'))/n_frames)
+                E_vector.append(float(sum(dssp_data.transpose()[i] == 'E'))/n_frames)
+                H_vector.append(float(sum(dssp_data.transpose()[i] == 'H'))/n_frames)
 
 
-        return np.array((reslist, H_vector, E_vector, C_vector))
+            return (reslist, np.array(H_vector), np.array(E_vector), np.array(C_vector))
 
 
     # ........................................................................
     #
     #
-    def get_secondary_structure_BBSEG(self, R1=None, R2=None):
+    def get_secondary_structure_BBSEG(self, R1=None, R2=None, return_per_frame=False):
         """
         Returns a dictionary where eack key-value pair is keyed by a BBSEG classification
         type (0-9) and each value is a vector showing the fraction of time each residue
         is in that particular BBSEG type.
 
-        BBSEG classification types are listed below
+        BBSEG classification types are listed below:
 
         0 - unclassified
         1 - beta (turn/sheet)
@@ -4068,9 +4097,20 @@ class CTProtein:
 
         Parameters R1 and R2 are optional and allow a local sub-region to be defined.
 
-        The return dictionary provides a classification vector for each of the 9 possible
-        types of classification (note 0 = unclassified).
+        The function return depends on if return_per_frame is set to True or False.
 
+        If False (default), a tuple is returned with the following elements:
+        [0] - residue ID list - integers counting the resid for each element in the 
+              other lists
+        [1] - Dictionary where keys are the BBSEG types and values are lists with
+              fractional per-residue content for the associated BBSEG type.
+
+        If True, a tupe is returned with the following elements:
+        [0] - residue ID list - integers counting the resid for each element in the 
+              other lists
+        [1]  - Dictionary where keys are BBSEG types and values are 2d np.arrays 
+               that map frame and residue with a 1 if the given BBSEG structure is
+               found and 0 if not.
 
         Parameters
         ----------
@@ -4084,6 +4124,11 @@ class CTProtein:
              Default value is False. Defines the value for last residue in the region of
              interest. If not provided (False) then last residue is used.
 
+        return_per_frame : bool {False}
+            Default value is False. Defines if the function should, instead of returning average
+            data, return three N x F (N = number of residues, F number of frames) where 1 = the 
+            associated secondary structure is seen and 0 not seen
+
 
         Returns
         -------
@@ -4096,8 +4141,17 @@ class CTProtein:
 
         """
 
-        # build R1/R2 values
-        out = self.__get_first_and_last(R1, R2, withCA=True)
+        # build R1/R2 values - NOTE that for BBSEG because we compute from PHI/PSI angles
+        # we don't need to specify withCA becayse phi/psi are oNLY between valid peptide
+        # units, so this means we automatically select the right sets of residues
+        out = self.__get_first_and_last(R1, R2, withCA=False)
+
+        # note we select RESID using withCA = True
+        out_selector = self.__get_first_and_last(R1, R2, withCA=True)
+        R1_real = out_selector[0]
+        R2_real = out_selector[1]
+        reslist    = list(range(R1_real, R2_real+1))
+
 
         # extract the phi/psi angles in degrees
         phi_data = np.degrees(md.compute_phi(self.traj.atom_slice(self.topology.select('%s'%(out[2]))))[1])
@@ -4119,14 +4173,34 @@ class CTProtein:
 
         # convert to a numpy array
         all_classes = np.array(all_classes)
-
-        # finally cycle through each BBSEG classification type and average
-        # over each frame (shape_info[0] is number of frames)
         return_bbseg = {}
-        for c in range(0,9):
-            return_bbseg[c] = list(np.sum((all_classes == c)*1,0)/shape_info[0])
 
-        return return_bbseg
+        # if we want per-frame BBSEG secondary structure info  
+        if return_per_frame:
+
+            # initialize the empty lists to be appended to
+            for c in range(0, 9):
+                return_bbseg[c] = []
+
+            # cycle over each frame
+            for f in all_classes:
+
+                # cycle over each class in each frame to binarize the per-frame/per residue vector
+                for c in range(0,9):
+                    return_bbseg[c].append(np.array(f==c, dtype=int).tolist())
+            
+            for c in return_bbseg:
+                return_bbseg[c] = np.array(return_bbseg[c])
+            return (reslist, return_bbseg)
+        else:
+
+            # finally cycle through each BBSEG classification type and average
+            # over each frame (shape_info[0] is number of frames)
+        
+            for c in range(0,9):
+                return_bbseg[c] = np.sum((all_classes == c)*1,0)/shape_info[0]
+
+            return (reslist, return_bbseg)
 
 
     # ........................................................................

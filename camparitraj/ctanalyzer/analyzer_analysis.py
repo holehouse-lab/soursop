@@ -357,7 +357,7 @@ def run_BBSEG_analysis(CP, outdir):
     bbseg_out = CP.get_secondary_structure_BBSEG()
 
     for i in range(0, 9):
-        np.savetxt('%s/BBSEG_%i.csv' % (outdir,i), np.array(bbseg_out[i]), delimiter=', ')
+        np.savetxt('%s/BBSEG_%i.csv' % (outdir,i), np.array(bbseg_out[1][i]), delimiter=', ')
 
 
 #>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
