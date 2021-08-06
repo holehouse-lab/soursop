@@ -1,23 +1,23 @@
 """
-Unit and regression test for the camparitraj package.
+Unit and regression test for the soursop package.
 """
 
 # Import package, test suite, and other packages as needed
 import numpy as np
-import camparitraj
+import soursop
 import pytest
 import sys
 import random
 import itertools
 from copy import deepcopy
-from camparitraj import cttrajectory, ctprotein
-from camparitraj.ctexceptions import CTException
-from camparitraj.configs import DEBUGGING
+from soursop import sstrajectory, ssprotein
+from soursop.ssexceptions import SSException
+from soursop.configs import DEBUGGING
 
 
 def test_contacts_special(NTL9_CP):
 
-    with pytest.raises(CTException) as error:
+    with pytest.raises(SSException) as error:
         a = NTL9_CP.get_contact_map(distance_thresh=2, stride=1, mode='sidechain-heavy')
 
 def test_code_coverage(NTL9_CP):
@@ -139,9 +139,9 @@ def test_get_internal_scaling_RMS(GS6_CP):
     assert abs(np.mean(GS6_CP.get_internal_scaling_RMS(R1=1,R2=4)[1][1]) - 3.7455646317574534) < 0.001
 
 
-def test_camparitraj_imported():
+def test_soursop_imported():
     """Sample test, will always pass so long as import statement worked"""
-    assert "camparitraj" in sys.modules
+    assert "soursop" in sys.modules
 
 
 def test_DSSP(NTL9_CP):
@@ -163,7 +163,7 @@ def test_phi_psi_bbseg(NTL9_CP):
     """
 
     # read in BBSEG file
-    bbseg_file = camparitraj.get_data('bbseg2.dat')
+    bbseg_file = soursop.get_data('bbseg2.dat')
     with open(bbseg_file,'r') as fh:
         content = fh.readlines()
 
@@ -172,7 +172,7 @@ def test_phi_psi_bbseg(NTL9_CP):
 
         local = ''
         for phi in range(-179,180, 10):
-            local = local + '%i ' %(NTL9_CP._CTProtein__phi_psi_bbseg([phi],[psi])[0])
+            local = local + '%i ' %(NTL9_CP._SSProtein__phi_psi_bbseg([phi],[psi])[0])
 
         assert(content[idx].strip() == local.strip())
         idx=idx+1
@@ -203,12 +203,12 @@ def test_init_from_trajectory(GS6_CO, NTL9_CO, GS6_CP, NTL9_CP):
     trajs = [GS6_CO, NTL9_CO]
     proteins = [GS6_CP, NTL9_CP]
     for ct_traj, ct_protein in zip(trajs, proteins):
-        protein_from_md = ctprotein.CTProtein(ct_traj)
+        protein_from_md = ssprotein.SSProtein(ct_traj)
         assert protein_from_md.n_frames > 0
         assert protein_from_md.n_residues > 0
         assert protein_from_md.length() == ct_protein.length()
 
-        protein_from_ct = ctprotein.CTProtein(ct_traj.traj)
+        protein_from_ct = ssprotein.SSProtein(ct_traj.traj)
         assert protein_from_ct.n_frames > 0
         assert protein_from_ct.n_residues > 0
         assert protein_from_ct.length() == ct_protein.length()
@@ -218,19 +218,19 @@ def test_init_from_trajectory_invalid():
     args = [1, 1.0, 'test', None]
     for arg in args:
         with pytest.raises(RuntimeError):
-            protein = ctprotein.CTProtein(arg)
+            protein = ssprotein.SSProtein(arg)
 
 
 def test_init_from_trajectory_debug(GS6_CO, NTL9_CO, GS6_CP, NTL9_CP):
     trajs = [GS6_CO, NTL9_CO]
     proteins = [GS6_CP, NTL9_CP]
     for ct_traj, ct_protein in zip(trajs, proteins):
-        protein_from_md = ctprotein.CTProtein(ct_traj.traj, debug=True)
+        protein_from_md = ssprotein.SSProtein(ct_traj.traj, debug=True)
         assert protein_from_md.n_frames > 0
         assert protein_from_md.n_residues > 0
         assert protein_from_md.length() == ct_protein.length()
 
-        protein_from_ct = ctprotein.CTProtein(ct_traj, debug=True)
+        protein_from_ct = ssprotein.SSProtein(ct_traj, debug=True)
         assert protein_from_ct.n_frames > 0
         assert protein_from_ct.n_residues > 0
         assert protein_from_ct.length() == ct_protein.length()
@@ -241,7 +241,7 @@ def test_properties(GS6_CO, NTL9_CO, GS6_CP, NTL9_CP):
     trajs = [GS6_CO, NTL9_CO]
     proteins = [GS6_CP, NTL9_CP]
     for ct_traj, ct_protein in zip(trajs, proteins):
-        protein_from_ct = ctprotein.CTProtein(ct_traj)
+        protein_from_ct = ssprotein.SSProtein(ct_traj)
 
         for prop in properties:
             assert getattr(protein_from_ct, prop) == getattr(ct_protein, prop)
@@ -251,7 +251,7 @@ def test_repr(GS6_CP, NTL9_CP):
     proteins = [GS6_CP, NTL9_CP]
     for protein in proteins:
         repr_string = repr(protein)
-        rebuilt_repr = "CTProtein (%s): %i res and %i frames" % (hex(id(protein)), protein.n_residues, protein.n_frames)
+        rebuilt_repr = "SSprotein (%s): %i res and %i frames" % (hex(id(protein)), protein.n_residues, protein.n_frames)
         assert rebuilt_repr == repr_string
 
 
@@ -269,7 +269,7 @@ def test_check_weights_invalid_weights_type(GS6_CP, NTL9_CP):
     for protein in proteins:
         weights = 'abcdefgh'
         with pytest.raises(ValueError):
-            protein._CTProtein__check_weights(weights=weights)
+            protein._SSProtein__check_weights(weights=weights)
 
 
 def test_check_weights_valid_uniform_weights_length(GS6_CP, NTL9_CP):
@@ -278,7 +278,7 @@ def test_check_weights_valid_uniform_weights_length(GS6_CP, NTL9_CP):
     for protein in proteins:
         weights = [default_weight for frame in range(protein.n_frames)]
         normalized_weights = [w/protein.n_frames for w in weights]
-        protein._CTProtein__check_weights(weights=normalized_weights)
+        protein._SSProtein__check_weights(weights=normalized_weights)
 
 
 def test_check_weights_valid_uniform_weights_length_low_etol(GS6_CP, NTL9_CP):
@@ -288,7 +288,7 @@ def test_check_weights_valid_uniform_weights_length_low_etol(GS6_CP, NTL9_CP):
     for protein in proteins:
         weights = [default_weight for frame in range(protein.n_frames)]
         normalized_weights = [w/protein.n_frames for w in weights]
-        protein._CTProtein__check_weights(weights=normalized_weights, etol=tolerance)
+        protein._SSProtein__check_weights(weights=normalized_weights, etol=tolerance)
 
 
 def test_check_weights_valid_uniform_weights_length_large_etol(GS6_CP, NTL9_CP):
@@ -298,7 +298,7 @@ def test_check_weights_valid_uniform_weights_length_large_etol(GS6_CP, NTL9_CP):
     for protein in proteins:
         weights = [default_weight for frame in range(protein.n_frames)]
         normalized_weights = [w/protein.n_frames for w in weights]
-        out = protein._CTProtein__check_weights(weights=normalized_weights, etol=tolerance)
+        out = protein._SSProtein__check_weights(weights=normalized_weights, etol=tolerance)
         assert np.allclose(out, normalized_weights)
 
 
@@ -308,7 +308,7 @@ def test_check_weights_valid_nonuniform_weights_length_low_etol(GS6_CP, NTL9_CP)
     for protein in proteins:
         weights = [w for w in range(1, protein.n_frames + 1)]
         normalized_weights = [w/sum(weights) for w in weights]
-        protein._CTProtein__check_weights(weights=normalized_weights, etol=tolerance)
+        protein._SSProtein__check_weights(weights=normalized_weights, etol=tolerance)
 
 
 def test_check_weights_invalid_uniform_weights_length(GS6_CP, NTL9_CP):
@@ -317,8 +317,8 @@ def test_check_weights_invalid_uniform_weights_length(GS6_CP, NTL9_CP):
     for protein in proteins:
         weights = [default_weight for frame in range(protein.n_frames - 1)]
         normalized_weights = [w/protein.n_frames for w in weights]
-        with pytest.raises(CTException):
-            protein._CTProtein__check_weights(weights=normalized_weights)
+        with pytest.raises(SSException):
+            protein._SSProtein__check_weights(weights=normalized_weights)
 
 
 def test_check_weights_valid_uniform_weights_nondefault_stride(GS6_CP, NTL9_CP):
@@ -328,7 +328,7 @@ def test_check_weights_valid_uniform_weights_nondefault_stride(GS6_CP, NTL9_CP):
     for protein in proteins:
         weights = [default_weight for frame in range(protein.n_frames)]
         normalized_weights = [w/protein.n_frames for w in weights]
-        protein._CTProtein__check_weights(weights=normalized_weights, stride=stride)
+        protein._SSProtein__check_weights(weights=normalized_weights, stride=stride)
 
 
 def test_check_weights_short_uniform_weights_nondefault_stride(GS6_CP, NTL9_CP):
@@ -338,11 +338,11 @@ def test_check_weights_short_uniform_weights_nondefault_stride(GS6_CP, NTL9_CP):
     for protein in proteins:
         weights = [default_weight for frame in range(0, protein.n_frames, stride)]
         normalized_weights = [w/protein.n_frames for w in weights]
-        with pytest.raises(CTException):
-            protein._CTProtein__check_weights(weights=normalized_weights, stride=stride)
+        with pytest.raises(SSException):
+            protein._SSProtein__check_weights(weights=normalized_weights, stride=stride)
 
 
-# == CTProtein.__get_first_and_last
+# == SSProtein.__get_first_and_last
 # Should there be a test for R1 == R2?
 def test_get_first_and_last_flip_residue_indices(GS6_CP, NTL9_CP):
     proteins = [GS6_CP, NTL9_CP]
@@ -358,30 +358,30 @@ def test_get_first_and_last_flip_residue_indices(GS6_CP, NTL9_CP):
         random.shuffle(upper)
         r1 = random.choice(upper)
         r2 = random.choice(lower)
-        protein._CTProtein__get_first_and_last(r1, r2)
+        protein._SSProtein__get_first_and_last(r1, r2)
 
 
-# == CTProtein.__check_stride
+# == SSProtein.__check_stride
 def test_check_invalid_strides(GS6_CP, NTL9_CP):
     strides = [-1, 0, 100]  # none of the proteins have more than 100 frames.
     proteins = [GS6_CP, NTL9_CP]
     for protein in proteins:
         for stride in strides:
-            with pytest.raises(CTException):
-                protein._CTProtein__check_stride(stride)
+            with pytest.raises(SSException):
+                protein._SSProtein__check_stride(stride)
 
 
-# == CTProtein.__check_single_residue
+# == SSProtein.__check_single_residue
 def test_check_invalid_single_residue(GS6_CP, NTL9_CP):
     invalid_residues = [-1, 100]  # none of the proteins have more than 100 residues
     proteins = [GS6_CP, NTL9_CP]
     for protein in proteins:
         for invalid_residue_index in invalid_residues:
-            with pytest.raises(CTException):
-                protein._CTProtein__check_single_residue(invalid_residue_index)
+            with pytest.raises(SSException):
+                protein._SSProtein__check_single_residue(invalid_residue_index)
 
 
-# == CTProtein.__check_contains_CA
+# == SSProtein.__check_contains_CA
 '''
 def test_check_contains_CA_raises_exception(GS6_CP, NTL9_CP):
     # Requires modifying the protein topology to insert one or more fake residues where CA is missing
@@ -391,8 +391,8 @@ def test_check_contains_CA_raises_exception(GS6_CP, NTL9_CP):
         residues_no_CA = protein.topology.select('resid %i to %i and atom not type "CA"' % (0, protein.n_residues - 1))
         print(residues_no_CA)
         for residue in residues_no_CA:
-            with pytest.raises(CTException):
-                protein._CTProtein__check_contains_CA(residue)
+            with pytest.raises(SSException):
+                protein._SSProtein__check_contains_CA(residue)
 '''
 
 def test_check_contains_CA_successful(GS6_CP, NTL9_CP):
@@ -400,18 +400,18 @@ def test_check_contains_CA_successful(GS6_CP, NTL9_CP):
     for protein in proteins:
         residues_CA = protein.resid_with_CA
         for residue in residues_CA:
-            return_value = protein._CTProtein__check_contains_CA(residue)
+            return_value = protein._SSProtein__check_contains_CA(residue)
             assert return_value == None
 
 
-# == CTProtein.__get_selection_atoms
+# == SSProtein.__get_selection_atoms
 def test_get_selection_atoms_region_of_size_2(GS6_CP, NTL9_CP):
     proteins = [GS6_CP, NTL9_CP]
     for protein in proteins:
         region = (0, protein.n_residues - 1)
         choices = itertools.product([True, False], repeat=2)
         for backbone, heavy in choices:
-            protein._CTProtein__get_selection_atoms(region, backbone, heavy)
+            protein._SSProtein__get_selection_atoms(region, backbone, heavy)
 
 
 def test_get_selection_atoms_invalid_region_of_size_3(GS6_CP, NTL9_CP):
@@ -420,11 +420,11 @@ def test_get_selection_atoms_invalid_region_of_size_3(GS6_CP, NTL9_CP):
         region = (0, protein.n_residues - 1, 0)  # the last index doesn't matter (will raise exception regardless)
         choices = itertools.product([True, False], repeat=2)
         for backbone, heavy in choices:
-            with pytest.raises(CTException):
-                protein._CTProtein__get_selection_atoms(region, backbone, heavy)
+            with pytest.raises(SSException):
+                protein._SSProtein__get_selection_atoms(region, backbone, heavy)
 
 
-# == CTProtein.get_amino_acid_sequence
+# == SSProtein.get_amino_acid_sequence
 def test_get_amino_acid_sequence(GS6_CP, NTL9_CP):
     proteins = [GS6_CP, NTL9_CP]
     for protein in proteins:
@@ -453,7 +453,7 @@ def test_get_multiple_CA_index_existing(GS6_CP, NTL9_CP):
             # Validate the results and ensure they are ints
             assert len(atom_index) == 1
             assert residue_id in protein.resid_with_CA
-            assert residue_id in protein._CTProtein__resid_with_CA
+            assert residue_id in protein._SSProtein__resid_with_CA
             assert type(atom_index[0]) in [np.int16, np.int32, np.int64]
             assert atom_index[0] > 0
 
@@ -463,7 +463,7 @@ def test_get_multiple_CA_index_invalid_residue_number(GS6_CP, NTL9_CP):
     for protein in proteins:
         max_residue = protein.n_residues
         for residue_index in range(max_residue + 1, max_residue + protein.n_residues):
-            with pytest.raises(CTException):
+            with pytest.raises(SSException):
                 protein.get_multiple_CA_index(residue_index)
 
 
@@ -489,16 +489,16 @@ def test_calculate_all_CA_distances_invalid_residue_number(GS6_CP, NTL9_CP):
             assert index == -1
 
 
-# == CTProtein._CTProtein__residue_atom_com
+# == SSProtein._SSProtein__residue_atom_com
 def test_residue_atom_com_new_resid_atom_name_None(GS6_CO, NTL9_CO):
     trajs = [GS6_CO, NTL9_CO]
     for traj in trajs:
         # instantiate a new protein object since the previous reference is modified
         # elsewhere - hence our residue count will be off.
-        protein = ctprotein.CTProtein(traj)
+        protein = ssprotein.SSProtein(traj)
         unavailable_residue_index = protein.n_residues + 1
         protein.residue_atom_com(unavailable_residue_index, atom_name=None)
-        assert len(protein._CTProtein__residue_atom_table) == protein.n_residues + 1
+        assert len(protein._SSProtein__residue_atom_table) == protein.n_residues + 1
 
 
 def test_residue_atom_com_new_resid_atom_name_CA(GS6_CO, NTL9_CO):
@@ -506,10 +506,10 @@ def test_residue_atom_com_new_resid_atom_name_CA(GS6_CO, NTL9_CO):
     for traj in trajs:
         # instantiate a new protein object since the previous reference is modified
         # elsewhere - hence our residue count will be off.
-        protein = ctprotein.CTProtein(traj)
+        protein = ssprotein.SSProtein(traj)
         unavailable_residue_index = protein.n_residues + 1
         protein.residue_atom_com(unavailable_residue_index, atom_name='CA')
-        assert len(protein._CTProtein__residue_atom_table) == protein.n_residues + 1
+        assert len(protein._SSProtein__residue_atom_table) == protein.n_residues + 1
 
 
 
@@ -540,16 +540,16 @@ def test_get_local_collapse_invalid_bins(GS6_CP, NTL9_CP):
     proteins = [GS6_CP, NTL9_CP]
     for protein in proteins:
         # Wrong number of bins
-        with pytest.raises(CTException):
+        with pytest.raises(SSException):
             protein.get_local_collapse(bins=[1])
 
         # Wrong bins type
-        with pytest.raises(CTException):
+        with pytest.raises(SSException):
             protein.get_local_collapse(bins='a,b,c,d'.split(','))
 
         # Uneven bins spacing
         bins = [1,2,4,6]
-        with pytest.raises(CTException):
+        with pytest.raises(SSException):
             protein.get_local_collapse(bins=bins)
 
 
@@ -557,7 +557,7 @@ def test_get_local_collapse_invalid_window_size(GS6_CP, NTL9_CP):
     proteins = [GS6_CP, NTL9_CP]
     for protein in proteins:
         number_of_residues = protein.n_residues + 1
-        with pytest.raises(CTException):
+        with pytest.raises(SSException):
             protein.get_local_collapse(window_size=number_of_residues)
 
 
@@ -573,7 +573,7 @@ def test_get_local_collapse_successful_run(NTL9_CP):
     assert type(bins) != None
 
 
-# CTProtein.get_angle_decay
+# SSProtein.get_angle_decay
 def test_get_angle_decay_return_full_matrix(GS6_CP, NTL9_CP):
     proteins = [GS6_CP, NTL9_CP]
     for protein in proteins:
@@ -609,7 +609,7 @@ def test_get_angle_decay_no_return_full_matrix(GS6_CP, NTL9_CP):
         assert len(return_matrix) == protein.n_residues - num_caps
 
 
-# CTProtein.get_contact_map
+# SSProtein.get_contact_map
 def test_get_contact_map_weights(GS6_CP, NTL9_CP):
     default_weight = 1.0
     modes = 'ca,closest,closest-heavy,sidechain'.split(',')
@@ -637,20 +637,20 @@ def test_get_contact_map_weights_sidechain_heavy(GS6_CP, NTL9_CP):
         weights = [default_weight for frame in range(protein.n_frames)]
         normalized_weights = [w/protein.n_frames for w in weights]
 
-        with pytest.raises(CTException):
+        with pytest.raises(SSException):
             protein.get_contact_map(mode=mode, weights=normalized_weights)  # the other options have been tested
 
 
-# CTProtein.get_sidechain_alignment_angle
+# SSProtein.get_sidechain_alignment_angle
 def test_get_sidechain_alignment_angle_unsupported_angle(GS6_CP, NTL9_CP):
     proteins = [GS6_CP, NTL9_CP]
     R1 = 0
     R2 = 0
     for protein in proteins:
-        with pytest.raises(CTException):
+        with pytest.raises(SSException):
             protein.get_sidechain_alignment_angle(R1, R2, sidechain_atom_1='invalid_atom')
 
-        with pytest.raises(CTException):
+        with pytest.raises(SSException):
             protein.get_sidechain_alignment_angle(R1, R2, sidechain_atom_2='invalid_atom')
 
 
@@ -680,7 +680,7 @@ def test_get_sidechain_alignment_angle_invalid_r1(GS6_CP, NTL9_CP):
         r1 = max_residue + protein.n_residues
         r2 = 0
 
-        with pytest.raises(CTException):
+        with pytest.raises(SSException):
             protein.get_sidechain_alignment_angle(r1, r2)
 
 
@@ -691,7 +691,7 @@ def test_get_sidechain_alignment_angle_invalid_r2(GS6_CP, NTL9_CP):
         r1 = 0
         r2 = max_residue + protein.n_residues
 
-        with pytest.raises(CTException):
+        with pytest.raises(SSException):
             protein.get_sidechain_alignment_angle(r1, r2)
 
 
@@ -701,13 +701,13 @@ def test_get_local_to_global_correlation_unsupported_modes(GS6_CP, NTL9_CP):
     invalid_modes = 'unknown,unsupported'.split(',')
     for protein in proteins:
         for mode in invalid_modes:
-            with pytest.raises(CTException):
+            with pytest.raises(SSException):
                 protein.get_local_to_global_correlation(mode=mode)
 
 
 """
 # Requires additional work. Exception raised:
-# "raise CTException('Something when wrong when comparing stride-derived Rg and internal distances, this is a bug in the code...)')"
+# "raise SSException('Something when wrong when comparing stride-derived Rg and internal distances, this is a bug in the code...)')"
 def test_get_local_to_global_correlation_defaults(GS6_CP, NTL9_CP, cta_protein_helper):
     num_copies = 5
     proteins = [GS6_CP, NTL9_CP]

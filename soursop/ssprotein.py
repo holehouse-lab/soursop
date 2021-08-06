@@ -1,5 +1,5 @@
 """
-CTProtein is the main protein trajectory class in CAMPARITRAJ
+SSProtein is the main protein trajectory class in CAMPARITRAJ
 
 """
 
@@ -26,9 +26,9 @@ import scipy.optimize as SPO
 from numpy.random import choice
 
 from .configs import DEBUGGING
-from .ctdata import THREE_TO_ONE, DEFAULT_SIDECHAIN_VECTOR_ATOMS, ALL_VALID_RESIDUE_NAMES
-from .ctexceptions import CTException
-from . import ctmutualinformation, ctio, cttools, ctpolymer, ctutils, cttrajectory
+from .ssdata import THREE_TO_ONE, DEFAULT_SIDECHAIN_VECTOR_ATOMS, ALL_VALID_RESIDUE_NAMES
+from .ssexceptions import SSException
+from . import ssmutualinformation, ssio, sstools, sspolymer, ssutils, sstrajectory
 
 from . _internal_data import BBSEG2
 
@@ -44,11 +44,11 @@ import scipy.cluster.hierarchy
 ##
 
 
-class CTProtein:
+class SSProtein:
     """
 
-    CTProtein objects are initialized with a trajectory subset that contains only the atoms
-    a specific, single protein. This means that a CTProtein object allows operations to
+    SSProtein objects are initialized with a trajectory subset that contains only the atoms
+    a specific, single protein. This means that a SSProtein object allows operations to
     performed on a single protein. A single trajectory may have multiple proteins in it.
     indexing with a protein object assumes that the protein is indexed from 0 to `n`,
     `n` is the number of residues.
@@ -57,7 +57,7 @@ class CTProtein:
     the correct residue index for a region of interest being examined. The region will NOT
     (necessarily) correspond to the residue index in the PDB file used.**
 
-    To make this easier the function `CTProtein.print_residues()` will print the mapping of residue
+    To make this easier the function `SSProtein.print_residues()` will print the mapping of residue
     index to residue name and residue number.
 
     To re-iterate:
@@ -74,8 +74,8 @@ class CTProtein:
     ##
     ## A note for the code:
     ## As of camparitraj 0.1.3 we assume that for each protein the first residue resid
-    ## will ALWAYS index from 0 onwards. This is explicitly checked in CTTrajectory where
-    ## CTProtein objects are built. This is a change from prior versions were an offset
+    ## will ALWAYS index from 0 onwards. This is explicitly checked in SSTrajectory where
+    ## SSProtein objects are built. This is a change from prior versions were an offset
     ## backend was built to give the illusion of resid = 0 indexinging, while on the
     ## level of the underlying mdtraj topology object this was not a given. In MDTraj
     ## 1.9.5 this has been resolved, allowing the codebase to become substantially
@@ -88,17 +88,17 @@ class CTProtein:
     #
     def __init__(self, traj, debug=DEBUGGING):
         """
-        Initialize a CTProtein object instance using trajectory information.
+        Initialize a SSProtein object instance using trajectory information.
 
         Parameters
         ----------
-        traj: `cttrajectory.CTTrajectory`
-            An instance of a system's trajectory populated via `cttrajectory.CTTrajectory`.
+        traj: `sstrajectory.SSTrajectory`
+            An instance of a system's trajectory populated via `sstrajectory.SSTrajectory`.
 
         """
 
-        # This is necessary to support cttrajectory.Trajectory as well as the default `mdtraj`.
-        if isinstance(traj, cttrajectory.CTTrajectory):
+        # This is necessary to support sstrajectory.Trajectory as well as the default `mdtraj`.
+        if isinstance(traj, sstrajectory.SSTrajectory):
             self.traj       = traj.traj
             self.topology   = traj.traj.topology
 
@@ -107,15 +107,15 @@ class CTProtein:
             self.traj     = traj
             self.topology = traj.topology
         else:
-            raise RuntimeError('The argument passed as `traj` is not a supported Trajectory object. Please use an mdtraj or CTTrjactory object.')
+            raise RuntimeError('The argument passed as `traj` is not a supported Trajectory object. Please use an mdtraj or SSTrajectory object.')
 
         if debug:
-            ctio.debug_message("Creating protein")
+            ssio.debug_message("Creating protein")
             residues_strings = list()
             for r in self.topology.chain(0).residues:
                 residues_strings.append(str(r))
             r_string = '-'.join(residues_strings)
-            ctio.debug_message("Residue string from residues in self.topology.chain(0).residues: %s" % (r_string))
+            ssio.debug_message("Residue string from residues in self.topology.chain(0).residues: %s" % (r_string))
 
             # delete the vaiable to avoid any possible introduction of this var into the namespace
             del r_string
@@ -254,7 +254,7 @@ class CTProtein:
 
 
     def  __repr__(self):
-        return "CTProtein (%s): %i res and %i frames" % (hex(id(self)), self.n_residues, self.n_frames)
+        return "SSProtein (%s): %i res and %i frames" % (hex(id(self)), self.n_residues, self.n_frames)
 
 
     def __len__(self):
@@ -304,21 +304,21 @@ class CTProtein:
             try:
                 weights = np.array(weights, dtype=np.float64)
             except ValueError as e:
-                ctio.exception_message("Unable to convert passed weights to a np.array(). Likely means the passed value is not numerical (printed below):\n\n%s"%(weights), e, with_frills=True, raise_exception=True)
+                ssio.exception_message("Unable to convert passed weights to a np.array(). Likely means the passed value is not numerical (printed below):\n\n%s"%(weights), e, with_frills=True, raise_exception=True)
 
 
             if len(weights) != self.n_frames:
-                raise CTException('Passed frame weights array is %i in length, while there are actually %i frames - these must match' % (len(weights), self.n_frames))
+                raise SSException('Passed frame weights array is %i in length, while there are actually %i frames - these must match' % (len(weights), self.n_frames))
 
 
             if stride > 1:
-                ctio.warning_message("WARNING: Using stride with weights is ALMOST certainly not a good idea unless the weights are\ncalculated for every stride-th residue", with_frills=True)
+                ssio.warning_message("WARNING: Using stride with weights is ALMOST certainly not a good idea unless the weights are\ncalculated for every stride-th residue", with_frills=True)
                 return weights[list(range(0,self.n_frames,stride))]
             else:
                 if abs(np.sum(weights) - 1.0) < etol:
                     return weights
                 else:
-                    ctio.exception_message("Unable to convert passed weights to a np.array(). Likely means the passed value is not numerical (printed below):\n\n%s"%(weights), e, with_frills=True, raise_exception=True)
+                    ssio.exception_message("Unable to convert passed weights to a np.array(). Likely means the passed value is not numerical (printed below):\n\n%s"%(weights), e, with_frills=True, raise_exception=True)
 
 
         return False
@@ -384,7 +384,7 @@ class CTProtein:
     def __check_stride(self, stride):
         """
         Checks that a passed stride value doesn't break everything. Returns `None`
-        or raises a `CTException`.
+        or raises a `SSException`.
 
         Parameters
         ----------
@@ -395,16 +395,16 @@ class CTProtein:
 
         Raises
         ------
-        CTException
+        SSException
             When the stride is larger than the number of available frames in the
             trajectory, or less than 1.
 
         """
         if stride > self.n_frames:
-            raise CTException('stride (%i) is larger than the number of frames (%i)' %(stride, self.n_frames))
+            raise SSException('stride (%i) is larger than the number of frames (%i)' %(stride, self.n_frames))
 
         if stride < 1:
-            raise CTException('stride (%i) is less than 1' %(stride))
+            raise SSException('stride (%i) is less than 1' %(stride))
 
 
 
@@ -415,7 +415,7 @@ class CTProtein:
         Internal function that checks that a single residue provided makes sense in the context of
         this protein.
 
-        Returns `None` or raises a `CTException`.
+        Returns `None` or raises a `SSException`.
 
         Parameters
         ----------
@@ -424,17 +424,17 @@ class CTProtein:
 
         Raises
         ------
-        CTException
+        SSException
             When the residue ID is greater than the chain length, or when the distances explored
             are greater than the chain size.
 
         """
 
         if R1 < 0:
-            raise CTException("Trying to use a negative residue index [residue index = %i]"%R1)
+            raise SSException("Trying to use a negative residue index [residue index = %i]"%R1)
 
         if R1  >= self.n_residues:
-            raise CTException("Trying to use a residue ID greater than the chain length [residue index = %i, chain length = %i] " % (R1, self.n_residues))
+            raise SSException("Trying to use a residue ID greater than the chain length [residue index = %i, chain length = %i] " % (R1, self.n_residues))
 
 
     # ........................................................................
@@ -443,7 +443,7 @@ class CTProtein:
         """
         Function which checks if residue R1 contains an alpha carbon (CA) atom.
 
-        Returns `None` or raises a `CTException`.
+        Returns `None` or raises a `SSException`.
 
         Parameters
         ----------
@@ -452,13 +452,13 @@ class CTProtein:
 
         Raises
         ------
-        CTException
+        SSException
             If the residue is not found in the resid_with_CA list an exception
             is raised
 
         """
         if R1 not in self.resid_with_CA:
-            raise CTException("Resid %i lacks an alpha carbon atom" % (R1))
+            raise SSException("Resid %i lacks an alpha carbon atom" % (R1))
 
         return None
 
@@ -541,7 +541,7 @@ class CTProtein:
                 # if we could get a CA then append this residue index
                 resid_with_CA.append(res.index)
 
-            except CTException:
+            except SSException:
                 continue
 
         return resid_with_CA
@@ -629,7 +629,7 @@ class CTProtein:
 
         Raises
         ------
-        CTException
+        SSException
             When the input region is larger than 2.
 
         """
@@ -666,7 +666,7 @@ class CTProtein:
                     selectionatoms = self.topology.select('resid %i to %i' % (region[0], region[1]))
 
         else:
-            raise CTException("Trying to select a subsection of atoms, but the provided 'region' tuple/list is not of exactly length two [region=%s].\nCould indicate a problem, so be safe raising an exception" % (str(region)))
+            raise SSException("Trying to select a subsection of atoms, but the provided 'region' tuple/list is not of exactly length two [region=%s].\nCould indicate a problem, so be safe raising an exception" % (str(region)))
 
         return selectionatoms
 
@@ -873,7 +873,7 @@ class CTProtein:
 
         Raises
         ------
-        CTException
+        SSException
             When the number of CA atoms do not equal 1.
 
         """
@@ -884,7 +884,7 @@ class CTProtein:
             if len(return_val) == 1:
                 self.__CA_residue_atom[resid] = return_val[0]
             else:
-                raise CTException("get_CA_index - unable to find residue %i" % resid)
+                raise SSException("get_CA_index - unable to find residue %i" % resid)
 
         return self.__CA_residue_atom[resid]
 
@@ -928,7 +928,7 @@ class CTProtein:
         for res in resID_list:
             try:
                 CAlist.append(self.get_CA_index(res))
-            except CTException as e:
+            except SSException as e:
                 print(e)
                 continue
 
@@ -984,18 +984,18 @@ class CTProtein:
 
         Raises
         ------
-        CTException
+        SSException
             If the input mode is nether 'CA' or 'COM'.
 
         """
 
         # validate input
-        ctutils.validate_keyword_option(mode, ['CA', 'COM'], 'mode')
+        ssutils.validate_keyword_option(mode, ['CA', 'COM'], 'mode')
 
         # determine atomic index of CA atom for the residue you passed in
         try:
             CA_base = self.get_CA_index(residueIndex)
-        except CTException:
+        except SSException:
 
             # if we couldln't find a C-alpha for this residue then nothing
             # makes sense so return -1
@@ -1110,7 +1110,7 @@ class CTProtein:
             - [1] := The standard deviation corresponding to the distance map.
         """
 
-        ctutils.validate_keyword_option(mode, ['CA', 'COM'], 'mode')
+        ssutils.validate_keyword_option(mode, ['CA', 'COM'], 'mode')
 
         weights = self.__check_weights(weights, stride)
 
@@ -1128,7 +1128,7 @@ class CTProtein:
         for resIndex in self.resid_with_CA[0:-1]:
 
 
-            ctio.status_message("On protein residue %i (overall residue index = %i) of %i [distance calculations]"% (SM_index, resIndex, int(len(residuesWithCA))), verbose)
+            ssio.status_message("On protein residue %i (overall residue index = %i) of %i [distance calculations]"% (SM_index, resIndex, int(len(residuesWithCA))), verbose)
 
             # get all CA-CA distances between the residue of index resIndex and every other residue.
             # Note this gives the non-redudant upper triangle.
@@ -1273,22 +1273,22 @@ class CTProtein:
 
         Raises
         ------
-        CTException
+        SSException
 
         """
 
         # First validate keyword
-        ctutils.validate_keyword_option(mode, ['fractional-change','scaled', 'signed-fractional-change', 'signed-absolute-change'], 'mode')
+        ssutils.validate_keyword_option(mode, ['fractional-change','scaled', 'signed-fractional-change', 'signed-absolute-change'], 'mode')
 
         # next check that the minimum separation requested makes sense... (this is only a partial check)
         if min_separation < 1:
-            raise CTException("Minimum separation to be used must be greater than 0")
+            raise SSException("Minimum separation to be used must be greater than 0")
 
         ## next see if nu or A0 have been provided...
 
         # If NEITHER provided then do fitting here and now!
         if nu == None and A0 == None:
-            ctio.status_message("Fitting data to homopolymer mode...", verbose)
+            ssio.status_message("Fitting data to homopolymer mode...", verbose)
 
             # remind that this is the old get_scaling_exponent_v2()
             # ALSO note this uses COM which is also how the distance map is computed
@@ -1298,20 +1298,20 @@ class CTProtein:
             REDCHI = SE[7]
 
         elif nu is None:
-            raise CTException("A0 parameter provided [%1.5f] but nu was not. Must provide BOTH or neither (in which case fitting is done)" %( A0))
+            raise SSException("A0 parameter provided [%1.5f] but nu was not. Must provide BOTH or neither (in which case fitting is done)" %( A0))
 
         elif A0 is None:
-            raise CTException("nu parameter provided [%1.5f] but A0 was not. Must provide BOTH or neither (in which case fitting is done)" %( nu))
+            raise SSException("nu parameter provided [%1.5f] but A0 was not. Must provide BOTH or neither (in which case fitting is done)" %( nu))
 
         # else both were provided so we double check they're valid..
         else:
             # sanity check nu
             if nu <= 0 or nu > 1:
-                raise CTException("Nu parameter must be in interval 0 < nu <= 1 (and probably should be between 0.33 and 1.0...)")
+                raise SSException("Nu parameter must be in interval 0 < nu <= 1 (and probably should be between 0.33 and 1.0...)")
 
             # sanity check A0
             if A0 <= 0:
-                raise CTException("A0 paameter must be greater than 0")
+                raise SSException("A0 paameter must be greater than 0")
 
             # not computing a reduced chi
             REDCHI = -1
@@ -1354,10 +1354,10 @@ class CTProtein:
         dimensions = distance_map.shape[0]
 
         if dimensions <= min_separation:
-            raise CTException('The minimum separation is shorter than the chain length')
+            raise SSException('The minimum separation is shorter than the chain length')
 
         # compute expected distance given the standard polymer scaling model
-        expected_distances = cttools.powermodel(list(range(0,dimensions)), nu, A0)
+        expected_distances = sstools.powermodel(list(range(0,dimensions)), nu, A0)
 
         # initialize the return matrix and then populate for distances that are
         # above the minimum threshold. We only populate upper right triangle
@@ -1423,7 +1423,7 @@ class CTProtein:
 
         Raises
         ------
-        CTException
+        SSException
 
 
         """
@@ -1434,14 +1434,14 @@ class CTProtein:
         else:
             try:
                 if len(bins)  < 2:
-                    raise CTException('Bins should be a numpy defined vector of values - e.g. np.arange(0,1,0.01)')
+                    raise SSException('Bins should be a numpy defined vector of values - e.g. np.arange(0,1,0.01)')
             except TypeError:
-                raise CTException('Bins should be a list, vector, or numpy array of evenly spaced values')
+                raise SSException('Bins should be a list, vector, or numpy array of evenly spaced values')
 
             try:
                 bins = np.array(bins, dtype=float)
             except ValueError:
-                raise CTException('Passed bins could not be converted to a numpy array of floats')
+                raise SSException('Passed bins could not be converted to a numpy array of floats')
 
         # check stride is ok
         self.__check_stride(stride)
@@ -1453,9 +1453,9 @@ class CTProtein:
 
         # check the fragment_size is appropriate
         if fragment_size > self.n_residues:
-            raise CTException('fragment_size is larger than the number of residues')
+            raise SSException('fragment_size is larger than the number of residues')
         if fragment_size < 2:
-            raise CTException('fragment_size must be 2 or larger')
+            raise SSException('fragment_size must be 2 or larger')
 
 
         meanData = []
@@ -1467,7 +1467,7 @@ class CTProtein:
         # untested - for loop used to be frag_idx in res_idx_list[0:-fragment_size]:
         for frag_idx in range(0, self.n_residues - fragment_size):
             tmp = []
-            ctio.status_message("On range %i" % frag_idx, verbose)
+            ssio.status_message("On range %i" % frag_idx, verbose)
 
             # for each frame in ensemble, calculate RMSD for that sub-region compared to
             # all other sub-regions (i.e. we're doing a 1-vs-all RMSD calculation for EACH
@@ -1550,7 +1550,7 @@ class CTProtein:
         # so we stick with the upper traingle only)
         SM_index=0
         for resIndex in residuesWithCA[0:-1]:
-            ctio.status_message("Calculating non redundant distance for res. %i " % resIndex, verbose)
+            ssio.status_message("Calculating non redundant distance for res. %i " % resIndex, verbose)
 
             vals = self.calculate_all_CA_distances(resIndex, stride=stride, only_C_terminal_residues=True)
 
@@ -1575,7 +1575,7 @@ class CTProtein:
         # calculate the D-vector of all frames
         D_vector = []
         for A in range(0, n_frames):
-            ctio.status_message("Running PHI calculation on frame %i of %i" % (A, n_frames), verbose)
+            ssio.status_message("Running PHI calculation on frame %i of %i" % (A, n_frames), verbose)
 
 
             for B in range(A+1, n_frames):
@@ -1770,7 +1770,7 @@ class CTProtein:
         #weights = self.__check_weights(weights, stride)
 
         if weights is not False and stride != 1:
-            raise CTException('For get_Q() weights must be set for EACH frame and stride=1')
+            raise SSException('For get_Q() weights must be set for EACH frame and stride=1')
 
         # if we're using a subregion
         # NOTE this is WAY more elegant than the previous way of doing this but there *used* to be problems with MDTraj doing
@@ -1796,7 +1796,7 @@ class CTProtein:
 
 
         except ValueError as e:
-            raise CTException('Could not convert constant into float for setting constants in get_Q().\nSee below:\n\n%s' % (str(e)))
+            raise SSException('Could not convert constant into float for setting constants in get_Q().\nSee below:\n\n%s' % (str(e)))
 
 
         # use all pairs of atoms that are over 3 away in sequence space
@@ -1821,7 +1821,7 @@ class CTProtein:
         # If we're just computing the protein average then this returns the Q value for the whole protein on a per-frame basis
         if protein_average:
             if weights is not False:
-                raise CTException('Reweighting for frame averaged should be done with trajectory weights OUTSIDE of CTraj')
+                raise SSException('Reweighting for frame averaged should be done with trajectory weights OUTSIDE of SOURSOP')
 
             q = np.mean(1.0 / (1 + np.exp(BETA_CONST * (r - LAMBDA_CONST * r0))), axis=1)
 
@@ -1977,11 +1977,11 @@ class CTProtein:
 
         """
 
-        ctutils.validate_keyword_option(mode, ['closest-heavy', 'ca', 'closest', 'sidechain', 'sidechain-heavy'] , 'mode')
+        ssutils.validate_keyword_option(mode, ['closest-heavy', 'ca', 'closest', 'sidechain', 'sidechain-heavy'] , 'mode')
 
         if weights is not False:
             if int(stride) != 1:
-                raise CTException("Cannot accomodate weights if stride is not set to 1")
+                raise SSException("Cannot accomodate weights if stride is not set to 1")
 
         # check weights are correct
         weights = self.__check_weights(weights, stride)
@@ -2006,8 +2006,8 @@ class CTProtein:
                 if mode == 'sidechain-heavy':
                     msg = "Failed computing contacts. This is likely because one of the residues has a glycine and\nthere are no heavy sidechain residues in glycine. Raising exception..."
 
-                    ctio.exception_message(msg, e, with_frills=True, raise_exception=False)
-                    raise CTException(msg)
+                    ssio.exception_message(msg, e, with_frills=True, raise_exception=False)
+                    raise SSException(msg)
 
             raise e
 
@@ -2362,7 +2362,6 @@ class CTProtein:
             protein length increases at which point increasing the stride may become necessary.
             Default = 1.
 
-
         Returns
         ---------
         np.ndarray
@@ -2371,7 +2370,7 @@ class CTProtein:
         """
 
         # check mode keyword is valid
-        ctutils.validate_keyword_option(mode, ['atom', 'ca', 'closest-heavy', 'closest', 'sidechain', 'sidechain-heavy'] , 'mode')
+        ssutils.validate_keyword_option(mode, ['atom', 'ca', 'closest-heavy', 'closest', 'sidechain', 'sidechain-heavy'] , 'mode')
 
         ## if mode is atom...
         ##
@@ -2380,7 +2379,7 @@ class CTProtein:
             try:
                 atom1 = self.__residue_atom_lookup(R1,A1)
                 if len(atom1) == 0:
-                    raise CTException('Unable to find atom [%s] in residue R1 (%i)' % (A1, R1))
+                    raise SSException('Unable to find atom [%s] in residue R1 (%i)' % (A1, R1))
 
 
                 TRJ_1 = self.traj.atom_slice(atom1)
@@ -2388,7 +2387,7 @@ class CTProtein:
 
                 atom2 = self.__residue_atom_lookup(R2,A2)
                 if len(atom2) == 0:
-                    raise CTException('Unable to find atom [%s] in residue R1 (%i)' % (A2, R2))
+                    raise SSException('Unable to find atom [%s] in residue R1 (%i)' % (A2, R2))
 
                 TRJ_2 = self.traj.atom_slice(atom2)
                 TRJ_2 = self.__get_subtrajectory(TRJ_2, stride)
@@ -2399,7 +2398,7 @@ class CTProtein:
                 distances = 10*np.sqrt(np.square(np.transpose(COM_1)[0] - np.transpose(COM_2)[0]) + np.square(np.transpose(COM_1)[1] - np.transpose(COM_2)[1])+np.square(np.transpose(COM_1)[2] - np.transpose(COM_2)[2]))
 
             except IndexError as e:
-                ctio.exception_message("This is likely because one of [%s] or [%s] is not a valid atom type for the residue in question. Full error printed below\n%s" %( A1,A2, str(e)), e, with_frills=True)
+                ssio.exception_message("This is likely because one of [%s] or [%s] is not a valid atom type for the residue in question. Full error printed below\n%s" %( A1,A2, str(e)), e, with_frills=True)
 
         # if ANY of the other modes are passed
         else:
@@ -2536,7 +2535,7 @@ class CTProtein:
 
             # quick status update...
             if count % 500 == 0:
-                ctio.status_message("On frame %i of %i [computing gyration tensor]" % (count, len(all_positions_all_frames)), verbose)
+                ssio.status_message("On frame %i of %i [computing gyration tensor]" % (count, len(all_positions_all_frames)), verbose)
 
             count = count + 1
 
@@ -2594,7 +2593,7 @@ class CTProtein:
 
         """
 
-        ctutils.validate_keyword_option(mode, ['CA', 'COM'], 'mode')
+        ssutils.validate_keyword_option(mode, ['CA', 'COM'], 'mode')
 
         # extract first and last residue that contain CA
         start = self.resid_with_CA[0]
@@ -2870,7 +2869,7 @@ class CTProtein:
 
         if weights is not False:
             if int(stride) != 1:
-                raise CTException("For get_scaling_exponent with weights stride MUST be set to 1. If this is a HUGE deal for you please contact alex and he'll try and update the code to accomodate this, but for now we suggest creating a sub-sampled trajectory and loading that")
+                raise SSException("For get_scaling_exponent with weights stride MUST be set to 1. If this is a HUGE deal for you please contact alex and he'll try and update the code to accomodate this, but for now we suggest creating a sub-sampled trajectory and loading that")
 
         # check weights are correct
         weights = self.__check_weights(weights, stride)
@@ -2879,7 +2878,7 @@ class CTProtein:
         self.__check_stride(stride)
 
         # check mode is OK
-        ctutils.validate_keyword_option(mode, ['CA', 'COM'], 'mode')
+        ssutils.validate_keyword_option(mode, ['CA', 'COM'], 'mode')
 
         # process the R1/R2 to set the positions
         out =  self.__get_first_and_last(R1, R2, withCA = True)
@@ -2896,7 +2895,7 @@ class CTProtein:
         seq_sep_vals = []
 
         for seq_sep in range(0, max_seq_sep):
-            ctio.status_message("Internal Scaling - on sequence separation %i of %i" %(seq_sep, max_seq_sep-1), verbose)
+            ssio.status_message("Internal Scaling - on sequence separation %i of %i" %(seq_sep, max_seq_sep-1), verbose)
 
             tmp = []
             seq_sep_vals.append(seq_sep)
@@ -2936,7 +2935,6 @@ class CTProtein:
     def get_internal_scaling_RMS(self, R1=None, R2=None, mode='COM', stride=1, weights=False, verbose=True):
         """
         If :math:`r_{i,j} = \langle \langle \sum \sigma_{1}` equals :math:`\sigma_{2}` then etc, etc.
-
 
         Calculates the averaged internal scaling info for the protein in the simulation in terms of
         root mean square (i.e. `sqrt(<Rij^2>`) vs `| i - j |`.
@@ -3058,7 +3056,8 @@ class CTProtein:
 
         Nu reports on the solvent quality, while the prefactor (A0) reports on the average chain persistence length. For polymers that are
         above a 0.5 scaling exponent this works, but below this they deviate from fractal behaviour, so formally this relationship stops
-        working. In practice, the best possible fit line does still track with relative compactness.
+        working. In practice, the best possible fit line does still track with relative compactness, although we urge that the meaning of 
+        nu calculated from a single-chain polymer when that chain is compact makes minimal sense.
 
         Returns a 9 position tuple with the following associated values:
         0 - best nu
@@ -3155,7 +3154,7 @@ class CTProtein:
         weights = self.__check_weights(weights, stride)
 
         # check mode is OK
-        ctutils.validate_keyword_option(mode, ['CA', 'COM'], 'mode')
+        ssutils.validate_keyword_option(mode, ['CA', 'COM'], 'mode')
 
         # compute max |i-j| distance being used...
         first = self.resid_with_CA[0]
@@ -3165,25 +3164,20 @@ class CTProtein:
         #  if we're not using fraction override check the number of points requested makes sense given sequence length
         if not fraction_override and (max_separation - (end_effect+inter_residue_min)) < num_fitting_points:
             fraction_of_points=1.0
-            ctio.warning_message("For scaling exponent calculation, sequence not long enough to use %i points (only %i valid positions once end effects and low |i-j| are accounted for), switching to using the fraction of points mode (will use %i points instead)" % (num_fitting_points, (max_separation - (end_effect+inter_residue_min)), int(fraction_of_points*(max_separation - (end_effect+inter_residue_min)))))
+            ssio.warning_message("For scaling exponent calculation, sequence not long enough to use %i points (only %i valid positions once end effects and low |i-j| are accounted for), switching to using the fraction of points mode (will use %i points instead)" % (num_fitting_points, (max_separation - (end_effect+inter_residue_min)), int(fraction_of_points*(max_separation - (end_effect+inter_residue_min)))))
 
             fraction_override = True
 
         if fraction_override:
             if fraction_of_points > 1.0:
-                raise CTException("Using fraction_overide to define the number of points to fit in the linear loglog analysis, but requested over 1.0 fraction (fraction_of_points must lie between >=0 and 1.0")
+                raise SSException("Using fraction_overide to define the number of points to fit in the linear loglog analysis, but requested over 1.0 fraction (fraction_of_points must lie between >=0 and 1.0")
             # again note int to round down here
             num_fitting_points = int(fraction_of_points*(max_separation - (end_effect + inter_residue_min)))
             if num_fitting_points < 3:
-                raise CTException("Less than three points - cannot fit a straight line")
+                raise SSException("Less than three points - cannot fit a straight line")
             if num_fitting_points < 10:
-                ctio.warning_message("Warning: Scaling fit has only %i points - likely finite size effects!" % (num_fitting_points))
+                ssio.warning_message("Warning: Scaling fit has only %i points - likely finite size effects!" % (num_fitting_points))
 
-
-        # check weights make sense...
-        weights = self.__check_weights(weights, stride)
-
-        # check that the number of points being used makes sense..
 
         # This section determines the number of subdivisions performed for error
         # bootstrapping. If we have fewer frames than we can divide the data into
@@ -3204,7 +3198,7 @@ class CTProtein:
         # for each possible sequence separation  (|i-j| value)
         for seq_sep in range(1, max_separation):
 
-            ctio.status_message("Internal Scaling - on sequence separation %i of %i" %(seq_sep, max_separation), verbose)
+            ssio.status_message("Internal Scaling - on sequence separation %i of %i" %(seq_sep, max_separation), verbose)
 
             tmp = []
             seq_sep_vals.append(seq_sep)
@@ -3250,7 +3244,7 @@ class CTProtein:
 
                 # split shuffled indices into $num_subdivisions_for_error sized chunks
 
-                subdivided_idx = cttools.chunks(idx, subdivision_size)
+                subdivided_idx = sstools.chunks(idx, subdivision_size)
 
                 # finally subselect each of the randomly selected indicies
                 RMS_local   = []
@@ -3279,7 +3273,7 @@ class CTProtein:
 
         logspaced_idx = []
         for i in range(0,num_fitting_points):
-            [local_ix,_] = cttools.find_nearest(integer_vals, i)
+            [local_ix,_] = sstools.find_nearest(integer_vals, i)
             if local_ix in logspaced_idx:
                 continue
             else:
@@ -3306,17 +3300,15 @@ class CTProtein:
         # finally calculated reduced chi squared correcting for 2 model parameters
         reduced_chi_squared_fitting = chi2 / (n_points-2)
 
-
         full_n_points = len(seq_sep_vals)
 
         chi2=0
+
         for i in range(0, full_n_points):
             chi2 = chi2 + (np.power(np.log(seq_sep_RMS_distance[i]) - nu_best*np.log(seq_sep_vals[i])+R0_best,2))/seq_sep_RMS_var_distance[i]
 
         # finally calculated reduced chi squared correcting for 2 model parameters
         reduced_chi_squared_all = chi2 / (full_n_points-2)
-
-
 
         ## >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
         ### Finally run the subselection protocol to subsampled
@@ -3339,7 +3331,7 @@ class CTProtein:
             R0_sub.append(np.nan)
 
 
-        return [nu_best, R0_best, min(nu_sub), max(nu_sub), min(R0_sub), max(R0_sub),  reduced_chi_squared_fitting, reduced_chi_squared_all, np.vstack((np.array(fitting_separation),np.array(fitting_distances))), np.vstack((seq_sep_vals, seq_sep_RMS_distance, cttools.powermodel(seq_sep_vals, nu_best, R0_best)))]
+        return [nu_best, R0_best, min(nu_sub), max(nu_sub), min(R0_sub), max(R0_sub),  reduced_chi_squared_fitting, reduced_chi_squared_all, np.vstack((np.array(fitting_separation),np.array(fitting_distances))), np.vstack((seq_sep_vals, seq_sep_RMS_distance, sstools.powermodel(seq_sep_vals, nu_best, R0_best)))]
 
 
 
@@ -3353,23 +3345,31 @@ class CTProtein:
 
         SASA is returned in Angstroms squared, BUT PROBE RADIUS is in nanometers!
 
-        ........................................
-        OPTIONS
-        ........................................
+        Parameters
+        -------------
+        
+        probe_radius : float 
+            Radius of the solvent probe used in nm. Uses the Golden-Spiral algorithm.
+            0.14 nm is pretty standard. NOTE - the probe radius must be in nanometers.
+            Default = 0.14.
+         
+
+        mode : string         
+            Defines the mode used to compute the SASA. Must be one of ['residue','atom',
+            'sidechain','backbone', 'all']. For atom mode, extracted areas are resolved 
+            per-atom.  For 'residue', this is computed instead on the per residue basis.
 
 
-        probe_radius [float]  {0.14}
-        Radius of the solvent probe used in nm. Uses the Golden-Spiral algorithm.
-        0.14 nm is pretty standard. NOTE - the probe radius must be in nanometers
+        stride : int
+            Defines the spacing between frames to compare - i.e. if comparing frame1 to a 
+            trajectory we'd compare frame 1 and every stride-th frame. Note this operation 
+            may scale poorly as protein length increases at which point increasing the 
+            stride may become necessary. NOTE default is NOT 1 because this is quite an
+            expensive analysis. Default = 20. 
 
-        mode [string] {'residue','atom','sidechain','backbone', 'all'}
-        Defines the mode used to compute the SASA. Must be one of 'residue' or
-        'atom'. For atom mode, extracted areas are resolved per-atom. For 'residue',
-        this is computed instead on the per residue basis.
-
-        stride [int] {20}
-        Defines the spacing between frames to compare - i.e. if comparing frame1
-        to a trajectory we'd compare frame 1 and every stride-th frame
+        Returns
+        -----------
+        TO DO
 
 
         """
@@ -3414,7 +3414,7 @@ class CTProtein:
 
 
         # validate input mode
-        ctutils.validate_keyword_option(mode, ['residue', 'atom','backbone','sidechain','all'], 'mode')
+        ssutils.validate_keyword_option(mode, ['residue', 'atom','backbone','sidechain','all'], 'mode')
 
         # downsample based on the stride
         target = self.__get_subtrajectory(self.traj, stride)
@@ -3460,40 +3460,52 @@ class CTProtein:
     #
     def get_site_accessibility(self, input_list, probe_radius=0.14, mode='residue_type', stride=20):
         """
-        Function to compute site/residue type accessibility. This can be done using one of two modes.
-        Under 'residue_type' mode, the input_list should be a list of canonical 3-letter amino acid
-        names. Under 'resid' mode, the input list should be a list of residue id positions (recall
-        that resid ALWAYS starts from 0 and will include the ACE cap if present).
+        Function to compute site/residue type accessibility. 
 
+        This can be done using one of two modes. Under 'residue_type' mode, the input_list should be a 
+        list of canonical 3-letter amino acid names. Under 'resid' mode, the input list should be a list 
+        of residue id positions (recall that resid ALWAYS starts from 0 and will include the ACE 
+        cap if present).
+        
         Returns a dictionary with the key = residue "type-number" string and the value equal
         the average and standard devaition associated with the SASA. Useful for looking at
         comparative accessibility of the same residue accross the sequence.
+        
+        Parameters
+        -------------
 
-        ........................................
-        OPTIONS
-        ........................................
+        input_list : list
+            List of either residue names (e.g. ['TRP','TYR','GLN'] or resid values
+            ([1,2,3,4]) which will be taken and the SASA calculated for.
 
-        input_list [list]
-        List of either residue names (e.g. ['TRP','TYR','GLN'] or resid values
-        ([1,2,3,4]) which will be taken and the SASA calculated for.
+        probe_radius : float 
+            Radius of the solvent probe used in nm. Uses the Golden-Spiral algorithm.
+            0.14 nm is pretty standard. NOTE - the probe radius must be in nanometers.
+            Default = 0.14
 
-        probe_radius [float]  {0.14}
-        Radius of the solvent probe used in nm. Uses the Golden-Spiral algorithm.
-        0.14 nm is pretty standard. NOTE - the probe radius must be in nanometers
+        mode : string 
+            Mode used to examine sites. MUST be one of 'residue_type' or 'resid'. 
+            Default = 'residue_type'
 
-        mode [string] {'residue_type'}
-        Mode used to examine sites. MUST be one of 'residue_type' or 'resid'
-
-        stride [int] {20}
-        Defines the spacing between frames to compare - i.e. if comparing frame1
-        to a trajectory we'd compare frame 1 and every stride-th frame
-
+        stride : int
+            Defines the spacing between frames to compare - i.e. if comparing frame1 to a 
+            trajectory we'd compare frame 1 and every stride-th frame. Note this operation 
+            may scale poorly as protein length increases at which point increasing the 
+            stride may become necessary. NOTE default is NOT 1 because this is quite an
+            expensive analysis. Default = 20. 
+        
+        Returns
+        ---------
+        dict
+            Returns a dictionary where values are residue positions (with residue type
+            and index position) and values are SASA of that specific resdue position. 
+            Note that SASA values are returned in squared angstroms.
 
 
         """
 
         ## First check mode is valid and then sanity check input
-        ctutils.validate_keyword_option(mode, ['residue_type', 'resid'], 'mode')
+        ssutils.validate_keyword_option(mode, ['residue_type', 'resid'], 'mode')
 
 
         # empty list of residues we're going to examine (resids)
@@ -3506,7 +3518,7 @@ class CTProtein:
             # set the list of valid residues to the 20 AAs + the caps
             for res in input_list:
                 if res not in ALL_VALID_RESIDUE_NAMES:
-                    raise CTException("Error: Tried to use get_site_accessibility in 'residue_type' mode but residue %s not found in list of valid residues %s" % (res, str(ALL_VALID_RESIDUE_NAMES)))
+                    raise SSException("Error: Tried to use get_site_accessibility in 'residue_type' mode but residue %s not found in list of valid residues %s" % (res, str(ALL_VALID_RESIDUE_NAMES)))
 
 
             # get AA list and convert into an ordered list of each
@@ -3514,8 +3526,10 @@ class CTProtein:
             SEQS = self.get_amino_acid_sequence(numbered=False)
 
             # initialze the empty idx
+            idx = 0
 
-            idx=0
+            # this cyles over each amino acid in the sequences and, if that amino acid is one of the ones 
+            # we're interested in adds the index of that residues to the resid_list
             for res in SEQS:
                 if res in input_list:
                     resid_list.append(idx)
@@ -3547,24 +3561,34 @@ class CTProtein:
 
         SASA is returned in Angstroms squared, BUT PROBE RADIUS is in nanometers!
 
-        ........................................
-        OPTIONS
-        ........................................
 
-        R1 [int]
-        Index value for the first residue in the region
+        Parameters
+        -----------
+        R1 : int
+            Index value for the first residue in the region
 
-        R2 [int]
-        Index value for the last residue in the region
+        R2 : int
+            Index value for the last residue in the region
 
-        probe_radius [float]  {0.14}
-        Radius of the solvent probe used in nm. Uses the Golden-Spiral algorithm.
-        0.14 nm is pretty standard. NOTE - the probe radius must be in nanometers
+        probe_radius : float 
+            Radius of the solvent probe used in nm. Uses the Golden-Spiral algorithm.
+            0.14 nm is pretty standard. NOTE - the probe radius must be in nanometers.
+            Default = 0.14
 
-        stride [int] {20}
-        Defines the spacing between frames to compare - i.e. if comparing frame1
-        to a trajectory we'd compare frame 1 and every stride-th frame
+        stride : int
+            Defines the spacing between frames to compare - i.e. if comparing frame1 to a 
+            trajectory we'd compare frame 1 and every stride-th frame. Note this operation 
+            may scale poorly as protein length increases at which point increasing the 
+            stride may become necessary. NOTE default is NOT 1 because this is quite an
+            expensive analysis. Default = 20. 
 
+
+        Returns
+        --------
+        float 
+            Returns a single float which defines the sum-total SASA of the region defined
+            between residue R1 and R2. Note that SASA values are returned in squared 
+            angstroms.
 
         """
 
@@ -3591,6 +3615,52 @@ class CTProtein:
         CA of the residue and a designated 'sidechain' atom on the sidechain. The default sidechain atoms are listed below, but custom atom
         names can also be provided using the sidechain_atom_1/2 variables.
 
+        
+        Residue : atom name default pairs (defaults from OPLS-AA used):
+
+            'ALA' : 'CB' 
+            'CYS' : 'SG'
+            'ASP' : 'CG'
+            'GLU' : 'CD'
+            'PHE' : 'CZ'
+            'GLY' : 'ERROR'
+            'HIS' : 'NE2' 
+            'ILE' : 'CD1'
+            'LYS' : 'NZ'
+            'LEU' : 'CG'
+            'MET' : 'CE'
+            'ASN' : 'CG'
+            'PRO' : 'CG'
+            'GLN' : 'CD'
+            'ARG' : 'CZ'
+            'SER' : 'OG'
+            'THR' : 'CB'
+            'VAL' : 'CB'
+            'TRP' : 'CG'
+            'TYR' : 'CZ'
+            'ACE' : 'ERROR'
+            'NME' : 'ERROR'
+
+
+        Parameters
+        -----------
+        R1 : int
+            Residue index of first residue
+
+        R2 : int
+            Residue index of second residue
+
+        sidechain_atom_1 : str {CA}
+            Atom name of the sidechain atom in residue 1 we're going to use. Default = 'default'.
+
+        sidechain_atom_2 : str {CA}
+            Atom name of the sidechain atom in residue 2 we're going to use. Default = 'default'.
+
+        Returns
+        --------
+        np.ndarray
+            Returns a numpy array which defines the per-frame angle alignment between the sidechains
+
         """
 
 
@@ -3598,41 +3668,41 @@ class CTProtein:
         # bad inputs. It's a litte drawn out but useful for code clarity reasons.
         # note need to do this with the un-corrected residue index values, hence why it comes first
         if R1 not in self.__residue_atom_table:
-            raise CTException('Residue index for R1: %d does not exist in the protein.' % R1)
+            raise SSException('Residue index for R1: %d does not exist in the protein.' % R1)
 
         if R2 not in self.__residue_atom_table:
-            raise CTException('Residue index for R2: %d does not exist in the protein.' % R2)
+            raise SSException('Residue index for R2: %d does not exist in the protein.' % R2)
 
 
         if sidechain_atom_1 == 'default':
             resname_1 = self.get_amino_acid_sequence(numbered=False)[R1]
-            resname_1 = cttools.fix_histadine_name(resname_1)
+            resname_1 = sstools.fix_histadine_name(resname_1)
 
             try:
                 sidechain_atom_1 = DEFAULT_SIDECHAIN_VECTOR_ATOMS[resname_1]
 
                 if sidechain_atom_1 == 'ERROR':
-                    raise CTException('Residue lacks a valid sidechain (%s)' % resname_1)
+                    raise SSException('Residue lacks a valid sidechain (%s)' % resname_1)
 
             except KeyError:
-                raise CTException('Cannot parse residue at position %i (residue name = %s) ' % (R1, resname_1))
+                raise SSException('Cannot parse residue at position %i (residue name = %s) ' % (R1, resname_1))
         else:
-            raise CTException('Unsupported sidechain atom name: "%s". Please use: "default".' % sidechain_atom_1)
+            raise SSException('Unsupported sidechain atom name: "%s". Please use: "default".' % sidechain_atom_1)
 
         if sidechain_atom_2 == 'default':
             resname_2 = self.get_amino_acid_sequence(numbered=False)[R2]
-            resname_2 = cttools.fix_histadine_name(resname_2)
+            resname_2 = sstools.fix_histadine_name(resname_2)
 
             try:
                 sidechain_atom_2 = DEFAULT_SIDECHAIN_VECTOR_ATOMS[resname_2]
 
                 if sidechain_atom_2 == 'ERROR':
-                    raise CTException('Residue lacks a valid sidechain (%s)' % resname_2)
+                    raise SSException('Residue lacks a valid sidechain (%s)' % resname_2)
 
             except KeyError:
-                raise CTException('Cannot parse residue at position %i (residue name = %s) ' % (R2, resname_2))
+                raise SSException('Cannot parse residue at position %i (residue name = %s) ' % (R2, resname_2))
         else:
-            raise CTException('Unsupported sidechain atom name: "%s". Please use: "default".' % sidechain_atom_1)
+            raise SSException('Unsupported sidechain atom name: "%s". Please use: "default".' % sidechain_atom_1)
 
         ### At this point we have reasonable atom names defined!
         TRJ_1_SC = self.traj.atom_slice(self.topology.select('resid %i and name "%s"' % (R1, sidechain_atom_1) ))
@@ -3662,6 +3732,7 @@ class CTProtein:
 
         return np.array(alignment)
 
+
     # ........................................................................
     #
     #
@@ -3688,28 +3759,34 @@ class CTProtein:
         Return:
         Mutual information matrix ( n x n) where n is the number of that type of
         bonds in the protein.
-
        
         Parameter
         -------------
 
-        angle_name
-        String, must be one of the following options
-        'chi1','phi, 'psi', 'omega'.
+        angle_name : str
+            String, must be one of the following options
+            'chi1','phi, 'psi', 'omega'. Default = 'psi'.
 
-        bwidth [np.array} {np.pi/5.0)
-        The width of the bins that will stretch from -pi to pi. np.pi/5.0 is
-        probablty the smallest binsize you want - even np.pi/2 should work
-        well. You may want to experiment with this parameter...
+        bwidth : np.array 
+            The width of the bins that will stretch from -pi to pi. np.pi/5.0 is
+            probablty the smallest binsize you want - even np.pi/2 should work
+            well. You may want to experiment with this parameter... Default = np.pi/5.0
 
-        stride [int] {20}
-        Defines the spacing between frames to compare - i.e. if comparing frame1
-        to a trajectory we'd compare frame 1 and every stride-th frame.
+        stride : int
+            Defines the spacing between frames to compare - i.e. if comparing frame1 to a 
+            trajectory we'd compare frame 1 and every stride-th frame. Note this operation 
+            may scale poorly as protein length increases at which point increasing the 
+            stride may become necessary. Default = 1
 
-        weights [list or array of floats] {False}
-        Defines the frame-specific weights if re-weighted analysis is required. This can be
-        useful if an ensemble has been re-weighted to better match experimental data, or in
-        the case of analysing replica exchange data that is re-combined using T-WHAM.
+        weights : array_like
+            An `numpy.array` object that corresponds to the number of frames within an input 
+            trajectory. Default = False.
+
+        Returns
+        ---------
+        np.ndarray (2d)
+            Returns a 2D (square) matrix where the upper-left triangle is populated with the
+            mutual information between the angles and pairs of residues in each chain.
 
         """
 
@@ -3719,7 +3796,7 @@ class CTProtein:
         ##
         # verify binwidth input values
         if bwidth > 2*np.pi or not (bwidth > 0):
-           raise CTException('The bwidth parameter must be between 2*pi and greater than 0')
+           raise SSException('The bwidth parameter must be between 2*pi and greater than 0')
 
         # if stride was passed make sure it's ok
         self.__check_stride(stride)
@@ -3727,22 +3804,22 @@ class CTProtein:
         # if weights were passed make sure they're LEGIT!
         weights = self.__check_weights(weights, stride)
 
-        # check
-        ctutils.validate_keyword_option(angle_name, ['chi1', 'phi', 'psi', 'omega'], 'angle_name')
+        # check input ketword selector
+        ssutils.validate_keyword_option(angle_name, ['chi1', 'phi', 'psi', 'omega'], 'angle_name')
 
         ## ..................................................
 
         # define histogram bins based on passed bin width
-        bins=np.arange(-np.pi, np.pi+bwidth, bwidth)
+        bins = np.arange(-np.pi, np.pi+bwidth, bwidth)
 
         # construct the selector dictionary
         selector = {"phi":md.compute_phi, "omega":md.compute_omega, "psi":md.compute_psi, "chi1":md.compute_chi1}
 
         # check the angle_name is an allowed name
         if angle_name not in list(selector.keys()):
-            raise CTException('The variable angle_name was set to %s, which is not one of phi, omega, psi, chi1' % angle_name)
+            raise SSException('The variable angle_name was set to %s, which is not one of phi, omega, psi, chi1' % angle_name)
 
-        # select and compute the relevant angles of the subtrajectroy
+        # select and compute the relevant angles of the subtrajectory
         fx = selector[angle_name]
         angles = fx(self.traj[0::stride])
 
@@ -3757,7 +3834,7 @@ class CTProtein:
 
                 X = np.transpose(angles[1])[j]
                 Y = np.transpose(angles[1])[i]
-                MI = ctmutualinformation.calc_MI(X,Y, bins, weights)
+                MI = ssmutualinformation.calc_MI(X,Y, bins, weights)
 
                 MI_mat[i,j] = MI
                 MI_mat[j,i] = MI
@@ -3833,7 +3910,7 @@ class CTProtein:
 
         Raises
         ------
-        CTException
+        SSException
             Raised when the mode is not 'CA' or 'COM'; or, when the lengths of the Rg-stride derived
             calculations did not match the lengths of the internal distances; or, when the installed
             numpy version doesn't support the `aweights` keyword for the `numpy.cov` function.
@@ -3842,7 +3919,7 @@ class CTProtein:
         weights = self.__check_weights(weights, stride)
 
 
-        ctutils.validate_keyword_option(mode, ['CA', 'COM'], 'mode')
+        ssutils.validate_keyword_option(mode, ['CA', 'COM'], 'mode')
 
         # define first and last residue that has a CA
         start = self.resid_with_CA[0]
@@ -3852,7 +3929,7 @@ class CTProtein:
 
         # start with a sequence separation of 1
         for seq_sep in range(1, self.n_residues):
-            ctio.status_message("On sequence separation %i" % (seq_sep), verbose)
+            ssio.status_message("On sequence separation %i" % (seq_sep), verbose)
 
             for pos in range(start, end - seq_sep):
 
@@ -3879,7 +3956,7 @@ class CTProtein:
         stride_rg = full_rg[0::stride]
 
         if len(stride_rg) != len(all_distances[0]):
-            raise CTException('Something when wrong when comparing stride-derived Rg and internal distances, this is a bug in the code...)')
+            raise SSException('Something when wrong when comparing stride-derived Rg and internal distances, this is a bug in the code...)')
 
         # total number of distance pairs
         n_pairs = len(all_distances)
@@ -3893,7 +3970,7 @@ class CTProtein:
 
         idx=0
         for n_selected in pair_selection_vector:
-            ctio.status_message("On %i pairs selected" % n_selected, verbose)
+            ssio.status_message("On %i pairs selected" % n_selected, verbose)
             for i in range(0,n_cycles):
 
                 # select n_select different values between 0 and n_pairs
@@ -3919,7 +3996,7 @@ class CTProtein:
                         if len(set(weights)) == 1:
                             cov_matrix = np.cov(np.vstack((local_mean_square, np.power(stride_rg,2))))
                         else:
-                            raise CTException('Weights being passed to get_global_from_local but the current version of numpy (%s) may not support weights via the "aweights" keyword...' % np.version.full_version)
+                            raise SSException('Weights being passed to get_global_from_local but the current version of numpy (%s) may not support weights via the "aweights" keyword...' % np.version.full_version)
 
                     # this computes the upper right square from the correlation matrix from the covariance matrix using (Rij = (Cij/(sqrt(Cii - Cjj))) where i and j are
                     # 0 and 1 respectively
@@ -3951,7 +4028,7 @@ class CTProtein:
         Parameters
         ---------
 
-        mode: str {'CA'}
+        mode : str {'CA'}
             String, must be one of either 'CA' or 'COM'.
             - 'CA' = alpha carbon.
             - 'COM' = center of mass (associated withe the residue).
@@ -3964,7 +4041,7 @@ class CTProtein:
         """
 
         # validate the keyword
-        ctutils.validate_keyword_option(mode, ['CA', 'COM'], 'mode')
+        ssutils.validate_keyword_option(mode, ['CA', 'COM'], 'mode')
 
         # get end-to-end distance
         distance = self.get_end_to_end_distance(mode)
@@ -4260,19 +4337,21 @@ class CTProtein:
     def get_overlap_concentration(self):
 
         """
-        Returns the overlap concentration for the chain.
+        Returns the overlap concentration for the chain in Moles.
 
         The overlap concentration reflects the concentration at which a flexible
         polymer begins to 'collide' in trans with other polymers - i.e. the
-        concentration at which the chains begin to overlap.
-
+        concentration at which the chains begin to overlap. We calculate this by 
+        first computing the mean radius if gyration, and then computing the 
+        concentration of chain within the radius of gyration.
+        
         Returns
         -------
         float
             Molar concentration for the overlap concentration.
         """
 
-        return ctpolymer.get_overlap_concentration(np.mean(self.get_radius_of_gyration()))
+        return sspolymer.get_overlap_concentration(np.mean(self.get_radius_of_gyration()))
 
 
 
@@ -4382,8 +4461,6 @@ class CTProtein:
     #
     def get_local_collapse(self, window_size=10, bins=None, verbose=True):
         """
-
-
         local collapse calculates a vectorial representation of the radius of gyration along a
         polypeptide chain. This makes it very easy to determine where you see local collapse
         vs. local expansion.
@@ -4406,14 +4483,14 @@ class CTProtein:
         -------
         tuple (len = 4)
 
-            return[0]  : list of floats of len *n*, where each float reports on the mean local collapse  a specific
-                         position along the sequence as defined by the fragment_size
+            return[0]  : list of floats of len *n*, where each float reports on the mean local collapse a specific
+                         position along the sequence as defined by the fragment_size.
 
             return[1]  : list of floats of len *n* , where each float reports on the standard deviation of the
-                         local collapse at a specific position along the sequence as defined by the fragment_size
+                         local collapse at a specific position along the sequence as defined by the fragment_size.
 
-            return[2]  : List of np.ndarrays of len *n*, where each sub-array reports on the histogram values associated
-                         with the local collapse at a given position along the sequence
+            return[2]  : List of np.ndarrays of len *n*, where each sub-array reports on the histogram values 
+                         associated with the local collapse at a given position along the sequence.
 
             return[3]  : np.ndarray which corresponds to bin values for each of the histograms in return[2]
 
@@ -4424,14 +4501,14 @@ class CTProtein:
         else:
             try:
                 if len(bins)  < 2:
-                    raise CTException('Bins should be a numpy defined vector of values - e.g. np.arange(0,1,0.01)')
+                    raise SSException('Bins should be a numpy defined vector of values - e.g. np.arange(0,1,0.01)')
             except TypeError:
-                raise CTException('Bins should be a list, vector, or numpy array of evenly spaced values')
+                raise SSException('Bins should be a list, vector, or numpy array of evenly spaced values')
 
             try:
                 bins = np.array(bins, dtype=float)
             except ValueError:
-                raise CTException('Passed bins could not be converted to a numpy array of floats')
+                raise SSException('Passed bins could not be converted to a numpy array of floats')
 
             # Check whether the bins are evenly spaced. If the bins are evenly spaced, subtracting the leading
             # value of the discrete difference from itself should yield a sum of 0 (within the floating point epsilon).
@@ -4440,14 +4517,14 @@ class CTProtein:
             fpe = np.finfo(diff[0].dtype).eps
             evenly_spaced = np.isclose(np.sum(bins_delta), 0, rtol=fpe)
             if not evenly_spaced:
-                raise CTException('The spacing between bins is uneven, or you may using bins widths less than: %f' % fpe)
+                raise SSException('The spacing between bins is uneven, or you may using bins widths less than: %f' % fpe)
 
         n_residues = self.n_residues
         n_frames   = self.n_frames
 
         # check the window is an appropriate size
         if window_size > n_residues:
-            raise CTException('window_size is larger than the number of residues')
+            raise SSException('window_size is larger than the number of residues')
 
         meanData = []
         stdData  = []
@@ -4455,7 +4532,7 @@ class CTProtein:
 
         for i in range(window_size - 1, n_residues):
 
-            ctio.status_message("On range %i" % i, verbose)
+            ssio.status_message("On range %i" % i, verbose)
 
             # get radius of gyration (now by default is in Angstroms
             # - in previous versions we performed a conversion here)

@@ -4,8 +4,8 @@ import numpy as np
 import mdtraj as md
 import pytest
 import tempfile
-import camparitraj.ctanalyzer.analyzer_analysis as cta_aa
-from camparitraj.ctprotein import CTProtein
+import soursop.ctanalyzer.analyzer_analysis as cta_aa
+from soursop.ssprotein import SSProtein
 
 
 def test_run_CG(GS6_CP, NTL9_CP, cta_protein_helper):
@@ -355,7 +355,7 @@ def test_run_cluster_analysis(GS6_CP, NTL9_CP):
     for protein_traj in [NTL9_CP]:
         trajectories = [protein_traj.traj, protein_traj.traj, protein_traj.traj, protein_traj.traj, protein_traj.traj]
         traj = protein_traj.traj.join(trajectories)
-        protein = CTProtein(traj)
+        protein = SSProtein(traj)
 
         with tempfile.TemporaryDirectory() as outdir:
             for strideval in range(initial_stride_val, protein.n_frames - 1):
@@ -409,7 +409,7 @@ def test_run_SASA_default_probe_radius(GS6_CP, NTL9_CP, cta_protein_helper):
     for protein_traj in [GS6_CP, NTL9_CP]:
         trajectories = [protein_traj.traj for i in range(num_copies)]
         traj = protein_traj.traj.join(trajectories)
-        protein = CTProtein(traj)
+        protein = SSProtein(traj)
 
         with tempfile.TemporaryDirectory() as outdir:
             for strideval in range(initial_stride_val, protein.n_frames - 1):
@@ -436,7 +436,7 @@ def test_run_SASA_custom_probe_radius(GS6_CP, NTL9_CP, cta_protein_helper):
     for protein_traj in [GS6_CP, NTL9_CP]:
         trajectories = [protein_traj.traj for i in range(num_copies)]
         traj = protein_traj.traj.join(trajectories)
-        protein = CTProtein(traj)
+        protein = SSProtein(traj)
 
         with tempfile.TemporaryDirectory() as outdir:
             for strideval in range(initial_stride_val, protein.n_frames - 1):

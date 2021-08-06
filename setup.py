@@ -1,5 +1,5 @@
 """
-camparitraj
+soursop
 Analysis package for all-atom simulations of proteins, with a specific focus on intrinsically disordered proteins.
 """
 import setuptools
@@ -17,7 +17,7 @@ except:
 
 setup(
     # Self-descriptive entries which should always be present
-    name='camparitraj',
+    name='soursop',
     author='Alex Holehouse',
     author_email='alex.holehouse@wustl.edu',
     description=short_description[0],
@@ -27,10 +27,10 @@ setup(
     cmdclass=versioneer.get_cmdclass(),
     scripts=['scripts/ctanalyzer'],
     license='LGPLv3',
-    url='https://github.com/holehouse-lab/camparitraj',
+    url='https://github.com/holehouse-lab/soursop',
 
     # Which Python importable modules should be included when your package is installed
-    packages=['camparitraj', "camparitraj.tests", "camparitraj.ctanalyzer"],
+    packages=['soursop', "soursop.tests", "soursop.ctanalyzer"],
 
     # Optional include package data to ship with your package
     # Comment out this line to prevent the files from being packaged with your software
@@ -40,9 +40,9 @@ setup(
     # line here means we include the files defined in MANIFEST.in - the package_data
     # line below is not sufficient to do this
     include_package_data=True,    
-    package_data={'camparitraj': ['data/'], 'camparitraj': ['data/test_data/']},    
+    package_data={'soursop': ['data/'], 'soursop': ['data/test_data/']},    
 
-    # dependencies camparitraj requires
+    # dependencies soursop requires
     install_requires=[
         "numpy>=1.20.0",
         "scipy>=1.5.0",

@@ -5,7 +5,7 @@ A short description of the project.
 import os
 
 # Add imports here
-from .camparitraj import *
+from .soursop import *
 
 # Handle versioneer
 from ._version import get_versions

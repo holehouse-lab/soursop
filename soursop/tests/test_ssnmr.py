@@ -1,9 +1,9 @@
 # Import package, test suite, and other packages as needed
 import numpy as np
-import camparitraj
+import soursop
 import pytest
 import sys
-import camparitraj.ctnmr as nmr
+import soursop.ssnmr as nmr
 
 
 #

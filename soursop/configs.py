@@ -12,14 +12,14 @@ configs contain all global configuration.
 ##
 ## Alex Holehouse (Pappu Lab and Holehouse Lab)
 ## Simulation analysis package
-## Copyright 2014 - 2019
+## Copyright 2014 - 2021
 ##
 import multiprocessing as mp
 import platform
 import tempfile
 
 
-MAXCORES = mp.cpu_count()  # Added to resolve a reference with `cttrajectory.CTTrajectory.__init__`
+MAXCORES = mp.cpu_count()  # Added to resolve a reference with `sstrajectory.SSTrajectory.__init__`
 DEBUGGING = False
 
 

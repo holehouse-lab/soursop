@@ -15,9 +15,9 @@
 import mdtraj as md
 import numpy as np
 import scipy
-from .ctexceptions import CTWarning
+from .ssexceptions import SSWarning
 
-### CTPRE contains all the functionality associated with calculating
+### SSPRE contains all the functionality associated with calculating
 ### PRE profiles.
 ###
 ###
@@ -30,10 +30,10 @@ K_IN_NM6   = original_K*1e42  # K constant in nm6 s-2
 #W_H        = 267530000        # Proton Larmor frequency
 #W_H_SQUARED = W_H * W_H 
 
-class CTPRE:
+class SSPRE:
     """
     
-    CTPRE is a class that takes a CTProtein objecs and can perform PRE-related calculations.
+    SSPRE is a class that takes a SSProtein objecs and can perform PRE-related calculations.
        
     This is, in many ways, a purely functional class, but given it's very specific goal
     it is separated out into its own class in the interest of more robust modularity. 
@@ -59,15 +59,15 @@ class CTPRE:
 
     # ........................................................................
     #                 
-    def __init__(self, CTProteinObject, tau_c, t_delay, R_2D, W_H):
+    def __init__(self, SSProteinObject, tau_c, t_delay, R_2D, W_H):
         """
-        Initialization function for creating a CTPRE object. The resulting object can
+        Initialization function for creating a SSPRE object. The resulting object can
         then be used to calculate PRE profiles from the underlying ensemble. This
         calculation is extremely fast.
 
-        CTProteinObject : CTProtein-derived object
-            CTProtein object extracted from a CTTraj objected. The CTProtein object is the main object
-            that most protein-based analysis is performed over in CTraj.
+        SSProteinObject : SSProtein-derived object
+            SSProtein object extracted from a SSTrajectory objected. The SSProtein object is the main object
+            that most protein-based analysis is performed over in SOURSOP.
 
         tau_c : float
             tau_c is the effective correlation time, measured in nanoseconds, which is typically between
@@ -89,9 +89,9 @@ class CTPRE:
 
         """
                 
-        # NOTE: NO CHANGES SHOULD BE MADE TO THE CTPO by the object - this should be treated 
-        # as a read only object by CTsmFRET (no such explicit control in Python)
-        self.CTPO = CTProteinObject        
+        # NOTE: NO CHANGES SHOULD BE MADE TO THE SSPO by the object - this should be treated 
+        # as a read only object (no such explicit control in Python)
+        self.SSPO = SSProteinObject        
         
         # set the INEPT delay value and the backbone amide transverse relaxation rate which
         # is used explicitly later
@@ -135,7 +135,7 @@ class CTPRE:
 
 
         """
-        return "["+hex(id(self)) + "]: CTPRE OBJ - (R_2D = %3.2f Hz, t_delay = %3.2f ms, tau_c = %3.2f ns, H1 Larmor = %3.3e Hz)" % (self.R_2D, self.t_delay, self.tau_c, self.W_h)
+        return "["+hex(id(self)) + "]: SSPRE OBJ - (R_2D = %3.2f Hz, t_delay = %3.2f ms, tau_c = %3.2f ns, H1 Larmor = %3.3e Hz)" % (self.R_2D, self.t_delay, self.tau_c, self.W_h)
 
 
     # ........................................................................
@@ -188,9 +188,9 @@ class CTPRE:
         """
         
         # get index value of all residues 
-        #residue_list = self.CTPO.get_residue_index_list()        
+        #residue_list = self.SSPO.get_residue_index_list()        
 
-        tmp = list(self.CTPO._CTProtein__CA_residue_atom.keys())
+        tmp = list(self.SSPO._SSProtein__CA_residue_atom.keys())
         residue_list = sorted(tmp)
 
         # first calculate mean rij distance for pair-residue distances
@@ -202,7 +202,7 @@ class CTPRE:
         # it's important the former method is used (i.e. only average at the end). This calculates the gamma coefficient for
         # each residue, which measures relaxation 
         for idx in residue_list:                        
-            r_6_nm = np.power((0.1*self.CTPO.get_interResidue_atomic_distance(label_position, idx, A1=spin_label_atom, A2=target_relaxation_atom, correctOffset=True)),6)
+            r_6_nm = np.power((0.1*self.SSPO.get_inter_residue_atomic_distance(label_position, idx, A1=spin_label_atom, A2=target_relaxation_atom),6)
             gamma.append(np.mean(self.PREFACTOR/r_6_nm))
         
         # convert the t_delay from ms to seconds

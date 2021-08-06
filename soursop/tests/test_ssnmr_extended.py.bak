@@ -1,8 +1,8 @@
 import os
 import pytest
 import numpy as np
-import camparitraj.ctnmr as nmr
-from camparitraj.ctexceptions import CTException
+import soursop.ctnmr as nmr
+from soursop.ssexceptions import SSException
 
 
 def test_compute_random_coil_chemical_shifts_extreme_temperatures():
@@ -15,7 +15,7 @@ def test_compute_random_coil_chemical_shifts_extreme_temperatures():
     ]
 
     for temperature in temperatures:
-        with pytest.raises(CTException):
+        with pytest.raises(SSException):
             nmr.compute_random_coil_chemical_shifts(seq, temperature=temperature, use_ggxgg=True, use_perdeuteration=False)
 
 
@@ -30,7 +30,7 @@ def test_compute_random_coil_chemical_shifts_pH_low():
     ]
 
     for pH in pHs:
-        with pytest.raises(CTException):
+        with pytest.raises(SSException):
             nmr.compute_random_coil_chemical_shifts(seq, temperature=temperature, pH=pH, use_ggxgg=True, use_perdeuteration=False)
 
 

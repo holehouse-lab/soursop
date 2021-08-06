@@ -14,7 +14,7 @@
 import numpy as np
 import mdtraj as md
 from . import configs
-from camparitraj._internal_data import MAX_SASA_DATA
+from soursop._internal_data import MAX_SASA_DATA
 from .analyzer_exception import AnalyzerException
 
 

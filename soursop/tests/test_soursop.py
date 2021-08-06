@@ -1,10 +1,10 @@
 """
-Unit and regression test for the camparitraj package.
+Unit and regression test for the soursop package.
 """
 # Import package, test suite, and other packages as needed
 import hashlib
-import camparitraj
-from camparitraj import cttrajectory
+import soursop
+from soursop import sstrajectory
 import pytest
 import sys
 
@@ -12,9 +12,9 @@ import sys
 from . import conftest
 
 
-def test_camparitraj_imported():
+def test_soursop_imported():
     """Sample test, will always pass so long as import statement worked"""
-    assert "camparitraj" in sys.modules
+    assert "soursop" in sys.modules
 
 
 def test_validate_tests(GS6_CO, NTL9_CO):

@@ -1,5 +1,5 @@
 """
-Unit and regression test for the cttrajectory module.
+Unit and regression test for the sstrajectory module.
 """
 # Import package, test suite, and other packages as needed
 import os
@@ -7,8 +7,8 @@ import sys
 import pytest
 import ctypes
 import numpy as np
-import camparitraj.ctutils as ctutils
-from camparitraj.ctexceptions import CTException
+from soursop import ssutils
+from soursop.ssexceptions import SSException
 from threadpoolctl import threadpool_info, threadpool_limits
 
 
@@ -36,7 +36,7 @@ def test_mkl_set_num_threads():
         # the MKL library and using it on a Mac that has an Intel compiler installed.
         elif sys.platform == 'darwin':
             mkl_rt = ctypes.CDLL(mkl_path)
-        ctutils.mkl_set_num_threads(num_threads)
+        ssutils.mkl_set_num_threads(num_threads)
         num_threads_set = mkl_rt.mkl_get_max_threads()
         assert num_threads_set == num_threads
     else:
@@ -48,7 +48,7 @@ def test_mkl_set_num_threads():
 
 def test_set_numpy_threads():
     num_threads = 2
-    blas_library, set_threads = ctutils.set_numpy_threads(num_threads)
+    blas_library, set_threads = ssutils.set_numpy_threads(num_threads)
     assert blas_library != 'unknown'
     assert set_threads == num_threads
 
@@ -56,17 +56,17 @@ def test_set_numpy_threads():
 def test_validate_keyword_option():
     allowed_modes = ['COM', 'CA']
     for mode in allowed_modes:
-        ctutils.validate_keyword_option(mode, allowed_modes, 'mode')
-        ctutils.validate_keyword_option(mode, allowed_modes, 'mode', 'Unsupported mode.')
+        ssutils.validate_keyword_option(mode, allowed_modes, 'mode')
+        ssutils.validate_keyword_option(mode, allowed_modes, 'mode', 'Unsupported mode.')
 
     # Attempt a test which will fail - i.e. mismatched keyword.
-    with pytest.raises(CTException):
-        ctutils.validate_keyword_option('invalid_mode', allowed_modes, 'mode')
+    with pytest.raises(SSException):
+        ssutils.validate_keyword_option('invalid_mode', allowed_modes, 'mode')
 
     # Attempt a test which will fail, but including a custom string error message.
-    with pytest.raises(CTException):
-        ctutils.validate_keyword_option('invalid_mode', allowed_modes, 'mode', 'Unsupported mode.')
+    with pytest.raises(SSException):
+        ssutils.validate_keyword_option('invalid_mode', allowed_modes, 'mode', 'Unsupported mode.')
 
     # Attempt a test which will fail, including a non-string error message.
     with pytest.raises(RuntimeError):
-        ctutils.validate_keyword_option('invalid_mode', allowed_modes, 'mode', 123)
+        ssutils.validate_keyword_option('invalid_mode', allowed_modes, 'mode', 123)

@@ -1,11 +1,11 @@
 """
-Unit and regression test for the cttrajectory module.
+Unit and regression test for the sstrajectory module.
 """
 # Import package, test suite, and other packages as needed
-import camparitraj
+import soursop
 import hashlib
-from camparitraj import cttrajectory
-from camparitraj.ctexceptions import CTException
+from soursop import sstrajectory
+from soursop.ssexceptions import SSException
 from pathlib import Path
 import pytest
 import sys
@@ -15,14 +15,14 @@ import platform
 import tempfile
 import numpy as np
 import os
-from camparitraj.configs import TMP_DIR
+from soursop.configs import TMP_DIR
 
 
 from . import conftest
 #import conftest
 
 # -------------------------------------------------------------------------------------------------
-# CTTrajectory `__init__` tests.
+# SSTrajectory `__init__` tests.
 #
 # Also implicitly tests:
 #       `__readTrajectory`
@@ -40,62 +40,62 @@ def test_trajectory_len(GS6_CO):
 
 
 def test_read_in_no_trajectory_and_no_topology():
-    with pytest.raises(CTException):
-        cttrajectory.CTTrajectory()
+    with pytest.raises(SSException):
+        sstrajectory.SSTrajectory()
 
 
 def test_read_in_no_trajectory_and_no_topology_but_use_custom_trajectory(GS6_CO):
     trajectory = GS6_CO.traj
-    cttrajectory.CTTrajectory(TRJ=trajectory)
+    sstrajectory.SSTrajectory(TRJ=trajectory)
 
 
 def test_read_in_no_trajectory():
-    pdb_filename = os.path.join(camparitraj.get_data('test_data'), 'gs6.pdb')
-    with pytest.raises(CTException):
-        cttrajectory.CTTrajectory(pdb_filename=pdb_filename)
+    pdb_filename = os.path.join(soursop.get_data('test_data'), 'gs6.pdb')
+    with pytest.raises(SSException):
+        sstrajectory.SSTrajectory(pdb_filename=pdb_filename)
 
 
 def test_read_in_trajectory_pdblead(GS6_CO):
-    pdb_filename = os.path.join(camparitraj.get_data('test_data'), 'gs6.pdb')
-    traj_filename = os.path.join(camparitraj.get_data('test_data'), 'gs6.xtc')
-    traj = cttrajectory.CTTrajectory(pdb_filename=pdb_filename, trajectory_filename=traj_filename, pdblead=True)
+    pdb_filename = os.path.join(soursop.get_data('test_data'), 'gs6.pdb')
+    traj_filename = os.path.join(soursop.get_data('test_data'), 'gs6.xtc')
+    traj = sstrajectory.SSTrajectory(pdb_filename=pdb_filename, trajectory_filename=traj_filename, pdblead=True)
 
     # Since we're using the PDB as an initial frame, the number of frames should have increased by 1.
     assert len(traj) == len(GS6_CO) + 1
 
 
 def test_trajectory_initialization_debug():
-    pdb_filename = os.path.join(camparitraj.get_data('test_data'), 'gs6.pdb')
-    traj_filename = os.path.join(camparitraj.get_data('test_data'), 'gs6.xtc')
-    cttrajectory.CTTrajectory(pdb_filename=pdb_filename, trajectory_filename=traj_filename, debug=True)
+    pdb_filename = os.path.join(soursop.get_data('test_data'), 'gs6.pdb')
+    traj_filename = os.path.join(soursop.get_data('test_data'), 'gs6.xtc')
+    sstrajectory.SSTrajectory(pdb_filename=pdb_filename, trajectory_filename=traj_filename, debug=True)
 
 
 def test_read_in_no_topology_xtc():
-    traj_filename = os.path.join(camparitraj.get_data('test_data'), 'gs6.xtc')
-    with pytest.raises(CTException):
-        cttrajectory.CTTrajectory(trajectory_filename=traj_filename)
+    traj_filename = os.path.join(soursop.get_data('test_data'), 'gs6.xtc')
+    with pytest.raises(SSException):
+        sstrajectory.SSTrajectory(trajectory_filename=traj_filename)
 
 
 def test_read_in_no_topology_dcd():
-    """The `CTTrajectory.__init__` references that `.dcd` files are supported too."""
-    traj_filename = os.path.join(camparitraj.get_data('test_data'), 'gs6.dcd')
-    with pytest.raises(CTException):
-        cttrajectory.CTTrajectory(trajectory_filename=traj_filename)
+    """The `SSTrajectory.__init__` references that `.dcd` files are supported too."""
+    traj_filename = os.path.join(soursop.get_data('test_data'), 'gs6.dcd')
+    with pytest.raises(SSException):
+        sstrajectory.SSTrajectory(trajectory_filename=traj_filename)
 
 
 def test_read_in_compare_trajectories(GS6_CO):
-    pdb_filename = os.path.join(camparitraj.get_data('test_data'), 'gs6.pdb')
-    traj_filename = os.path.join(camparitraj.get_data('test_data'), 'gs6.xtc')
-    trajectory = cttrajectory.CTTrajectory(trajectory_filename=traj_filename, pdb_filename=pdb_filename)
+    pdb_filename = os.path.join(soursop.get_data('test_data'), 'gs6.pdb')
+    traj_filename = os.path.join(soursop.get_data('test_data'), 'gs6.xtc')
+    trajectory = sstrajectory.SSTrajectory(trajectory_filename=traj_filename, pdb_filename=pdb_filename)
 
     assert np.allclose(trajectory.traj.xyz, GS6_CO.traj.xyz)
 
 
 def test_read_in_protein_grouping_simple():
     protein_groups = [[0]]
-    pdb_filename = os.path.join(camparitraj.get_data('test_data'), 'gs6.pdb')
-    traj_filename = os.path.join(camparitraj.get_data('test_data'), 'gs6.xtc')
-    trajectory = cttrajectory.CTTrajectory(trajectory_filename=traj_filename,
+    pdb_filename = os.path.join(soursop.get_data('test_data'), 'gs6.pdb')
+    traj_filename = os.path.join(soursop.get_data('test_data'), 'gs6.xtc')
+    trajectory = sstrajectory.SSTrajectory(trajectory_filename=traj_filename,
                                            pdb_filename=pdb_filename,
                                            protein_grouping=protein_groups)
 
@@ -105,9 +105,9 @@ def test_read_in_protein_grouping_simple():
 
 def test_read_in_protein_grouping_multiple():
     protein_groups = [[0, 1, 2], [3, 4, 5], [6, 7, 8]]
-    pdb_filename = os.path.join(camparitraj.get_data('test_data'), 'ntl9.pdb')
-    traj_filename = os.path.join(camparitraj.get_data('test_data'), 'ntl9.xtc')  # ntl9 has 56 residues
-    trajectory = cttrajectory.CTTrajectory(trajectory_filename=traj_filename,
+    pdb_filename = os.path.join(soursop.get_data('test_data'), 'ntl9.pdb')
+    traj_filename = os.path.join(soursop.get_data('test_data'), 'ntl9.xtc')  # ntl9 has 56 residues
+    trajectory = sstrajectory.SSTrajectory(trajectory_filename=traj_filename,
                                            pdb_filename=pdb_filename,
                                            protein_grouping=protein_groups)
 
@@ -117,9 +117,9 @@ def test_read_in_protein_grouping_multiple():
 
 def test_read_in_protein_grouping_invalid_residues():
     protein_groups = [[1000, 1001, 1002], [1003, 1004, 1005], [1006, 1007, 1008]]
-    pdb_filename = os.path.join(camparitraj.get_data('test_data'), 'ntl9.pdb')
-    traj_filename = os.path.join(camparitraj.get_data('test_data'), 'ntl9.xtc')  # ntl9 has 56 residues
-    trajectory = cttrajectory.CTTrajectory(trajectory_filename=traj_filename,
+    pdb_filename = os.path.join(soursop.get_data('test_data'), 'ntl9.pdb')
+    traj_filename = os.path.join(soursop.get_data('test_data'), 'ntl9.xtc')  # ntl9 has 56 residues
+    trajectory = sstrajectory.SSTrajectory(trajectory_filename=traj_filename,
                                            pdb_filename=pdb_filename,
                                            protein_grouping=protein_groups)
 
@@ -131,9 +131,9 @@ def test_read_in_protein_grouping_invalid_residues():
 def test_read_in_protein_grouping_multiple_mixed_order():
     # TODO: This test passes - it shouldn't. Look into this further.
     protein_groups = [[1, 2, 0], [10, 3, 7], [11, 1, 3]]
-    pdb_filename = os.path.join(camparitraj.get_data('test_data'), 'ntl9.pdb')
-    traj_filename = os.path.join(camparitraj.get_data('test_data'), 'ntl9.xtc')  # ntl9 has 56 residues
-    trajectory = cttrajectory.CTTrajectory(trajectory_filename=traj_filename,
+    pdb_filename = os.path.join(soursop.get_data('test_data'), 'ntl9.pdb')
+    traj_filename = os.path.join(soursop.get_data('test_data'), 'ntl9.xtc')  # ntl9 has 56 residues
+    trajectory = sstrajectory.SSTrajectory(trajectory_filename=traj_filename,
                                            pdb_filename=pdb_filename,
                                            protein_grouping=protein_groups)
 
@@ -164,9 +164,9 @@ def test_get_intra_chain_distance_map_zero_using_center_of_mass(GS6_CO):
 
 def test_get_intra_chain_distance_map_protein_groups():
     protein_groups = [[0, 1, 2, 3, 4], [5, 6, 7, 8, 9], [10, 11, 12, 13, 14]]
-    pdb_filename = os.path.join(camparitraj.get_data('test_data'), 'ntl9.pdb')
-    traj_filename = os.path.join(camparitraj.get_data('test_data'), 'ntl9.xtc')  # ntl9 has 56 residues
-    trajectory = cttrajectory.CTTrajectory(trajectory_filename=traj_filename,
+    pdb_filename = os.path.join(soursop.get_data('test_data'), 'ntl9.pdb')
+    traj_filename = os.path.join(soursop.get_data('test_data'), 'ntl9.xtc')  # ntl9 has 56 residues
+    trajectory = sstrajectory.SSTrajectory(trajectory_filename=traj_filename,
                                            pdb_filename=pdb_filename,
                                            protein_grouping=protein_groups)
 
@@ -185,9 +185,9 @@ def test_get_intra_chain_distance_map_protein_groups_with_residue_indices():
                                [20, 21, 22, 23, 24, 25, 26, 27, 28],
                                [30, 31, 32, 33, 34, 35, 36, 37, 38],
                                [40, 41, 42, 43, 44, 45, 46, 47, 48]]
-    pdb_filename = os.path.join(camparitraj.get_data('test_data'), 'ntl9.pdb')
-    traj_filename = os.path.join(camparitraj.get_data('test_data'), 'ntl9.xtc')  # ntl9 has 56 residues
-    trajectory = cttrajectory.CTTrajectory(trajectory_filename=traj_filename,
+    pdb_filename = os.path.join(soursop.get_data('test_data'), 'ntl9.pdb')
+    traj_filename = os.path.join(soursop.get_data('test_data'), 'ntl9.xtc')  # ntl9 has 56 residues
+    trajectory = sstrajectory.SSTrajectory(trajectory_filename=traj_filename,
                                            pdb_filename=pdb_filename,
                                            protein_grouping=protein_groups_residues)
 
@@ -219,9 +219,9 @@ def test_export_intra_chain_distance_map_protein_groups_with_residue_indices():
                                [20, 21, 22, 23, 24, 25, 26, 27, 28, 29],
                                [30, 31, 32, 33, 34, 35, 36, 37, 38, 39],
                                [40, 41, 42, 43, 44, 45, 46, 47, 48, 49]]
-    pdb_filename = os.path.join(camparitraj.get_data('test_data'), 'ntl9.pdb')
-    traj_filename = os.path.join(camparitraj.get_data('test_data'), 'ntl9.xtc')  # ntl9 has 56 residues
-    trajectory = cttrajectory.CTTrajectory(trajectory_filename=traj_filename,
+    pdb_filename = os.path.join(soursop.get_data('test_data'), 'ntl9.pdb')
+    traj_filename = os.path.join(soursop.get_data('test_data'), 'ntl9.xtc')  # ntl9 has 56 residues
+    trajectory = sstrajectory.SSTrajectory(trajectory_filename=traj_filename,
                                            pdb_filename=pdb_filename,
                                            protein_grouping=protein_groups_residues)
 
@@ -257,9 +257,9 @@ def test_intrachain_inter_residue_atomic_distance():
                                [20, 21, 22, 23, 24, 25, 26, 27, 28, 29],
                                [30, 31, 32, 33, 34, 35, 36, 37, 38, 39],
                                [40, 41, 42, 43, 44, 45, 46, 47, 48, 49]]
-    pdb_filename = os.path.join(camparitraj.get_data('test_data'), 'ntl9.pdb')
-    traj_filename = os.path.join(camparitraj.get_data('test_data'), 'ntl9.xtc')  # ntl9 has 56 residues
-    trajectory = cttrajectory.CTTrajectory(trajectory_filename=traj_filename,
+    pdb_filename = os.path.join(soursop.get_data('test_data'), 'ntl9.pdb')
+    traj_filename = os.path.join(soursop.get_data('test_data'), 'ntl9.xtc')  # ntl9 has 56 residues
+    trajectory = sstrajectory.SSTrajectory(trajectory_filename=traj_filename,
                                            pdb_filename=pdb_filename,
                                            protein_grouping=protein_groups_residues)
 
@@ -284,9 +284,9 @@ def test_intrachain_inter_residue_atomic_distance_by_name():
                                [20, 21, 22, 23, 24, 25, 26, 27, 28, 29],
                                [30, 31, 32, 33, 34, 35, 36, 37, 38, 39],
                                [40, 41, 42, 43, 44, 45, 46, 47, 48, 49]]
-    pdb_filename = os.path.join(camparitraj.get_data('test_data'), 'ntl9.pdb')
-    traj_filename = os.path.join(camparitraj.get_data('test_data'), 'ntl9.xtc')  # ntl9 has 56 residues
-    trajectory = cttrajectory.CTTrajectory(trajectory_filename=traj_filename,
+    pdb_filename = os.path.join(soursop.get_data('test_data'), 'ntl9.pdb')
+    traj_filename = os.path.join(soursop.get_data('test_data'), 'ntl9.xtc')  # ntl9 has 56 residues
+    trajectory = sstrajectory.SSTrajectory(trajectory_filename=traj_filename,
                                            pdb_filename=pdb_filename,
                                            protein_grouping=protein_groups_residues)
 
@@ -317,9 +317,9 @@ def test_intrachain_inter_residue_atomic_distance_by_name():
 
 def test_get_interchain_distance():
     protein_groups = [[0, 1, 2, 3, 4], [5, 6, 7, 8, 9], [10, 11, 12, 13, 14]]
-    pdb_filename = os.path.join(camparitraj.get_data('test_data'), 'ntl9.pdb')
-    traj_filename = os.path.join(camparitraj.get_data('test_data'), 'ntl9.xtc')  # ntl9 has 56 residues
-    trajectory = cttrajectory.CTTrajectory(trajectory_filename=traj_filename,
+    pdb_filename = os.path.join(soursop.get_data('test_data'), 'ntl9.pdb')
+    traj_filename = os.path.join(soursop.get_data('test_data'), 'ntl9.xtc')  # ntl9 has 56 residues
+    trajectory = sstrajectory.SSTrajectory(trajectory_filename=traj_filename,
                                            pdb_filename=pdb_filename,
                                            protein_grouping=protein_groups)
 
@@ -339,9 +339,9 @@ def test_get_interchain_distance():
 
 def test_get_interchain_distance_invalid_mode():
     protein_groups = [[0, 1, 2, 3, 4], [5, 6, 7, 8, 9], [10, 11, 12, 13, 14]]
-    pdb_filename = os.path.join(camparitraj.get_data('test_data'), 'ntl9.pdb')
-    traj_filename = os.path.join(camparitraj.get_data('test_data'), 'ntl9.xtc')  # ntl9 has 56 residues
-    trajectory = cttrajectory.CTTrajectory(trajectory_filename=traj_filename,
+    pdb_filename = os.path.join(soursop.get_data('test_data'), 'ntl9.pdb')
+    traj_filename = os.path.join(soursop.get_data('test_data'), 'ntl9.xtc')  # ntl9 has 56 residues
+    trajectory = sstrajectory.SSTrajectory(trajectory_filename=traj_filename,
                                            pdb_filename=pdb_filename,
                                            protein_grouping=protein_groups)
 
@@ -355,15 +355,15 @@ def test_get_interchain_distance_invalid_mode():
         A1 = 'CA'
         A2 = 'CA'
         
-        with pytest.raises(CTException):
+        with pytest.raises(SSException):
             trajectory.get_interchain_distance(protein_a, protein_b, R1, R2, A1, A2, mode)
 
 
 def test_get_interchain_distance_failing_atom():
     protein_groups = [[0, 1, 2, 3, 4], [5, 6, 7, 8, 9], [10, 11, 12, 13, 14]]
-    pdb_filename = os.path.join(camparitraj.get_data('test_data'), 'ntl9.pdb')
-    traj_filename = os.path.join(camparitraj.get_data('test_data'), 'ntl9.xtc')  # ntl9 has 56 residues
-    trajectory = cttrajectory.CTTrajectory(trajectory_filename=traj_filename,
+    pdb_filename = os.path.join(soursop.get_data('test_data'), 'ntl9.pdb')
+    traj_filename = os.path.join(soursop.get_data('test_data'), 'ntl9.xtc')  # ntl9 has 56 residues
+    trajectory = sstrajectory.SSTrajectory(trajectory_filename=traj_filename,
                                            pdb_filename=pdb_filename,
                                            protein_grouping=protein_groups)
 
@@ -379,15 +379,15 @@ def test_get_interchain_distance_failing_atom():
         R2 = 1 #random.choice(range(len(protein_groups[protein_b])))
 
         for A1, A2 in zip(atoms1, atoms2):
-            with pytest.raises(CTException):
+            with pytest.raises(SSException):
                 trajectory.get_interchain_distance(protein_a, protein_b, R1, R2, A1, A2, mode)
 
 
 def test_get_interchain_distance_failing_residues():
     protein_groups = [[0, 1, 2, 3, 4], [5, 6, 7, 8, 9], [10, 11, 12, 13, 14]]
-    pdb_filename = os.path.join(camparitraj.get_data('test_data'), 'ntl9.pdb')
-    traj_filename = os.path.join(camparitraj.get_data('test_data'), 'ntl9.xtc')  # ntl9 has 56 residues
-    trajectory = cttrajectory.CTTrajectory(trajectory_filename=traj_filename,
+    pdb_filename = os.path.join(soursop.get_data('test_data'), 'ntl9.pdb')
+    traj_filename = os.path.join(soursop.get_data('test_data'), 'ntl9.xtc')  # ntl9 has 56 residues
+    trajectory = sstrajectory.SSTrajectory(trajectory_filename=traj_filename,
                                            pdb_filename=pdb_filename,
                                            protein_grouping=protein_groups)
 
@@ -401,15 +401,15 @@ def test_get_interchain_distance_failing_residues():
         protein_a, protein_b = protein_group
         for mode in modes:
             for R1, R2 in zip(residues1, residues2):
-                with pytest.raises(CTException):
+                with pytest.raises(SSException):
                     trajectory.get_interchain_distance(protein_a, protein_b, R1, R2, A1, A2, mode)
 
 
 def test_get_interchain_distance_invalid_protein_ids():
     protein_groups = [[0, 1, 2, 3, 4], [5, 6, 7, 8, 9], [10, 11, 12, 13, 14]]
-    pdb_filename = os.path.join(camparitraj.get_data('test_data'), 'ntl9.pdb')
-    traj_filename = os.path.join(camparitraj.get_data('test_data'), 'ntl9.xtc')  # ntl9 has 56 residues
-    trajectory = cttrajectory.CTTrajectory(trajectory_filename=traj_filename,
+    pdb_filename = os.path.join(soursop.get_data('test_data'), 'ntl9.pdb')
+    traj_filename = os.path.join(soursop.get_data('test_data'), 'ntl9.xtc')  # ntl9 has 56 residues
+    trajectory = sstrajectory.SSTrajectory(trajectory_filename=traj_filename,
                                            pdb_filename=pdb_filename,
                                            protein_grouping=protein_groups)
 
@@ -422,7 +422,7 @@ def test_get_interchain_distance_invalid_protein_ids():
     protein_a = 100
     protein_b = 101
     for mode in modes:
-        with pytest.raises(CTException):
+        with pytest.raises(SSException):
             trajectory.get_interchain_distance(protein_a, protein_b, R1, R2, A1, A2, mode)
 
 
@@ -460,9 +460,9 @@ def test_read_in_trajectory(GS6_CO):
 
 """
 def test_protein_identification():
-    pdb_filename = os.path.join(camparitraj.get_data('test_data'), 'gs6_invalid_r1.pdb')
-    traj_filename = os.path.join(camparitraj.get_data('test_data'), 'gs6.xtc')
-    trajectory = cttrajectory.CTTrajectory(trajectory_filename=traj_filename, pdb_filename=pdb_filename, debug=True)
+    pdb_filename = os.path.join(soursop.get_data('test_data'), 'gs6_invalid_r1.pdb')
+    traj_filename = os.path.join(soursop.get_data('test_data'), 'gs6.xtc')
+    trajectory = sstrajectory.SSTrajectory(trajectory_filename=traj_filename, pdb_filename=pdb_filename, debug=True)
     #print(trajectory)
 
 
@@ -470,3 +470,36 @@ def test_protein_identification():
 
 
 """
+
+
+def test_get_overal_rh(GS6_CO):
+    assert np.allclose(GS6_CO.get_overall_hydrodynamic_radius(), GS6_CO.proteinTrajectoryList[0].get_hydrodynamic_radius())
+
+def test_get_overal_asphericity(GS6_CO):
+    assert np.allclose(GS6_CO.get_overall_asphericity(), GS6_CO.proteinTrajectoryList[0].get_asphericity())
+
+def test_get_overal_rg(GS6_CO):
+    assert np.allclose(GS6_CO.get_overall_radius_of_gyration(), GS6_CO.proteinTrajectoryList[0].get_radius_of_gyration())
+
+def test_get_overal_rg(GMX_2CHAINS):
+    # compares rg of 2 chains vs. same values calculated by VMD
+
+    # rg calculated in vmd
+    vmd_rg = np.array([24.497053146362305, 24.938467025756836, 25.010461807250977, 27.36289405822754, 26.659685134887695, 24.56108283996582, 24.705211639404297, 27.144346237182617, 25.043672561645508, 27.67377471923828, 48.036869049072266, 23.930212020874023, 24.449384689331055, 24.491701126098633, 25.248193740844727, 27.898420333862305, 47.11823272705078, 47.213069915771484, 49.21323776245117, 27.429519653320312])
+
+    assert np.allclose(GMX_2CHAINS.get_overall_radius_of_gyration(), vmd_rg)
+
+
+def test_get_overal_asphericity(GMX_2CHAINS):
+    # compares rg of 2 chains vs. same values calculated by VMD
+
+    asph = np.array([0.36274249, 0.4079101, 0.5837932, 0.3413606, 0.30022731, 0.25667767, 0.24720234, 0.32076792, 0.26974903, 0.21184996, 0.62855842, 0.23021391, 0.16662495, 0.45061943, 0.54406795, 0.4482196, 0.53423135, 0.73352191, 0.75562579, 0.32473148])
+
+    assert np.allclose(GMX_2CHAINS.get_overall_asphericity(), asph)
+
+def test_get_overal_rh(GMX_2CHAINS):
+    # compares rg of 2 chains vs. same values calculated by VMD
+
+    asph = np.array([26.99809304, 27.25590015, 27.29754026, 28.59875282, 28.22148641, 27.03576021, 27.12021072, 28.48253016, 27.31671616, 28.76251356, 36.57647347, 26.66061797, 26.96999394, 26.99493729, 27.43425109, 28.87969746, 36.31506845, 36.3423472, 36.90213999, 28.63399989])
+
+    assert np.allclose(GMX_2CHAINS.get_overall_hydrodynamic_radius(), asph)

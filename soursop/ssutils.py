@@ -14,7 +14,7 @@ import os
 import sys
 import numpy
 import ctypes
-from . ctexceptions import CTException
+from . ssexceptions import SSException
 from threadpoolctl import threadpool_info, threadpool_limits
 
 
@@ -32,6 +32,7 @@ def mkl_set_num_threads(cores):
 
 
 def _set_mkl_numpy_threads(mkl_path, num_threads):
+
     # Traditional UNIX-like systems will have shared objects available.
     if 'bsd' in sys.platform or 'lin' in sys.platform:
         mkl_rt = ctypes.CDLL(mkl_path)
@@ -108,7 +109,7 @@ def validate_keyword_option(keyword, allowed_vals, keyword_name, error_message=N
     --------
     None
 
-        No return value, but raises ctexceptions.CTException if ``keyword `` is not
+        No return value, but raises ssexceptions.SSException if ``keyword `` is not
         found in the allowed_vals list
 
     """
@@ -123,4 +124,4 @@ def validate_keyword_option(keyword, allowed_vals, keyword_name, error_message=N
             if error_type is not str:
                 raise RuntimeError('Invalid error message type: "{}". The error message must be a string.'.format(error_type))
             message = error_message[:]
-        raise CTException(message)
+        raise SSException(message)

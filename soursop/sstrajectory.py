@@ -1,7 +1,7 @@
 """
-cttrajectory.py
+sstrajectory.py
 
-cttrajectory is the main class through which simulation trajectories are read in.
+sstrajectory is the main class through which simulation trajectories are read in.
 
 """
 
@@ -22,19 +22,19 @@ cttrajectory is the main class through which simulation trajectories are read in
 import mdtraj as md
 import numpy as np
 from .configs import *
-from .ctdata  import ALL_VALID_RESIDUE_NAMES
+from .ssdata  import ALL_VALID_RESIDUE_NAMES
 
-from .ctprotein import CTProtein
-from .ctexceptions import CTException
-from . import ctutils
-from . import ctio
+from .ssprotein import SSProtein
+from .ssexceptions import SSException
+from . import ssutils
+from . import ssio
 
 from copy import copy
 
 
-class CTTrajectory:
+class SSTrajectory:
     """
-    CTrajectory class that holds a single simulation trajectory object. 
+    SSTrajectory class that holds a single simulation trajectory object. 
     
 
     """
@@ -70,11 +70,11 @@ class CTTrajectory:
             of interest. Normally this is `__START.pdb`.
 
         TRJ : mdtraj.Trajectory
-            It is sometimes useful to re-defined a trajectory and create a new CTTraj \
+            It is sometimes useful to re-defined a trajectory and create a new SSTrajectory \
             object from that trajectory. This could be done by writing that new trajectory \
             to file, but this is extremely slow due to the I/O impact of reading/writing \
             from disk. If an mdtraj trajectory objected is passed, this is used as the \
-            new trajectory from which the CTTrajectory object is constructed. 
+            new trajectory from which the SSTrajectory object is constructed. 
 
             Default = None
 
@@ -99,15 +99,15 @@ class CTTrajectory:
         # first we decide if we're reading from file or from an existing trajectory
         if (trajectory_filename is None) and (pdb_filename is None):
             if TRJ is None:
-                raise CTException('No input provided! Please provide ether a pdb and trajectory file OR a pre-formed traj object')
+                raise SSException('No input provided! Please provide ether a pdb and trajectory file OR a pre-formed traj object')
                 
             # note the [:] means this is a COPY!
             self.traj = TRJ[:]
         else:
             if (trajectory_filename is None):
-                raise CTException('No trajectory file provided!')
+                raise SSException('No trajectory file provided!')
             if (pdb_filename is None):
-                raise CTException('No PDB file provided!')
+                raise SSException('No PDB file provided!')
 
             # read in the raw trajectory
             self.traj = self.__readTrajectory(trajectory_filename, pdb_filename, pdblead)
@@ -129,7 +129,7 @@ class CTTrajectory:
 
 
     def  __repr__(self):
-        return "CTTrajectory (%s): %i proteins and %i frames" % (hex(id(self)), self.num_proteins, self.n_frames)
+        return "SSTrajectory (%s): %i proteins and %i frames" % (hex(id(self)), self.num_proteins, self.n_frames)
 
 
     def __len__(self):
@@ -196,10 +196,10 @@ class CTTrajectory:
 
             # this is s custom warning for a specific edge-case we encounter a lot
             if (uc_lengths[0] == 0 or uc_lengths[1] == 0 or uc_lengths[2] == 0):
-                ctio.warning_message("Trajectory file unit cell lengths are zero for at least one dimension. This is a probably a bug with an FRC generated __START.pdb file, because in the old version of CAMPARI used to do grid based FRC calculations the unit cell dimensions are not written correctly. This may cause issues but we're going to assume everything is OK for now. Check the validity of any analysis output. If you're worried, you can use the following workaround.\n\n:::: WORK AROUNDS ::::\nSimply run\n\ntrjconv -f __traj.xtc -s __START.pdb -box a b c -o frc.xtc \n\nAn then \n\ntrjconv -f frc.xtc -s __START.pdb -box a b c -o start.pdb -dump 0\n\n\nHere\n-f n__traj.xtc   : defines the trajectory file\n-s __start.pdb   : defines the pdb file used to parse the topology\n-box a b c       : defines the box lengths **in nanometers**\n-o frc.xtc       : is the name of the new trajectory file with updated box lengths\nSelect 0 (system) when asked to 'Select group for output'.The second step creates the equivalent PDB file with the header-line correctly defining the box unit cell lengths and angles. These two new files should then be used for analysis.\n\nAs an example, if my FRC simulation had a sphere radius of 100 angstroms then my correction command would look something like \n\ntrjconv -f __traj.xtc -s __START.pdb -box 20 20 20 -o frc.xtc\ntrjconv -f frc.xtc -s __START.pdb -box 20 20 20 -o start.pdb -dump 0")
+                ssio.warning_message("Trajectory file unit cell lengths are zero for at least one dimension. This is a probably a bug with an FRC generated __START.pdb file, because in the old version of CAMPARI used to do grid based FRC calculations the unit cell dimensions are not written correctly. This may cause issues but we're going to assume everything is OK for now. Check the validity of any analysis output. If you're worried, you can use the following workaround.\n\n:::: WORK AROUNDS ::::\nSimply run\n\ntrjconv -f __traj.xtc -s __START.pdb -box a b c -o frc.xtc \n\nAn then \n\ntrjconv -f frc.xtc -s __START.pdb -box a b c -o start.pdb -dump 0\n\n\nHere\n-f n__traj.xtc   : defines the trajectory file\n-s __start.pdb   : defines the pdb file used to parse the topology\n-box a b c       : defines the box lengths **in nanometers**\n-o frc.xtc       : is the name of the new trajectory file with updated box lengths\nSelect 0 (system) when asked to 'Select group for output'.The second step creates the equivalent PDB file with the header-line correctly defining the box unit cell lengths and angles. These two new files should then be used for analysis.\n\nAs an example, if my FRC simulation had a sphere radius of 100 angstroms then my correction command would look something like \n\ntrjconv -f __traj.xtc -s __START.pdb -box 20 20 20 -o frc.xtc\ntrjconv -f frc.xtc -s __START.pdb -box 20 20 20 -o start.pdb -dump 0")
 
         except TypeError:
-            ctio.warning_message("Warning: UnitCell lengths were not provided... This may cause issues but we're going to assume everything is OK for now...")
+            ssio.warning_message("Warning: UnitCell lengths were not provided... This may cause issues but we're going to assume everything is OK for now...")
         
         # if pdbLead is true then load the pdb_filename as a trajectory
         # and then add it to the front (the PDB file is its own topology
@@ -215,10 +215,10 @@ class CTTrajectory:
                 uc_lengths_2 = traj.unitcell_lengths[1]
             
                 if (uc_lengths_1[0] != uc_lengths_2[0]) or (uc_lengths_1[2] != uc_lengths_2[2]) or (uc_lengths_1[2] != uc_lengths_2[2]):
-                    ctio.warning_message('........................\nWARNING:\nThe unit cell dimensions of the PDB file and trajectory file did not match, specifically\nPDB file = [ %s ]\nXTC file = [ %s ]\nThis may cause issues if native MDTraj untilities are used (and potentially for CTraj utilities that are based on these. It is not necessarily an issue, but PLEASE sanity check your outcome. To be save we reeommend editing the PDB-file untilcell dimenions to match.')
+                    ssio.warning_message('........................\nWARNING:\nThe unit cell dimensions of the PDB file and trajectory file did not match, specifically\nPDB file = [ %s ]\nXTC file = [ %s ]\nThis may cause issues if native MDTraj untilities are used (and potentially for SOURSOP utilities that are based on these. It is not necessarily an issue, but PLEASE sanity check your outcome. To be save we reeommend editing the PDB-file untilcell dimenions to match.')
 
             except TypeError:
-                ctio.warning_message("Warning: UnitCell lengths were not provided... This may cause issues but we're going to assume everything is OK for now...")
+                ssio.warning_message("Warning: UnitCell lengths were not provided... This may cause issues but we're going to assume everything is OK for now...")
                                                                            
         return traj
 
@@ -237,8 +237,8 @@ class CTTrajectory:
 
         Returns
         ----------
-        ctprotein.CTProtein
-            Returns a single CTProtein object
+        ssprotein.SSProtein
+            Returns a single SSProtein object
         
         """
 
@@ -266,7 +266,7 @@ class CTTrajectory:
 
                 protein_atoms.extend(local_atoms)
 
-        return CTProtein(trajectory.atom_slice(protein_atoms))
+        return SSProtein(trajectory.atom_slice(protein_atoms))
         
 
     #oxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxo
@@ -292,7 +292,7 @@ class CTTrajectory:
         Returns
         ---------
         list
-            Returns a proteinTrajectoryList - a list with one or more CTProtein
+            Returns a proteinTrajectoryList - a list with one or more SSProtein
             objects in it
         
         """
@@ -323,7 +323,7 @@ class CTTrajectory:
 
             else:
                 if debug:
-                    ctio.debug_message('Skipping residue %s from %s' %(chain.residue(0).name, chain))
+                    ssio.debug_message('Skipping residue %s from %s' %(chain.residue(0).name, chain))
 
         # for each protein chain that we have atomic indices
         # for (hopefully all of them!) cycle through and create
@@ -340,17 +340,17 @@ class CTTrajectory:
 
             # WA
             # gets the resid offset in a way that is ensures internal
-            # consistency for the CTProtein object
+            # consistency for the SSProtein object
             first_resid = PT.topology.chain(0).residue(0).index
 
             if first_resid != 0:
-                raise CTException('After extracting a protein subtrajectory, the first resid is not 0. This may reflect a bug, or you may not be using MDTraj 1.9.5')
+                raise SSException('After extracting a protein subtrajectory, the first resid is not 0. This may reflect a bug, or you may not be using MDTraj 1.9.5')
                 
-            # add that CTProtein to the ever-growing proteinTrajectory list
-            proteinTrajectoryList.append(CTProtein(PT))
+            # add that SSProtein to the ever-growing proteinTrajectory list
+            proteinTrajectoryList.append(SSProtein(PT))
 
         if len(proteinTrajectoryList) == 0:
-            ctio.warning_message('No protein chains found in the trajectory')
+            ssio.warning_message('No protein chains found in the trajectory')
 
         return proteinTrajectoryList
 
@@ -390,7 +390,7 @@ class CTTrajectory:
         Returns
         ---------
         list
-            Returns a proteinTrajectoryList - a list with one or more CTProtein
+            Returns a proteinTrajectoryList - a list with one or more SSProtein
             objects in it
         
 
@@ -415,7 +415,7 @@ class CTTrajectory:
             local_atoms = topology.select('resid %s' %(res_string))
             
             if len(local_atoms) == 0:
-                ctio.warning_message('In residue group [%s ...] no residues in the trajectory were found...' %(str(group)[0:8]))
+                ssio.warning_message('In residue group [%s ...] no residues in the trajectory were found...' %(str(group)[0:8]))
 
             else:
                 group_atoms.append(local_atoms)
@@ -437,16 +437,16 @@ class CTTrajectory:
             PT = trajectory.atom_slice(local_group_atoms)       
             
             # gets the resid offset in a way that is ensures internal
-            # consistency for the CTProtein object
+            # consistency for the SSProtein object
             resid_offset = PT.topology.chain(0).residue(0).index
 
             if resid_offset != 0:
-                raise CTException('After extracting a protein subtrajectory, the first resid is not 0. This may reflect a bug, or you may not be using MDTraj 1.9.5')
+                raise SSException('After extracting a protein subtrajectory, the first resid is not 0. This may reflect a bug, or you may not be using MDTraj 1.9.5')
                 
-            proteinTrajectoryList.append(CTProtein(PT))
+            proteinTrajectoryList.append(SSProtein(PT))
 
         if len(proteinTrajectoryList) == 0:
-            ctio.warning_message('No protein chains found in the trajectory')
+            ssio.warning_message('No protein chains found in the trajectory')
 
 
         return proteinTrajectoryList
@@ -461,7 +461,7 @@ class CTTrajectory:
         protein residue in the trajectory. For systems with multiple protein chains, 
         all chains are combined together. For systems with a single protein chain,
         this function offers no advantage over interacting directly with the
-        CTProtein object in the .proteinTrajectoryList.
+        SSProtein object in the .proteinTrajectoryList.
 
         Parameters
         -------------
@@ -485,7 +485,7 @@ class CTTrajectory:
         protein residue in the trajectory. For systems with multiple protein chains, 
         all chains are combined together. For systems with a single protein chain,
         this function offers no advantage over interacting directly with the
-        CTProtein object in the .proteinTrajectoryList.
+        SSProtein object in the .proteinTrajectoryList.
 
         Parameters
         -------------
@@ -508,7 +508,7 @@ class CTTrajectory:
         protein residue in the trajectory. For systems with multiple protein chains, 
         all chains are combined together. For systems with a single protein chain,
         this function offers no advantage over interacting directly with the
-        CTProtein object in the .proteinTrajectoryList.
+        SSProtein object in the .proteinTrajectoryList.
 
         Parameters
         -------------
@@ -518,6 +518,7 @@ class CTTrajectory:
         ----------
         np.ndarray 
             Returns a numpy array with per-frame instantaneous asphericity
+
         """
 
         return self.__single_protein_traj.get_hydrodynamic_radius()
@@ -584,9 +585,9 @@ class CTTrajectory:
         
         """
 
-        ctutils.validate_keyword_option(mode, ['CA', 'COM'], 'mode')
+        ssutils.validate_keyword_option(mode, ['CA', 'COM'], 'mode')
         
-        # get CTProtein objects for the two IDs passed (could be the same)
+        # get SSProtein objects for the two IDs passed (could be the same)
         P1 = self.proteinTrajectoryList[proteinID1]        
         P2 = self.proteinTrajectoryList[proteinID2]
 
@@ -635,7 +636,7 @@ class CTTrajectory:
         """
         Function which returns the distance between two specific atoms on two residues, or between 
         two residues based on mdtraj' atomselection mode rules (discussed below). Required input are protein
-        ID selectors and the resid being used. Resids should be used as would be normally used for the CTProtein
+        ID selectors and the resid being used. Resids should be used as would be normally used for the SSProtein
         objects associated with proteinID1 and proteinID2.
 
         For inter-atomic distances, atoms are selected from the passed residue and their 'name' field from the topology 
@@ -703,15 +704,15 @@ class CTTrajectory:
         # check mode keyword is valid
         allowed_modes = [ 'atom', 'ca', 'closest', 'closest-heavy', 'sidechain', 'sidechain-heavy' ]
         if mode not in allowed_modes:
-            raise CTException("Provided mode keyword must be one of 'atom', 'ca', 'closest', 'closest-heavy', 'sidechain', or 'sidechain-heavy'. Provided keyword was [%s]" % (mode))
+            raise SSException("Provided mode keyword must be one of 'atom', 'ca', 'closest', 'closest-heavy', 'sidechain', or 'sidechain-heavy'. Provided keyword was [%s]" % (mode))
 
-        # get CTProtein objects for the two IDs passed (could be the same)        
+        # get SSProtein objects for the two IDs passed (could be the same)        
         try:
             P1 = self.proteinTrajectoryList[proteinID1]
             P2 = self.proteinTrajectoryList[proteinID2]
 
         except IndexError as e:
-            raise CTException('In get_interchain_distance(): When selecting protein indices %i and %i at least one of these was out of range (indices are from 0...%i)' % (proteinID1, proteinID2, len(self.proteinTrajectoryList)-1))
+            raise SSException('In get_interchain_distance(): When selecting protein indices %i and %i at least one of these was out of range (indices are from 0...%i)' % (proteinID1, proteinID2, len(self.proteinTrajectoryList)-1))
             
 
         # next build a new trajectory that contains ONLY the two residues selected
@@ -719,10 +720,10 @@ class CTTrajectory:
         local_atoms2 = P2.topology.select('resid %i' % (R2))
 
         if len(local_atoms1) == 0:
-            raise CTException("In get_interchain_distance(): When selecting resid %i from proteinID1 found no atoms" %(R1))
+            raise SSException("In get_interchain_distance(): When selecting resid %i from proteinID1 found no atoms" %(R1))
 
         if len(local_atoms2) == 0:
-            raise CTException("In get_interchain_distance(): When selecting resid %i from proteinID2 found no atoms" %(R2))
+            raise SSException("In get_interchain_distance(): When selecting resid %i from proteinID2 found no atoms" %(R2))
             
         subtraj_p1 = P1.traj.atom_slice(local_atoms1)
         subtraj_p2 = P2.traj.atom_slice(local_atoms2)
@@ -732,7 +733,7 @@ class CTTrajectory:
         full_subtraj = subtraj_p1.stack(subtraj_p2)
         full_subtraj_residues = [i for i in full_subtraj.topology.residues]
         if len(full_subtraj_residues) != 2:
-            raise CTException("In get_interchain_distance(): When passed in two residues (R1=%i, R2=%i) in proteins %i and %i found multiple residues (%i)...these resids could not be found " %(R1, R2, proteinID1, proteinID2, len(full_subtraj_residues)))
+            raise SSException("In get_interchain_distance(): When passed in two residues (R1=%i, R2=%i) in proteins %i and %i found multiple residues (%i)...these resids could not be found " %(R1, R2, proteinID1, proteinID2, len(full_subtraj_residues)))
 
         
         # if we're looking at a specific pair of atoms (note we use resid 0 and 1 because we KNOW this trajectory only has 2 residues and we know R1 is 0 and R2 is 1
@@ -740,13 +741,13 @@ class CTTrajectory:
 
             atom1 = full_subtraj.topology.select('resid 0 and name "%s"' % A1)
             if len(atom1) != 1:
-                raise CTException("In get_interchain_distance() when selecting atom %s from residue %i in protein %i no atoms were found " % (A1, R1,  proteinID1))                
+                raise SSException("In get_interchain_distance() when selecting atom %s from residue %i in protein %i no atoms were found " % (A1, R1,  proteinID1))                
 
             COM_1 = md.compute_center_of_mass(full_subtraj.atom_slice(atom1))
 
             atom2 = full_subtraj.topology.select('resid 1 and name "%s"' % A2)
             if len(atom2) != 1:
-                raise CTException("In get_interchain_distance() when selecting atom %s from residue %i in protein %i no atoms were found " % (A2, R2,  proteinID2))                
+                raise SSException("In get_interchain_distance() when selecting atom %s from residue %i in protein %i no atoms were found " % (A2, R2,  proteinID2))                
 
             COM_2 = md.compute_center_of_mass(full_subtraj.atom_slice(atom2))
             

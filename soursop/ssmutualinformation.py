@@ -1,5 +1,5 @@
 """
-ctmutualinformation contains all the functions associated with computing things related to mutual
+ssmutualinformation contains all the functions associated with computing things related to mutual
 information. This file is not a class, but represents a set of stand alone functions, rather than 
 including this function in any one other class.
 """
@@ -22,7 +22,7 @@ including this function in any one other class.
 import mdtraj as md
 import numpy as np
 import scipy
-from .ctexceptions import CTWarning
+from .ssexceptions import SSWarning
 
 
 

@@ -1,6 +1,6 @@
 """
-ctdata contains all specific data used, and is disinct from configs, which are 
-package specific global configurations, while ctdata contains information that
+ssdata contains all specific data used, and is disinct from configs, which are 
+package specific global configurations, while ssdata contains information that
 is unambigious as well-defined.
 
 """

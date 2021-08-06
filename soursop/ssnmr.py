@@ -3,7 +3,7 @@
 **Author(s):** Alex Keeley (with Alex Holehouse)
 
 """
-from .ctexceptions import CTException
+from .ssexceptions import SSException
 import re
 
 # ----------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -78,11 +78,11 @@ def compute_random_coil_chemical_shifts(protein_sequence, temperature=25, pH=7.4
     """
     # sanity check temperature
     if temperature > 100 or temperature < 0:
-        raise CTException('Temperature provided (%i) was non-physiological. Remember temperature should be in *celcius*.' %(temperature))
+        raise SSException('Temperature provided (%i) was non-physiological. Remember temperature should be in *celcius*.' %(temperature))
 
     # pH sanity check
     if pH < 0 or pH > 14:
-        raise CTException('pH provided (%i) was non-physiological. Remember pH should be in between 0 and 14.' %(pH))
+        raise SSException('pH provided (%i) was non-physiological. Remember pH should be in between 0 and 14.' %(pH))
 
 
 
@@ -423,7 +423,7 @@ def compute_random_coil_chemical_shifts(protein_sequence, temperature=25, pH=7.4
 
     # deuterated parameters not available for phosphorylated Residues
     if ((22 in sequence) or (25 in sequence) or (28 in sequence)) and use_perdeuteration:
-        raise CTException('Phosphorylated amino acids not supported in deuterated proteins')
+        raise SSException('Phosphorylated amino acids not supported in deuterated proteins')
 
     while cur < (len(sequence) - 4):
         if sequence[cur + 2] == 2:  # Aspartate

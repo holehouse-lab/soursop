@@ -12,9 +12,10 @@ the Exceptions
 ##  \___\__,_|_| |_| |_| .__/ \__,_|_|  |_|\__|_|  \__,_|/ |
 ##                     |_|                             |__/ 
 ##
+## SOURSOP
 ## Alex Holehouse (Pappu Lab and Holehouse Lab)
 ## Simulation analysis package
-## Copyright 2014 - 2019
+## Copyright 2014 - 2021
 ##
 
 import warnings
@@ -23,7 +24,7 @@ import warnings
 
 # ........................................................................
 #
-class CTException(Exception):
+class SSException(Exception):
     """
     Exception class for raising custom exceptions
 
@@ -43,7 +44,7 @@ class notYetImplementedException(Exception):
 
 # ........................................................................
 #
-def CTWarning(string):
+def SSWarning(string):
     """
     Custom function to display non-fatal warnings.
 
