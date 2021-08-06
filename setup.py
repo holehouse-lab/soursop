@@ -30,7 +30,7 @@ setup(
     url='https://github.com/holehouse-lab/soursop',
 
     # Which Python importable modules should be included when your package is installed
-    packages=['soursop', "soursop.tests", "soursop.ctanalyzer"],
+    packages=['soursop', "soursop.tests", "soursop.ssanalyzer"],
 
     # Optional include package data to ship with your package
     # Comment out this line to prevent the files from being packaged with your software
@@ -39,8 +39,8 @@ setup(
 
     # line here means we include the files defined in MANIFEST.in - the package_data
     # line below is not sufficient to do this
-    include_package_data=True,    
-    package_data={'soursop': ['data/'], 'soursop': ['data/test_data/']},    
+    include_package_data=True,
+    package_data={'soursop': ['data/'], 'soursop': ['data/test_data/']},
 
     # dependencies soursop requires
     install_requires=[
