@@ -1,11 +1,11 @@
 
-ctprotein module
+ssprotein module
 =========================================================
 
-This is where the ctprotein shinanigans occurs. Maybe we reference [BiDB79]_ yeah
+This is where the ssprotein shinanigans occurs. Maybe we reference [BiDB79]_ yeah
 
-.. automodule:: camparitraj.ctprotein
-.. autoclass:: CTProtein
+.. automodule:: soursop.ssprotein
+.. autoclass:: SSProtein
     :members:
 
         .. automethod:: __init__

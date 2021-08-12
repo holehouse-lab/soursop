@@ -28,7 +28,8 @@ from numpy.random import choice
 from .configs import DEBUGGING
 from .ssdata import THREE_TO_ONE, DEFAULT_SIDECHAIN_VECTOR_ATOMS, ALL_VALID_RESIDUE_NAMES
 from .ssexceptions import SSException
-from . import ssmutualinformation, ssio, sstools, sspolymer, ssutils, sstrajectory
+from . import ssmutualinformation, ssio, sstools, sspolymer, ssutils
+#from .sstrajectory import SSTrajectory
 
 from . _internal_data import BBSEG2
 
@@ -98,7 +99,7 @@ class SSProtein:
         """
 
         # This is necessary to support sstrajectory.Trajectory as well as the default `mdtraj`.
-        if isinstance(traj, sstrajectory.SSTrajectory):
+        if str(traj) == "<class 'soursop.sstrajectory.SSTrajectory'>":
             self.traj       = traj.traj
             self.topology   = traj.traj.topology
 

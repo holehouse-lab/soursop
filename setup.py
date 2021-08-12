@@ -48,7 +48,8 @@ setup(
         "scipy>=1.5.0",
         "cython",
         "mdtraj>=1.9.5",
-        "pandas>=0.23.0"
+        "pandas>=0.23.0",
+        "threadpoolctl>=2.2.0",
     ],
 
 
