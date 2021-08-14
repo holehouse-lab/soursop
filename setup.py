@@ -25,7 +25,7 @@ setup(
     long_description_content_type="text/markdown",
     version=versioneer.get_version(),
     cmdclass=versioneer.get_cmdclass(),
-    scripts=['scripts/ctanalyzer'],
+    scripts=['scripts/ssanalyzer'],
     license='LGPLv3',
     url='https://github.com/holehouse-lab/soursop',
 
