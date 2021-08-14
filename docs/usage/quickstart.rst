@@ -1,9 +1,16 @@
 Installation
 =========================================================
 
-To install camparitraj during development run.
+.. code-block:: 
 
-``pip install .``
+	conda install -c conda-forge mdtraj
+	
+Once ``mdtraj`` is installed, **soursop** can be installed using
+
+
+.. code-block:: 
+
+	pip install git+ssh://git@github.com/holehouselab/soursop.git
 
 Dependencies
 ************************
