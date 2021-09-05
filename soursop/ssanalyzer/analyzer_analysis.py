@@ -222,7 +222,8 @@ def run_motif_RG(CP, outdir, R1_idx, R2_idx):
 
 #>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 #>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-def run_SASA(CP, outdir, stride2use, probe_radius=0.14):
+def run_SASA(CP, outdir, stride2use, probe_radius=1.4):
+
     status_message('SASA', outdir)
 
     # read in max values for sidechains and backbone, and construct a dictionary that allows

@@ -392,7 +392,7 @@ def test_run_angle_mutual_information(GS6_CP, NTL9_CP, cta_protein_helper):
 
 
 def test_run_SASA_default_probe_radius(GS6_CP, NTL9_CP, cta_protein_helper):
-    probe_radius = 0.14
+    probe_radius = 1.4
     num_copies = 5
     initial_stride_val = 20
     ext = 'csv'
@@ -421,7 +421,7 @@ def test_run_SASA_default_probe_radius(GS6_CP, NTL9_CP, cta_protein_helper):
 
 
 def test_run_SASA_custom_probe_radius(GS6_CP, NTL9_CP, cta_protein_helper):
-    probe_radius = 0.20
+    probe_radius = 2.0
     num_copies = 5
     initial_stride_val = 20
     ext = 'csv'

@@ -133,6 +133,7 @@ class SSProtein:
         self.__residue_atom_table = {}
         self.__residue_COM        = {}
         self.__residue_atom_COM   = {}
+        self.__SASA_saved         = {}
 
         self.__resid_with_CA = self.__get_resid_with_CA()
 
@@ -319,7 +320,7 @@ class SSProtein:
                 if abs(np.sum(weights) - 1.0) < etol:
                     return weights
                 else:
-                    ssio.exception_message("Unable to convert passed weights to a np.array(). Likely means the passed value is not numerical (printed below):\n\n%s"%(weights), e, with_frills=True, raise_exception=True)
+                    ssio.exception_message("Unable to convert passed weights to a np.array(). Likely means the passed value is not numerical (printed below):\n\n%s"%(weights), with_frills=True, raise_exception=True)
 
 
         return False
@@ -3339,20 +3340,20 @@ class SSProtein:
     # ........................................................................
     #
     #
-    def get_all_SASA(self, probe_radius=0.14, mode='residue', stride=20):
+    def get_all_SASA(self, probe_radius=1.4, mode='residue', stride=20):
         """
         Returns the Solvent Accessible Surface Area (SASA) for each residue from
         every stride-th frame. SASA is determined using shrake_rupley algorithm.
 
-        SASA is returned in Angstroms squared, BUT PROBE RADIUS is in nanometers!
+        SASA is returned in Angstroms squared, probe radius is also in Angstroms
 
         Parameters
         -------------
         
         probe_radius : float 
-            Radius of the solvent probe used in nm. Uses the Golden-Spiral algorithm.
-            0.14 nm is pretty standard. NOTE - the probe radius must be in nanometers.
-            Default = 0.14.
+            Radius of the solvent probe used in Angstroms. Uses the Golden-Spiral algorithm.
+            1.4 A is pretty standard. 
+            Default = 1.4.
          
 
         mode : string         
@@ -3417,22 +3418,31 @@ class SSProtein:
         # validate input mode
         ssutils.validate_keyword_option(mode, ['residue', 'atom','backbone','sidechain','all'], 'mode')
 
+        # build a specific memoized name for this request
+        memoized_name = f'SASA_{stride}_{mode}_{probe_radius}'
+
+        # return already computed SASA is available...
+        if memoized_name in self.__SASA_saved:
+            return self.__SASA_saved[memoized_name]
+
         # downsample based on the stride
         target = self.__get_subtrajectory(self.traj, stride)
 
         # 100* to convert from nm^2 to A^2
         if mode == 'residue':
-            return 100*md.shrake_rupley(target, mode='residue', probe_radius=probe_radius)
 
+            return_data = 100*md.shrake_rupley(target, mode='residue', probe_radius=probe_radius*0.1)
+            
         if mode == 'atom':
-            return 100*md.shrake_rupley(target, mode='atom', probe_radius=probe_radius)
+            return_data = 100*md.shrake_rupley(target, mode='atom', probe_radius=probe_radius*0.1)
+
 
         if mode == 'sidechain' or mode == 'backbone' or mode == 'all':
 
             print("WARNING: Not tested on multiprotein systems")
 
             # run calc
-            basis =  md.shrake_rupley(target, mode='atom', probe_radius=probe_radius, get_mapping=True)
+            basis =  md.shrake_rupley(target, mode='atom', probe_radius=probe_radius*0.1, get_mapping=True)
 
             # extract sidechains
             if mode == 'sidechain' or mode == 'all':
@@ -3443,23 +3453,27 @@ class SSProtein:
                 BB_SASA = get_sasa_based_on_type(basis, 'backbone')
 
             if mode == 'all':
-                ALL_SASA = 100*md.shrake_rupley(target, mode='residue', probe_radius=probe_radius)
+                ALL_SASA = 100*md.shrake_rupley(target, mode='residue', probe_radius=probe_radius*0.1)
 
             if mode == 'sidechain':
-                return SC_SASA
+                return_data = SC_SASA
 
             if mode == 'backbone':
-                return SC_SASA
+                return_data = SC_SASA
 
             if mode == 'all':
-                return (ALL_SASA, SC_SASA, BB_SASA)
+                return_data =  (ALL_SASA, SC_SASA, BB_SASA)
+
+        # save for the future!!
+        self.__SASA_saved[memoized_name] = return_data
+        return return_data
 
 
 
     # ........................................................................
     #
     #
-    def get_site_accessibility(self, input_list, probe_radius=0.14, mode='residue_type', stride=20):
+    def get_site_accessibility(self, input_list, probe_radius=1.4, mode='residue_type', stride=20):
         """
         Function to compute site/residue type accessibility. 
 
@@ -3480,9 +3494,9 @@ class SSProtein:
             ([1,2,3,4]) which will be taken and the SASA calculated for.
 
         probe_radius : float 
-            Radius of the solvent probe used in nm. Uses the Golden-Spiral algorithm.
-            0.14 nm is pretty standard. NOTE - the probe radius must be in nanometers.
-            Default = 0.14
+            Radius of the solvent probe used in Angstroms. Uses the Golden-Spiral 
+            algorithm. 1.4 A is pretty standard.             
+            Default = 1.4
 
         mode : string 
             Mode used to examine sites. MUST be one of 'residue_type' or 'resid'. 
@@ -3555,13 +3569,20 @@ class SSProtein:
     # ........................................................................
     #
     #
-    def get_regional_SASA(self, R1, R2, probe_radius=0.14, stride=20):
+    def get_regional_SASA(self, R1, R2, probe_radius=1.4, stride=20):
         """
         Returns the Solvent Accessible Surface Area (SASA) for a local region in
         every stride-th frame. SASA is determined using shrake_rupley algorithm.
 
-        SASA is returned in Angstroms squared, BUT PROBE RADIUS is in nanometers!
+        SASA is returned in Angstroms squared, probe radius is in Angstroms.
 
+        A note on performance - the algorithm has to calculate SASA for EVERY atom 
+        for each frame before a subregion can be evaluated. However,  the total SASA 
+        data is saved and memoized for future use in the session. As such, if you scan
+        over a protein to compute local SASA in a sliding window the first window will
+        take an INORDINATE amount of time but the subsequent ones are just look ups so
+        instantaneous. This speed up is lost if either the stride or the probe-size
+        is altered, however.
 
         Parameters
         -----------
@@ -3572,9 +3593,8 @@ class SSProtein:
             Index value for the last residue in the region
 
         probe_radius : float 
-            Radius of the solvent probe used in nm. Uses the Golden-Spiral algorithm.
-            0.14 nm is pretty standard. NOTE - the probe radius must be in nanometers.
-            Default = 0.14
+            Radius of the solvent probe used in Angstroms. Uses the Golden-Spiral algorithm.
+            1.4 A is pretty standard. Default = 1.4        
 
         stride : int
             Defines the spacing between frames to compare - i.e. if comparing frame1 to a 
@@ -3582,7 +3602,6 @@ class SSProtein:
             may scale poorly as protein length increases at which point increasing the 
             stride may become necessary. NOTE default is NOT 1 because this is quite an
             expensive analysis. Default = 20. 
-
 
         Returns
         --------
