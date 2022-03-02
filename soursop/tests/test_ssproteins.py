@@ -574,15 +574,15 @@ def test_get_local_collapse_successful_run(NTL9_CP):
 
 
 # SSProtein.get_angle_decay
-def test_get_angle_decay_return_full_matrix(GS6_CP, NTL9_CP):
+def test_get_angle_decay_return_all_pairs(GS6_CP, NTL9_CP):
     proteins = [GS6_CP, NTL9_CP]
     for protein in proteins:
         result = protein.get_angle_decay(return_full_matrix=True)
         assert len(result) == 2
 
-        return_matrix, full_matrix = result
-        assert full_matrix.shape[0] == len(return_matrix)
-        assert len(return_matrix[0]) == 3
+        return_matrix, all_pairs = result
+        assert len(all_pairs) == len(return_matrix)
+        
 
         num_caps = 0
         if protein.ncap:

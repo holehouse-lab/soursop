@@ -14,7 +14,7 @@ SSProtein is the main protein trajectory class in CAMPARITRAJ
 ##
 ## Alex Holehouse (Pappu Lab and Holehouse Lab)
 ## Simulation analysis package
-## Copyright 2014 - 2021
+## Copyright 2014 - 2022
 ##
 
 import mdtraj as md
@@ -4378,9 +4378,14 @@ class SSProtein:
     # ........................................................................
     #
     #
-    def get_angle_decay(self, atom1='C', atom2='N', return_full_matrix=False):
+    def get_angle_decay(self, atom1='C', atom2='N', return_all_pairs=False):
 
         """
+        Function that returns the correlation getween C->N bond vectors along the chain as a function of sequence separation.
+        This decay can be used to estimate the persisence length.
+
+        TO DO - finish off sig
+
         Returns the a 4 by n numpy array in which column 1 gives residue number, column 2 is local helicity,
 
         No checking of atom1 and atom2...
@@ -4388,26 +4393,28 @@ class SSProtein:
         Parameters
         ----------
 
-        atom1: str {C}
-            The first atom to use when calculating the angle decay.
+        atom1: str 
+            The first atom to use when calculating the angle decay. Default = 'C'.
 
-        atom2: str {N}
-            The second atom to use when calculating the angle decay.
+        atom2: str 
+            The second atom to use when calculating the angle decay. Default = 'N'.
 
-        return_full_matrix: bool {False}
-            Whether or not to return the full matrix along with the angle decay calculation.
+        return_all_pairs: bool {False}
+            Whether or not to return a dictionary with all inter-residue distances
 
         Returns
         -------
         array_like, or 2-tuple
             If `array_like`, the matrix returned is comprised of only the angle decay.
-            If a 2-tuple, both the angle decay matrix (index 0) and the full matrix is returned (index 1).
+            If a 2-tuple, both the angle decay matrix (index 0) and the dictionary of all possible pairs and their associated
+            correlation coefficients is returned.
         """
 
         # first compute all the C-N vector for each residue
 
         CN_vectors = []
         CN_lengths = []
+
         for i in self.resid_with_CA:
 
             # this extracts the C->N vector for each frame for each residue
@@ -4451,26 +4458,31 @@ class SSProtein:
         for k in all_vals:
             return_matrix.append([k, np.mean(all_vals[k]), np.std(all_vals[k])])
 
-        # if we want the nres by nres matrix with specific decay <cos(omega)> for each specific pairwise
-        # residue-residue set
-        if return_full_matrix:
+        # if we each possible inter-residue autocorrelation, this generates a dictionary
+        # where 
+        if return_all_pairs:
 
-            full_matrix = np.zeros((len(return_matrix),len(return_matrix)))
+            # minus 1 because return matrix includes the obligate self correlation which 
+            # is always 1
+            all_pairs_dict = {}
 
             # for 0 to the number of residues (i.e. each row in the [nres x nres] matrix
-            #for i in range(0, len(return_matrix)):
+            # note that i will be 1, 2, ... n-1 where n is number of residues in the chain
+
+            # build the self correlation pairs first
             for i in all_vals:
+                all_pairs_dict[f"{i}-{i}"] = 1.0
+            all_pairs_dict[f"{i+1}-{i+1}"] = 1.0
 
-                # set the column selector (c) to zero
-                c = 0
-                # iterate through
-                for j in range(0, len(all_vals[i])):
-                    full_matrix[i-1,c] = all_vals[i][j]
+            # i here is the |i-j| distance
+            for i in all_vals:
+                idx = 1
+                for x in all_vals[i]:
+                    all_pairs_dict[f"{idx}-{idx+i}"] = x
+                    idx = idx + 1
 
-                for j in range(len(all_vals[i]), len(return_matrix)):
-                    full_matrix[i-1,c] = 0.0
 
-            return (return_matrix, full_matrix)
+            return (return_matrix, all_pairs_dict)
         else:
             return return_matrix
 

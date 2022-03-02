@@ -1,3 +1,14 @@
+"""
+ssio contains heloer functions for reporting information
+
+"""
+
+##
+##
+## Alex Holehouse (Pappu Lab and Holehouse Lab)
+## Simulation analysis package
+## Copyright 2014 - 2022
+##
 
 
 def warning_message(msg, with_frills=False):

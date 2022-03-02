@@ -300,6 +300,8 @@ class SSTrajectory:
         # extract full system topology
         topology = trajectory.topology
 
+
+
         chainAtoms = []
         
         # for each chain in this toplogy determine if the 
