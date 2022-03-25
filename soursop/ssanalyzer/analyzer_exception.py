@@ -1,2 +1,0 @@
-class AnalyzerException(Exception):
-    pass

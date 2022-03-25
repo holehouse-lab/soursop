@@ -25,12 +25,12 @@ setup(
     long_description_content_type="text/markdown",
     version=versioneer.get_version(),
     cmdclass=versioneer.get_cmdclass(),
-    scripts=['scripts/soursop_cli'],
+    #scripts=['scripts/<something>'],
     license='LGPLv3',
     url='https://github.com/holehouse-lab/soursop',
 
     # Which Python importable modules should be included when your package is installed
-    packages=['soursop', "soursop.tests", "soursop.ssanalyzer"],
+    packages=['soursop', "soursop.tests"],
 
     # Optional include package data to ship with your package
     # Comment out this line to prevent the files from being packaged with your software
