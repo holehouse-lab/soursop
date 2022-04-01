@@ -41,13 +41,16 @@ Once ``mdtraj`` is installed, **soursop** can be installed using
 
 .. code-block:: 
 
-	pip install git+ssh://git@github.com/holehouselab/soursop.git
+	pip install git+https://github.com/holehouselab/soursop.git
 
 
 This should install `soursop`.
 
 Changelog
 ==========
+
+*Update: March 2022*
+Numerous updates to internal code documentation, removal of `soursop_cli`, update to pip install over git to use https.
 
 *Update: July 2021*
 The anticipated release of `soursop` is August 2021! We have nearly finished all testing and are finalizing the associated manuscript.
