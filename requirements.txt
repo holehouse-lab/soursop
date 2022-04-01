@@ -1,6 +1,6 @@
 scipy==0.19.0
 mdtraj==1.9.1
-numpy==1.14.1
+numpy==1.21.0
 pytest==3.8.2
 setuptools==44.0.0
 cx_Freeze==6.1
