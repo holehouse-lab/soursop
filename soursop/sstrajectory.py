@@ -42,7 +42,7 @@ class SSTrajectory:
     #oxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxo
     #
     #
-    def __init__(self, trajectory_filename=None, pdb_filename=None, TRJ=None, protein_grouping=None, pdblead=False, debug=False):
+    def __init__(self, trajectory_filename=None, pdb_filename=None, TRJ=None, protein_grouping=None, pdblead=False, debug=False, extra_valid_residue_names=None):
         """
         CAMPARITraj trajectory object initializer. 
 
@@ -92,9 +92,33 @@ class SSTrajectory:
             Default = False
 
         debug : book
-            Prints warning/help information to help debug weird stuff during initial trajectory read-in. 
-            Default = False.
+            Prints warning/help information to help debug weird stuff during initial 
+            trajectory read-in. Default = False.
+            
+
+        extra_valid_residue_names : list
+            By default SOURSOP identifies chains as proteins based on the a set of
+            normally seen protein residue names. These are defined in soursop/ssdata,
+            and are listed below:
+
+            ['ALA','CYS','ASP','ASH','GLU','GLU','PHE','GLY','HIE','HIS','HID','HIP',
+             'ILE','LEU', 'LYS','LYD','MET','ASN','PRO','GLN','ARG','SER','THR','VAL',
+             'TRP','TYR','AIB', 'ABA','NVA','NLE', 'ORN', 'DAB','PTR','TPO','SEP', 'KAC', 
+             'KM1', 'KM2' 'KM3', 'ACE','NME', 'FOR', 'NH2']
+        
+            This keyword allows the user to pass a list of ADDITIONAL residues that
+            we want SOURSOP to recognize as valid residues to extract a chain as a
+            protein molecule.
         """
+
+        self.valid_residue_names = []
+        self.valid_residue_names.extend(ALL_VALID_RESIDUE_NAMES)
+
+        if extra_valid_residue_names is not None:
+            try:
+                self.valid_residue_names.extend(extra_valid_residue_names)
+            except Exception:
+                print('Unable to use the extra_valid_residue_names - this must be a list of strings')
         
         # first we decide if we're reading from file or from an existing trajectory
         if (trajectory_filename is None) and (pdb_filename is None):
@@ -242,6 +266,8 @@ class SSTrajectory:
         
         """
 
+        
+
         # extract full system topology
         topology = trajectory.topology
 
@@ -255,7 +281,7 @@ class SSTrajectory:
             # if the first residue in the chain is protein
             # note that a formic acid cap ('FOR') is not recognized as protein
             # so we include an edgecase here for that
-            if chain.residue(0).name in ALL_VALID_RESIDUE_NAMES:
+            if chain.residue(0).name in self.valid_residue_names:
 
                 # intialize an empty list of atoms
                 local_atoms = []
@@ -308,11 +334,12 @@ class SSTrajectory:
         # first residue is protein or not. If it's protein we parse it if 
         # not it gets skipped
         for chain in topology.chains:
+            print(chain)
 
             # if the first residue in the chain is protein
             # note that a formic acid cap ('FOR') is not recognized as protein
             # so we include an edgecase here for that
-            if chain.residue(0).name in ALL_VALID_RESIDUE_NAMES:
+            if chain.residue(0).name in self.valid_residue_names:
 
                 # intialize an empty list of atoms
                 local_atoms = []

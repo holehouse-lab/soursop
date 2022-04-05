@@ -99,7 +99,9 @@ class SSProtein:
         """
 
         # This is necessary to support sstrajectory.Trajectory as well as the default `mdtraj`.
-        if str(traj) == "<class 'soursop.sstrajectory.SSTrajectory'>":
+        # note that this is not super elegant - we'd rather use isinstance(), but this would
+        # neceisstate a circular import which is not great so
+        if str(type(traj)) == "<class 'soursop.sstrajectory.SSTrajectory'>":
             self.traj       = traj.traj
             self.topology   = traj.traj.topology
 

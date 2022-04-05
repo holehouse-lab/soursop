@@ -18,7 +18,7 @@ from soursop.configs import DEBUGGING
 def test_contacts_special(NTL9_CP):
 
     with pytest.raises(SSException) as error:
-        a = NTL9_CP.get_contact_map(distance_thresh=2, stride=1, mode='sidechain-heavy')
+        a = NTL9_CP.get_contact_map(distance_thresh=2, stride=1, mode='sidechain-invalid')
 
 def test_code_coverage(NTL9_CP):
 
@@ -251,7 +251,7 @@ def test_repr(GS6_CP, NTL9_CP):
     proteins = [GS6_CP, NTL9_CP]
     for protein in proteins:
         repr_string = repr(protein)
-        rebuilt_repr = "SSprotein (%s): %i res and %i frames" % (hex(id(protein)), protein.n_residues, protein.n_frames)
+        rebuilt_repr = "SSProtein (%s): %i res and %i frames" % (hex(id(protein)), protein.n_residues, protein.n_frames)
         assert rebuilt_repr == repr_string
 
 
@@ -577,28 +577,22 @@ def test_get_local_collapse_successful_run(NTL9_CP):
 def test_get_angle_decay_return_all_pairs(GS6_CP, NTL9_CP):
     proteins = [GS6_CP, NTL9_CP]
     for protein in proteins:
-        result = protein.get_angle_decay(return_full_matrix=True)
+        result = protein.get_angle_decay(return_all_pairs=True)
         assert len(result) == 2
 
         return_matrix, all_pairs = result
-        assert len(all_pairs) == len(return_matrix)
+
+        # check this has been calculated correctly  -we expect all_pairs
+        # to be a dictionary that reports on every unique inter-residue pair
+        assert len(all_pairs) == np.sum(list(range(len(return_matrix), 0, -1)))
         
 
-        num_caps = 0
-        if protein.ncap:
-            num_caps += 1
-        if protein.ccap:
-            num_caps += 1
 
-        assert full_matrix.shape[0] == protein.n_residues - num_caps
-
-
-def test_get_angle_decay_no_return_full_matrix(GS6_CP, NTL9_CP):
+def test_get_angle_decay_no_return_all_pairs(GS6_CP, NTL9_CP):
     proteins = [GS6_CP, NTL9_CP]
     for protein in proteins:
-        return_matrix = protein.get_angle_decay(return_full_matrix=False)
+        return_matrix = protein.get_angle_decay(return_all_pairs=False)
 
-        assert len(return_matrix[0]) == 3
 
         num_caps = 0
         if protein.ncap:
@@ -637,8 +631,20 @@ def test_get_contact_map_weights_sidechain_heavy(GS6_CP, NTL9_CP):
         weights = [default_weight for frame in range(protein.n_frames)]
         normalized_weights = [w/protein.n_frames for w in weights]
 
+        # note in a previous v
+        protein.get_contact_map(mode=mode, weights=normalized_weights)  # the other options have been tested
+
+    # this should fail with an SSException
+    mode = 'invalid-mode'
+    for protein in proteins:
+        weights = [default_weight for frame in range(protein.n_frames)]
+        normalized_weights = [w/protein.n_frames for w in weights]
+
+
         with pytest.raises(SSException):
             protein.get_contact_map(mode=mode, weights=normalized_weights)  # the other options have been tested
+        
+        
 
 
 # SSProtein.get_sidechain_alignment_angle
@@ -656,7 +662,7 @@ def test_get_sidechain_alignment_angle_unsupported_angle(GS6_CP, NTL9_CP):
 
 def test_get_sidechain_alignment_angle_successful_random(GS6_CP, NTL9_CP):
     proteins = [GS6_CP, NTL9_CP]
-    for protein in proteins:
+    for protein in [NTL9_CP]:
         residue_indices = list(range(protein.n_residues))
         mid_point = (protein.n_residues//2) - 1
         lower = residue_indices[1:mid_point]
@@ -671,6 +677,23 @@ def test_get_sidechain_alignment_angle_successful_random(GS6_CP, NTL9_CP):
 
         alignment = protein.get_sidechain_alignment_angle(r1, r2)
         assert len(alignment) == protein.n_frames
+
+    for protein in [GS6_CP]:
+        residue_indices = list(range(protein.n_residues))
+        mid_point = (protein.n_residues//2) - 1
+        lower = residue_indices[1:mid_point]
+        upper = residue_indices[mid_point+1:-1]
+
+        # Shuffle to ensure that the indices chosen, whilst random
+        # are always where R1 > R2.
+        random.shuffle(lower)
+        random.shuffle(upper)
+        r1 = random.choice(upper)
+        r2 = random.choice(lower)
+
+        with pytest.raises(SSException):
+            alignment = protein.get_sidechain_alignment_angle(r1, r2)
+        
 
 
 def test_get_sidechain_alignment_angle_invalid_r1(GS6_CP, NTL9_CP):
