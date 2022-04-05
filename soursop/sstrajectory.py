@@ -334,7 +334,6 @@ class SSTrajectory:
         # first residue is protein or not. If it's protein we parse it if 
         # not it gets skipped
         for chain in topology.chains:
-            print(chain)
 
             # if the first residue in the chain is protein
             # note that a formic acid cap ('FOR') is not recognized as protein
