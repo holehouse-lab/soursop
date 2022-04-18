@@ -10,7 +10,7 @@ Analysis package for all-atom simulations of disordered and unfolded proteins.
 SOURSOP was fully developed in the Pappu Lab (http://pappulab.wustl.edu) but is maintained by the Holehouse lab (https://holehouselab.com).
 
 #### Update April 2022
-For version 0.1.8 the documentation has been extensively extended 
+For version 0.1.9 the documentation has been extensively extended 
 
 #### Update July 2021
 CAMPARITraj is SOURSOP! For the final release we have re-named and re-branded CAMPARITraj as SOURSOP. This change in the name serves two important purposes. 
