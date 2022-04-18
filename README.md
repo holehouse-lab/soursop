@@ -3,11 +3,14 @@ SOURSOP
 [![Build Status](https://travis-ci.org/holehouse-lab/camparitraj.svg?branch=master)](https://travis-ci.org/holehouse-lab/camparitraj)
 [![codecov](https://codecov.io/gh/holehouse-lab/camparitraj/branch/master/graph/badge.svg)](https://codecov.io/gh/holehouse-lab/camparitraj)
 [![Documentation Status](https://readthedocs.org/projects/soursop/badge/?version=latest)](https://soursop.readthedocs.io/en/latest/?badge=latest)
-#### Current Version: 0.2.0
+#### Current Release Candidate: 0.1.7
 
 Analysis package for all-atom simulations of disordered and unfolded proteins.
 
-CAMPARITraj was fully developed in the Pappu Lab (http://pappulab.wustl.edu) but is maintained by the Holehouse lab (https://holehouselab.com).
+SOURSOP was fully developed in the Pappu Lab (http://pappulab.wustl.edu) but is maintained by the Holehouse lab (https://holehouselab.com).
+
+#### Update April 2022
+For version 0.1.7 the documentation has been extensively extended 
 
 #### Update July 2021
 CAMPARITraj is SOURSOP! For the final release we have re-named and re-branded CAMPARITraj as SOURSOP. This change in the name serves two important purposes. 

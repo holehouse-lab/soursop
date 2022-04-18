@@ -1,19 +1,20 @@
+##     _____  ____  _    _ _____   _____  ____  _____  
+##   / ____|/ __ \| |  | |  __ \ / ____|/ __ \|  __ \ 
+##  | (___ | |  | | |  | | |__) | (___ | |  | | |__) |
+##   \___ \| |  | | |  | |  _  / \___ \| |  | |  ___/ 
+##   ____) | |__| | |__| | | \ \ ____) | |__| | |     
+##  |_____/ \____/ \____/|_|  \_\_____/ \____/|_|     
+
+## Alex Holehouse (Pappu Lab and Holehouse Lab) and Jared Lalmansingh (Pappu lab)
+## Simulation analysis package
+## Copyright 2014 - 2022
+##
+
 """
 cttools contains misc. numerical python functions which provide some useful functionality 
 
 """
-##
-##                                       _ _              _ 
-##   ___ __ _ _ __ ___  _ __   __ _ _ __(_) |_ _ __ __ _ (_)
-##  / __/ _` | '_ ` _ \| '_ \ / _` | '__| | __| '__/ _` || |
-## | (_| (_| | | | | | | |_) | (_| | |  | | |_| | | (_| || |
-##  \___\__,_|_| |_| |_| .__/ \__,_|_|  |_|\__|_|  \__,_|/ |
-##                     |_|                             |__/ 
-##
-## Alex Holehouse (Pappu Lab and Holehouse Lab)
-## Simulation analysis package
-## Copyright 2014 - 2021
-##
+
 
 import numpy as np
 

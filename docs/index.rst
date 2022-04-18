@@ -5,7 +5,8 @@
 
 Welcome to the SOURSOP docs!
 =========================================================
-*Last updated: July 21st 2021*
+
+*Last updated: April 2022*
 
 **SOURSOP** ( **S**\imulation analysis **O**\f **U**\nstructured and disordered **R**\egion\ **S** **O**\rchestrated in **P**\ython) is a Python package for the analysis of all-atom simulations of unfolded/disordered proteins. It provides a wide range of functionalities that may not be of use for folded proteins, but provide important insight into simulations of intrinsically disordered proteins. **SOURSOP** was formerly *CAMPARITraj*, which was formerly *CTraj*, and includes all the original functionality therein. 
 
@@ -25,12 +26,13 @@ This documentation is currently being generated as we finalize **SOURSOP**.
    modules/sstrajectory
    modules/ssprotein
    modules/ssnmr
+   modules/sspre
 
 
 Quickstart!
 ==============
 
-To install **soursop** first install ``mdtraj``. We recommend installing this via ``conda``:
+To install **soursop** first install ``mdtraj``. We HIGHLY recommend installing ``mdtraj`` using ``conda``:
 
 .. code-block:: 
 
@@ -38,16 +40,19 @@ To install **soursop** first install ``mdtraj``. We recommend installing this vi
 	
 Once ``mdtraj`` is installed, **soursop** can be installed using
 
-
 .. code-block:: 
 
-	pip install git+https://github.com/holehouselab/soursop.git
-
+	pip install soursop
 
 This should install `soursop`.
 
+
+
 Changelog
 ==========
+
+*Update: April 2022*
+Moved SOURSOP onto PyPI in anticipation of final release. Additional tests, code clean up etc.
 
 *Update: March 2022*
 Numerous updates to internal code documentation, removal of `soursop_cli`, update to pip install over git to use https.

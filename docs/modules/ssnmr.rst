@@ -1,5 +1,5 @@
 
-ssnmr module
+ssnmr 
 =========================================================
 
 ssnmr contains functions related to nuclear magnetic resonance.

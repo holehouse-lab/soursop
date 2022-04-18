@@ -489,26 +489,26 @@ def test_calculate_all_CA_distances_invalid_residue_number(GS6_CP, NTL9_CP):
             assert index == -1
 
 
-# == SSProtein._SSProtein__residue_atom_com
-def test_residue_atom_com_new_resid_atom_name_None(GS6_CO, NTL9_CO):
+# == SSProtein._SSProtein__residue_atom_index
+def test_residue_atom_index_resid_atom_name_None(GS6_CO, NTL9_CO):
     trajs = [GS6_CO, NTL9_CO]
     for traj in trajs:
         # instantiate a new protein object since the previous reference is modified
         # elsewhere - hence our residue count will be off.
         protein = ssprotein.SSProtein(traj)
         unavailable_residue_index = protein.n_residues + 1
-        protein.residue_atom_com(unavailable_residue_index, atom_name=None)
+        protein.get_residue_atom_indices(unavailable_residue_index, atom_name=None)
         assert len(protein._SSProtein__residue_atom_table) == protein.n_residues + 1
 
 
-def test_residue_atom_com_new_resid_atom_name_CA(GS6_CO, NTL9_CO):
+def test_residue_atom_index_new_resid_atom_name_CA(GS6_CO, NTL9_CO):
     trajs = [GS6_CO, NTL9_CO]
     for traj in trajs:
         # instantiate a new protein object since the previous reference is modified
         # elsewhere - hence our residue count will be off.
         protein = ssprotein.SSProtein(traj)
         unavailable_residue_index = protein.n_residues + 1
-        protein.residue_atom_com(unavailable_residue_index, atom_name='CA')
+        protein.get_residue_atom_indices(unavailable_residue_index, atom_name='CA')
         assert len(protein._SSProtein__residue_atom_table) == protein.n_residues + 1
 
 

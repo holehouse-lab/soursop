@@ -1,22 +1,13 @@
-"""
-sstrajectory.py
+##     _____  ____  _    _ _____   _____  ____  _____  
+##   / ____|/ __ \| |  | |  __ \ / ____|/ __ \|  __ \ 
+##  | (___ | |  | | |  | | |__) | (___ | |  | | |__) |
+##   \___ \| |  | | |  | |  _  / \___ \| |  | |  ___/ 
+##   ____) | |__| | |__| | | \ \ ____) | |__| | |     
+##  |_____/ \____/ \____/|_|  \_\_____/ \____/|_|     
 
-sstrajectory is the main class through which simulation trajectories are read in.
-
-"""
-
-##
-##                                       _ _              _ 
-##   ___ __ _ _ __ ___  _ __   __ _ _ __(_) |_ _ __ __ _ (_)
-##  / __/ _` | '_ ` _ \| '_ \ / _` | '__| | __| '__/ _` || |
-## | (_| (_| | | | | | | |_) | (_| | |  | | |_| | | (_| || |
-##  \___\__,_|_| |_| |_| .__/ \__,_|_|  |_|\__|_|  \__,_|/ |
-##                     |_|                             |__/ 
-##
-##
-## Alex Holehouse (Pappu Lab)
+## Alex Holehouse (Pappu Lab and Holehouse Lab) and Jared Lalmansing (Pappu lab)
 ## Simulation analysis package
-## Copyright 2014 - 2021
+## Copyright 2014 - 2022
 ##
 
 import mdtraj as md
@@ -33,22 +24,29 @@ from copy import copy
 
 
 class SSTrajectory:
-    """
-    SSTrajectory class that holds a single simulation trajectory object. 
-    
-
-    """
 
     #oxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxo
     #
     #
     def __init__(self, trajectory_filename=None, pdb_filename=None, TRJ=None, protein_grouping=None, pdblead=False, debug=False, extra_valid_residue_names=None):
         """
-        CAMPARITraj trajectory object initializer. 
+        SSTrajectory is the class used to read in a work with simulation
+        trajectories in SOURSOP.
 
-        CAMPARITraj will, by default, extract out the protein component from 
+        There are two ways new SSTrajectory objects can be generated;
+
+           1. By reading from disk (i.e. passing in a trajectory file and a topology file.
+
+           2. By passing in an existing trajectory object that has already been read in.
+
+        Both of these are described below.
+        
+        SOURSOP will, by default, extract out the protein component from 
         your trajectory automatically, which lets you ask questions about the
         protein only (i.e. without salt ions getting in the way).
+
+        You can also explicitly define which protein groups should be considered
+        independently.
         
         Note that by default the mechanism by which individual proteins are
         identified is by cycling through the unique chains and determining 
@@ -58,9 +56,19 @@ class SSTrajectory:
         if you have multiple proteins associated with the same chain, which
         happens in CAMPARI if you have more than 26 separate chains (i.e.
         every protein after the 26th is the 'Z' chain).
+
+        **Class Variables**
+
+        .proteinTrajectoryList : list
+            List of SSProtein objects which themselves contain a large set of associated functions
+
+        .traj : mdtraj.trajectory
+            The underlying mdtraj.trajectory object enables any/all mdtraj analyses to be performed 
+            as one might want normally. 
+
                
         Parameters
-        ----------        
+        -------------        
         trajectory_filename : str
             Filename which contains the trajectory file of interest. Normally \
             this is `__traj.xtc` or `__traj.dcd`.
@@ -74,41 +82,48 @@ class SSTrajectory:
             object from that trajectory. This could be done by writing that new trajectory \
             to file, but this is extremely slow due to the I/O impact of reading/writing \
             from disk. If an mdtraj trajectory objected is passed, this is used as the \
-            new trajectory from which the SSTrajectory object is constructed. 
-
-            Default = None
+            new trajectory from which the SSTrajectory object is constructed. Default = None
 
         protein_grouping : list of lists of ints
             Lets you manually define protein groups to be considered independently.
-        
-            Default = None
+            Default = None            
 
         pdblead : bool
             Lets you set the PDB file (which is normally ONLY used as a topology \
             file) to be the first frame of the trajectory. This is useful when \
             the first PDB file holds some specific reference information which \
-            you want to use (e.g. RMSD or Q). 
-
-            Default = False
-
+            you want to use (e.g. RMSD or Q). Default = False
+            
         debug : book
             Prints warning/help information to help debug weird stuff during initial 
             trajectory read-in. Default = False.
             
-
         extra_valid_residue_names : list
             By default SOURSOP identifies chains as proteins based on the a set of
             normally seen protein residue names. These are defined in soursop/ssdata,
-            and are listed below:
+            and are listed below::
 
-            ['ALA','CYS','ASP','ASH','GLU','GLU','PHE','GLY','HIE','HIS','HID','HIP',
-             'ILE','LEU', 'LYS','LYD','MET','ASN','PRO','GLN','ARG','SER','THR','VAL',
-             'TRP','TYR','AIB', 'ABA','NVA','NLE', 'ORN', 'DAB','PTR','TPO','SEP', 'KAC', 
-             'KM1', 'KM2' 'KM3', 'ACE','NME', 'FOR', 'NH2']
-        
+                'ALA', 'CYS', 'ASP', 'ASH', 'GLU', 'GLU', 'PHE', 'GLY',
+                'HIE', 'HIS', 'HID', 'HIP', 'ILE', 'LEU', 'LYS', 'LYD',
+                'MET', 'ASN', 'PRO', 'GLN', 'ARG', 'SER', 'THR', 'VAL',                
+                'TRP', 'TYR', 'AIB', 'ABA', 'NVA', 'NLE', 'ORN', 'DAB',
+                'PTR', 'TPO', 'SEP', 'KAC', 'KM1', 'KM2'  'KM3', 'ACE',
+                'NME', 'FOR', 'NH2'
+                        
             This keyword allows the user to pass a list of ADDITIONAL residues that
             we want SOURSOP to recognize as valid residues to extract a chain as a
             protein molecule.
+
+
+        Example
+        -----------
+        Example of reading in an XTC trajectory file::
+
+            from soursop.sstrajectory import SSTrajectory
+
+            TrajOb = SSTrajector('traj.xtc','start.pdb')
+
+
         """
 
         self.valid_residue_names = []
@@ -147,24 +162,37 @@ class SSTrajectory:
 
         self.__single_protein_traj = self.__get_all_proteins(self.traj)
 
-        
-        self.num_proteins = len(self.proteinTrajectoryList)
-        self.n_frames = len(self.traj)
-
 
     def  __repr__(self):
-        return "SSTrajectory (%s): %i proteins and %i frames" % (hex(id(self)), self.num_proteins, self.n_frames)
+        return "SSTrajectory (%s): %i proteins and %i frames" % (hex(id(self)), self.n_proteins, self.n_frames)
 
 
     def __len__(self):
         # Edited to mimic the behavior of `mdtraj` trajectory objects.
-        # Originally: `return (self.num_proteins, self.n_frames)`
+        # Originally: `return (self.n_proteins, self.n_frames)`
         return self.n_frames
 
+    @property
+    def n_frames(self):
+        """
+        :property: Returns the number of frames in the trajectory.
+
+        """
+        return len(self.traj)
+
+    @property
+    def n_proteins(self):
+        """
+        :property: Returns the number of individual proteins found.
+        """
+        return len(self.proteinTrajectoryList)
 
     def length(self):
+        """
+        :property: Returns a tuple with number of proteins and number of frames.
+        """
         # Implemented a method that encapsulates the data output by the original `__len__` method.
-        return (self.num_proteins, self.n_frames)
+        return (self.n_proteins, self.n_frames)
 
 
     #oxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxo
@@ -247,7 +275,9 @@ class SSTrajectory:
         return traj
 
 
-
+    #oxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxo
+    #
+    #
     def __get_all_proteins(self, trajectory):
         """
         Internal function that builds a single trajectory which contains all protein
@@ -265,8 +295,6 @@ class SSTrajectory:
             Returns a single SSProtein object
         
         """
-
-        
 
         # extract full system topology
         topology = trajectory.topology
@@ -300,15 +328,15 @@ class SSTrajectory:
     #
     def __get_proteins(self, trajectory, debug):
         """
-        Internal function that takes an MDTraj trajectory and returns a list of mdtraj 
-        trajectory objects corresponding to each protein in the system, ASSUMING that 
-        each protein is in its own chain.
+        Internal function that takes an MDTraj trajectory and returns a list 
+        of mdtraj trajectory objects corresponding to each protein in the 
+        system, ASSUMING that each protein is in its own chain.
         
-        The way this works is to cycle through each chain, identify if that chain
-        contains protein or not, and if it does grab all the atoms in that chain
-        and perform an atomslice using those atoms on the main trajectory.
+        The way this works is to cycle through each chain, identify if that 
+        chain contains protein or not, and if it does grab all the atoms in 
+        that chain and perform an atomslice using those atoms on the main 
+        trajectory.
         
-
         Parameters
         -----------
         trajectory : mdtraj.Trajectory
@@ -318,15 +346,13 @@ class SSTrajectory:
         Returns
         ---------
         list
-            Returns a proteinTrajectoryList - a list with one or more SSProtein
-            objects in it
-        
+            Returns a proteinTrajectoryList - a list with one or more 
+            SSProtein objects in it
+                    
         """
 
         # extract full system topology
         topology = trajectory.topology
-
-
 
         chainAtoms = []
         
@@ -390,17 +416,19 @@ class SSTrajectory:
     #
     def __get_proteins_by_residue(self, trajectory, residue_grouping, debug):
         """
-        Internal function which returns a list of mdtraj trajectory objects corresponding 
-        to each protein where we *explicitly* define the residues in each protein.
+        Internal function which returns a list of mdtraj trajectory objects 
+        corresponding to each protein where we *explicitly* define the residues 
+        in each protein.
+        
 
         Unlike the `__get_proteins()` function, which doesn't require any manual
-        input in identifying the proteins, here we provide a list of groups, where 
-        each group is the set of residues associated with a protein.
+        input in identifying the proteins, here we provide a list of groups, 
+        where  each group is the set of residues associated with a protein.
 
-        The way this works is to cycle through each group, and for each residue in 
-        each group grabs all the atoms and uses these to carry out an atomslice 
-        on the full trajectory. 
-
+        The way this works is to cycle through each group, and for each residue 
+        in each group grabs all the atoms and uses these to carry out an 
+        atomslice on the full trajectory. 
+        
         Parameters
         -----------
         trajectory : mdtraj.Trajectory
@@ -410,18 +438,17 @@ class SSTrajectory:
         residue_grouping : list of list of integers
             Must be a list containing one or more lists, where each internal list
             contains a set of monotonically increasing residues (which correspond
-            to the full protein trajectory). In other words, each sub-list defines
-            a single protein. The integer indexing here - importantly - uses the 
-            CAMPARITraj internal residue indexing, meaning that indexing begins at 0 from
-            the first residue in the PDB file.
+            to the full protein trajectory). In other words, each sub-list 
+            defines a single protein. The integer indexing here - importantly -         
+            uses the  CAMPARITraj internal residue indexing, meaning that 
+            indexing begins at 0 from the first residue in the PDB file.
 
         Returns
         ---------
         list
             Returns a proteinTrajectoryList - a list with one or more SSProtein
-            objects in it
+            objects in it.
         
-
         """
         
         group_atoms = []
@@ -513,7 +540,7 @@ class SSTrajectory:
         protein residue in the trajectory. For systems with multiple protein chains, 
         all chains are combined together. For systems with a single protein chain,
         this function offers no advantage over interacting directly with the
-        SSProtein object in the .proteinTrajectoryList.
+        SSProtein object in the underlying ``.proteinTrajectoryList`` object.
 
         Parameters
         -------------
@@ -536,7 +563,7 @@ class SSTrajectory:
         protein residue in the trajectory. For systems with multiple protein chains, 
         all chains are combined together. For systems with a single protein chain,
         this function offers no advantage over interacting directly with the
-        SSProtein object in the .proteinTrajectoryList.
+        SSProtein object in the underlying ``.proteinTrajectoryList`` object.
 
         Parameters
         -------------
@@ -557,59 +584,65 @@ class SSTrajectory:
     #
     def get_interchain_distance_map(self, proteinID1, proteinID2, mode='CA'):
         """        
-        Function which returns two matrices with the mean and standard deviation distances
-        between the residues in resID1 from proteinID1 and resID2 from proteinID2
-
-        This computes the (full) intramolecular distance map, where the "distancemap"
-        function computes the intermolecular distance map.
-
-        Specifically, this allows the user to define two distinct chains (i.e. an "interchain"
-        distance map).
-
-        Obviously this only makes sense if your system has two separate protein objects
-        defined, but in principle the output from:
-
-            `intra_chain_distance_Map(0,0)`
-
-        would be the same as:
+        Function which returns two matrices with the mean and standard 
+        deviation distances between the residues in resID1 from proteinID1 
+        and resID2  from proteinID2.
         
-            `proteinTrajectoryList[0].get_distance_map()`
+        This computes the (full) intramolecular distance map, where the 
+        "distancemap" function computes the intermolecular distance map.
+
+        Specifically, this allows the user to define two distinct chains (i.e. 
+        an "interchain" distance map).
+        
+
+        Obviously this only makes sense if your system has two separate 
+        protein objects defined, but in principle the output from::        
+
+            TrajObj # TrajOb is an SSTrajectory object
+
+            TrajObj.intra_chain_distance_Map(0,0)
+
+        would be the same as::
+
+            TrajObj # TrajOb is an SSTrajectory object
+        
+            TrajObj.proteinTrajectoryList[0].get_distance_map()
 
         This is actually a useful sanity check!
         
         Parameters
-        ----------
+        ------------
 
         proteinID1 : int
-            The ID of the first protein of the two being considered, where the ID is the proteins position in the
-            `self.proteinTrajectoryList` list. 
+            The ID of the first protein of the two being considered, where the 
+            ID is the proteins position in the `self.proteinTrajectoryList` 
+            list.             
 
         proteinID2 : int
-            The ID of the second protein of the two being considered, where the ID is the proteins position in the
+            The ID of the second protein of the two being considered, where 
+            the ID is the proteins position in the 
             `self.proteinTrajectoryList` list
-
-        mode : ['CA','COM']
-            String, must be one of either 'CA' or 'COM'.
-            - 'CA' = alpha carbon.
-            - 'COM' = center of mass (associated withe the residue).
-            Default = 'CA'.
-
+            
+        mode : str (default = 'CA')
+            String, must be one of either 'CA' or 'COM', where CA means alpha
+            carbon and COM means center of mass. 
 
         Returns
-        -------
-        tuple : tuple containing `distanceMap` and `STDMap`
+        ---------
+        tuple 
 
-        distanceMap : numpy matrix
-            Is an [n x m] matrix where n and m are the number of proteinID1 residues
-            and proteinID2 residues. Each position in the matrix corresponds to the
-            mean distance between those two residues over the course of the simulation.
+           get_interchain_distance_map() returns a tuple containing two elements,
+           distanceMap and STDMap.
 
-        stdMap : numpy matrix
-            Is an [n x m] matrix where n and m are the number of proteinID1 residues
-            and proteinID2 residues. Each position in the matrix corresponds to the
-            standard devaiation associated with the distances between those two
-            residues.
-
+            **distanceMap** is an [n x m] numpy matrix where n and m are the 
+            number of proteinID1 residues and proteinID2 residues. Each position 
+            in the matrix corresponds to the mean distance between those two 
+            residues over the course of the simulation.
+        
+            **stdMap** is an [n x m] numpy matrix where n and m are the number 
+            of proteinID1 residues and proteinID2 residues. Each position in the 
+            matrix corresponds to the standard devaiation associated with the distances 
+            between those two residues.
         
         """
 
@@ -662,21 +695,28 @@ class SSTrajectory:
     #
     def get_interchain_distance(self, proteinID1, proteinID2, R1, R2, A1='CA', A2='CA', mode='atom', periodic=False):
         """
-        Function which returns the distance between two specific atoms on two residues, or between 
-        two residues based on mdtraj' atomselection mode rules (discussed below). Required input are protein
-        ID selectors and the resid being used. Resids should be used as would be normally used for the SSProtein
-        objects associated with proteinID1 and proteinID2.
+        Function which returns the distance between two specific atoms on 
+        two residues, or between two residues based on mdtraj's atom 
+        selection mode rules (discussed below). Required input are protein        
+        ID selectors and the resid being used. Resids should be used as 
+        would be normally used for the SSProtein objects associated with 
+        proteinID1 and proteinID2.
+        
 
-        For inter-atomic distances, atoms are selected from the passed residue and their 'name' field from the topology 
-        selection language (e.g. "CA", "CB" "NH" etc). By default CA atoms are used, but one can define
-        any residue of interest. We do not perform any sanity checking on the atom name - this gets 
-        really hard - so have an explicit try/except block which will warn you that you've probably 
+        For inter-atomic distances, atoms are selected from the passed 
+        residue and their 'name' field from the topology selection language 
+        (e.g. "CA", "CB" "NH" etc). By default CA atoms are used, but one can 
+        define any residue of interest. We do not perform any sanity checking 
+        on the atom name - this gets really hard - so have an explicit 
+        try/except block which will warn you that you've probably 
         selected an illegal atom name from the residues.
 
-        For inter-residue distances the associated rules are defined by the 'mode' selector. By default
-        mode is set to 'atom', which means the variables A1 and A2 are used (with CA as default) to define
-        inter-residue distance. However, if one of the other modes are used the A1/A2 parameters are ignored
-        and alternative rules for computing inter-residue distance are used. These modes are detailed below.
+        For inter-residue distances the associated rules are defined by the 
+        'mode' selector. By default mode is set to 'atom', which means the 
+        variables A1 and A2 are used (with CA as default) to define inter-
+        residue distance. However, if one of the other modes are used the 
+        A1/A2 parameters are ignored and alternative rules for computing 
+        inter-residue distance are used. These modes are detailed below.
 
         Distance is returned in Angstroms.
 
@@ -695,28 +735,31 @@ class SSTrajectory:
         R2 : int
             Residue index of second residue
 
-        A1 : str
-            Atom name of the atom in R1 we're looking at. Default = 'CA'
+        A1 : str (default = 'CA')
+            Atom name of the atom in R1 we're looking at. 
 
-        A2 : str
-            Atom name of the atom in R2 we're looking at. Default='CA'
+        A2 : str (default = 'CA')
+            Atom name of the atom in R2 we're looking at. 
 
-        mode : str
-            Mode allows the user to define different modes for computing atomic distance.
+        mode : str (default = 'atom')
+            Mode allows the user to define different modes for computing atomic 
+            distance.
 
-            The default is 'atom' whereby a pair of atoms (A1 and A2) are provided. Other options
-            are detailed below and are identical to those offered by mdtraj in compute_contacts.
+            The default is ``atom`` whereby a pair of atoms (A1 and A2) are 
+            provided. Other options are detailed below and are identical to 
+            those offered by mdtraj in compute_contacts.
 
-            Note that if modes other than 'atom' are used the A1 and A2 options are ignored.
+            Note that if modes other than ``atom`` are used the A1 and A2 
+            options are ignored.
 
-            + `'ca'` - same as setting `'atom'` and `A1='CA'` and `A2='CA'`, this uses the C-alpha atoms.
-            + `'closest'` - closest atom associated with each of the residues, i.e. the is the point \
+            + ``ca`` - same as setting ``atom`` and then defining atoms 1 and 2 (A1 and A2) as CA. 
+            + ``closest`` - closest atom associated with each of the residues, i.e. the is the point \
                             of closest approach between the two residues.
-            + `'closest-heavy'` - same as `'closest'`, except only non-hydrogen atoms are considered.
-            + `'sidechain'` - closest atom where that atom is in the sidechain.
-            + `'sidechain-heavy'` - closest atom where that atom is in the sidechain and is heavy.
+            + ``closest-heavy`` - same as `'closest'`, except only non-hydrogen atoms are considered.
+            + ``sidechain`` - closest atom where that atom is in the sidechain.
+            + ``sidechain-heavy`` - closest atom where that atom is in the sidechain and is heavy.
 
-        periodic : Bool
+        periodic : bool (default = False)
             Flag which if distances mode is passed as anything other than 'atom' then this determines
             if the minimum image convention should be used. Note that this is only available if pdb
             crystal dimensions are provided, and in general it's better to set this to false and 

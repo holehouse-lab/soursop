@@ -1,3 +1,17 @@
+##     _____  ____  _    _ _____   _____  ____  _____  
+##   / ____|/ __ \| |  | |  __ \ / ____|/ __ \|  __ \ 
+##  | (___ | |  | | |  | | |__) | (___ | |  | | |__) |
+##   \___ \| |  | | |  | |  _  / \___ \| |  | |  ___/ 
+##   ____) | |__| | |__| | | \ \ ____) | |__| | |     
+##  |_____/ \____/ \____/|_|  \_\_____/ \____/|_|     
+
+## Alex Holehouse (Pappu Lab and Holehouse Lab) and Jared Lalmansing (Pappu lab)
+## ssnmr was largely written by Alex Keeley
+## Simulation analysis package
+## Copyright 2014 - 2022
+##
+
+
 """
 
 **Author(s):** Alex Keeley (with Alex Holehouse)
@@ -11,49 +25,54 @@ import re
 
 
 # ----------------------------------------------------------------------------------------------------------------------------------------------------------------
-def compute_random_coil_chemical_shifts(protein_sequence, temperature=25, pH=7.4, use_ggxgg=True, use_perdeuteration=False, asFloat=False):
+def compute_random_coil_chemical_shifts(protein_sequence, temperature=25, pH=7.4, use_ggxgg=True, use_perdeuteration=False, asFloat=True):
     """
 
-    Function that predicts the random coil chemical shifts for user-provided amino acid sequence corrected for user-provided 
-    conditions. Specifically, chemical shift and general sequence correction factors are from [1], temperature corrections 
-    and glycine corrections are from [2] and the underlying methods associated with correction-factor calculations are in [3]. 
-    The correction factors for pertdeuteration are from [4].
-
-    Input sequence can be a standard one-letter sequence, but phosphoresidues can also be included (see examples). 
-    Code is based on JavaScript written by Alex Maltsev at the NIH and can be accessed here
-    (https://www1.bio.ku.dk/english/research/bms/research/sbinlab/randomchemicalshifts/).
+    Function that predicts the random coil chemical shifts for user-provided amino 
+    acid sequence corrected for user-provided conditions. Specifically, chemical 
+    shift and general sequence correction factors are from [1], temperature corrections     
+    and glycine corrections are from [2] and the underlying methods associated with 
+    correction-factor calculations are in [3]. The correction factors for pertdeuteration 
+    are from [4].
+    
+    Input sequence can be a standard one-letter sequence, but phosphoresidues can also 
+    be included (see examples). Code is based on JavaScript written by Alex Maltsev 
+    at the NIH and can be accessed here [5] 
+    
 
     Parameters
     ----------
 
     sequence : str
-      The sequence of representative abbreviations for the sequence of amino acids
+        The sequence of representative abbreviations for the sequence of amino acids
 
     temperature : float or int    
-          Experiment temperature of the sample of amino acids for use in corrected chemical shift calculations
-          (note units are in degrees celcius). Default value is 25 and should be between 0 and 100.
+        Experiment temperature of the sample of amino acids for use in corrected chemical 
+        shift calculations (note units are in degrees celcius). Default value is 25 and 
+        should be between 0 and 100.
 
     pH : float or int
-          pH of the sample of amino acids for use in corrected chemical shift calculations. Default value us 7.4
-          and should be between 0 and 14.
+        pH of the sample of amino acids for use in corrected chemical shift calculations. 
+        Default value us 7.4 and should be between 0 and 14.
 
-    use_ggxgg : bool
-          Whether to use GGXGG-based neighbor correction for glycines. Default is True.
+    use_ggxgg : bool 
+        Whether to use GGXGG-based neighbor correction for glycines. Default is True.
 
-    use_perdeuteration : bool
-          Whether perdeuterated correction factors should be used. Default is False. Note this cannot work with
-          phosphoresidues
+    use_perdeuteration : bool (default = False)
+        Whether perdeuterated correction factors should be used. Note this cannot 
+        work with phosphoresidues.
+          
 
-    asFloat : bool
-          Whether to populate output dictionaries with float or string variables containing chemical shift numbers. 
-          False (strings) by default.
+    asFloat : bool (default = True)
+          Whether to populate output dictionaries with float or string variables containing 
+          chemical shift numbers. False (strings) by default.
+          
 
     Returns
     -------
     output : list of dict
-           List containing a dictionary for each amino acid in the provided sequence detailing abbreviation and chemical 
-           shifts for the main six different atoms. 
-
+           List containing a dictionary for each amino acid in the provided sequence detailing 
+           abbreviation and chemical shifts for the main six different atoms. 
 
     Examples
     --------
@@ -62,16 +81,20 @@ def compute_random_coil_chemical_shifts(protein_sequence, temperature=25, pH=7.4
     References
     ----------
 
-    [1] Kjaergaard, M. and Poulsen, F.M. (2011) Sequence correction of random coil chemical shifts: correlation between neighbor correction factors and changes in the Ramachandran distribution J. Biomol. NMR 50(2):157-165
-        
+    [1] Kjaergaard, M. and Poulsen, F.M. (2011) Sequence correction of random coil chemical shifts: 
+    correlation between neighbor correction factors and changes in the Ramachandran distribution 
+    J. Biomol. NMR 50(2):157-165        
     
-    [2] Kjaergaard, M., Brander, S. and Poulsen, F.M. (2011) Random coil chemical shifts for intrinsically disordered proteins: Effects of temperature and pH J. Biomol. NMR 49(2):139-49.
+    [2] Kjaergaard, M., Brander, S. and Poulsen, F.M. (2011) Random coil chemical shifts for 
+    intrinsically disordered proteins: Effects of temperature and pH J. Biomol. NMR 49(2):139-49.
         
+    [3] Schwarzinger, S., Kroon, G.J., Foss, T.R., Chung. J., Wright, P.E., Dyson, H.J. (2001) 
+    Sequence-dependent correction of random coil NMR chemical shifts. JACS 123(13):2970-8.        
 
-    [3] Schwarzinger, S., Kroon, G.J., Foss, T.R., Chung. J., Wright, P.E., Dyson, H.J. (2001) Sequence-dependent correction of random coil NMR chemical shifts. JACS 123(13):2970-8.
-        
+    [4] Cavanagh, J., Fairbrother, W.J., Palmer, A.G., Rance, M. and Skelton, N.J. (2007) 
+    Protein NMR Spectroscopy - Principles and practice. 2nd edition. Academic Press
 
-    [4] Cavanagh, J., Fairbrother, W.J., Palmer, A.G., Rance, M. and Skelton, N.J. (2007) Protein NMR Spectroscopy - Principles and practice. 2nd edition. Academic Press
+    [5] https://www1.bio.ku.dk/english/research/bms/research/sbinlab/randomchemicalshifts/
     
     
 
@@ -538,21 +561,29 @@ def compute_random_coil_chemical_shifts(protein_sequence, temperature=25, pH=7.4
 
 
 def __set_sequence(sequence, key1, key3):
-    """Translates the amino acid input string into a list of integers representing the same set of amino acids.
+    """
+    Translates the amino acid input string into a list of integers 
+    representing the same set of amino acids.
 
     Parameters
     ----------
     sequence : str
            The alphabetical list of amino acid abbreviations input by the user.
+
     key1 : list
-         The list of numeric keys used to translate single-letter amino acid abbreviations into representative numbers
+         The list of numeric keys used to translate single-letter amino acid 
+         abbreviations into representative numbers
+
     key3 : dictionary
-         The dictionary of alphabetical keys used to translate 2/3-letter amino acid abbreviations into representative numbers
+         The dictionary of alphabetical keys used to translate 2/3-letter amino 
+         acid abbreviations into representative numbers
 
     Returns
     -------
-    sequences : list of list
-              List containing both a list of numeric representatives of input amino acids and a list of the abbreviations for said amino acids
+    tuple
+        Returns a tuple of length two, element one is a list of numeric 
+        representatives of input amino acids and element two is a list of
+        the abbreviations for those amino acids.
 
     """
     key_aa1 = key1
@@ -592,21 +623,23 @@ def __set_sequence(sequence, key1, key3):
     sequence.append(23)
     sequence.append(23)
 
-    sequences = [sequence, aminos]
-
-    return sequences
+    return (sequence, aminos)
 
 
 # ------------------------------------------------------------------------------------------------------------------------------------------------------------------
 def __round3(num, asFloat=False):
-    """Performs statistics-consistent rounding of float variables to precisely three decimal places which can be returned as either a string or a float.
+    """
+
+    Performs statistics-consistent rounding of float variables to precisely 
+    three decimal places which can be returned as either a string or a float.
 
     Parameters
     ----------
     num : float
         Float number to be rounded
-    asFloat : bool
-            Determines whether to return rounded number as string or float. False (returns string type) by default
+
+    asFloat : bool (default=False)
+        Determines whether to return rounded number as string or float. False (returns string type) by default
 
     Returns
     -------

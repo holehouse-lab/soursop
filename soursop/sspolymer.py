@@ -1,3 +1,16 @@
+##     _____  ____  _    _ _____   _____  ____  _____  
+##   / ____|/ __ \| |  | |  __ \ / ____|/ __ \|  __ \ 
+##  | (___ | |  | | |  | | |__) | (___ | |  | | |__) |
+##   \___ \| |  | | |  | |  _  / \___ \| |  | |  ___/ 
+##   ____) | |__| | |__| | | \ \ ____) | |__| | |     
+##  |_____/ \____/ \____/|_|  \_\_____/ \____/|_|     
+
+## Alex Holehouse (Pappu Lab and Holehouse Lab) and Jared Lalmansing (Pappu lab)
+## Simulation analysis package
+## Copyright 2014 - 2022
+##
+
+
 import numpy as np
 
 

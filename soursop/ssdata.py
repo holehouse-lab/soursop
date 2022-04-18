@@ -1,21 +1,21 @@
+##     _____  ____  _    _ _____   _____  ____  _____  
+##   / ____|/ __ \| |  | |  __ \ / ____|/ __ \|  __ \ 
+##  | (___ | |  | | |  | | |__) | (___ | |  | | |__) |
+##   \___ \| |  | | |  | |  _  / \___ \| |  | |  ___/ 
+##   ____) | |__| | |__| | | \ \ ____) | |__| | |     
+##  |_____/ \____/ \____/|_|  \_\_____/ \____/|_|     
+
+## Alex Holehouse (Pappu Lab and Holehouse Lab) and Jared Lalmansing (Pappu lab)
+## Simulation analysis package
+## Copyright 2014 - 2022
+##
+
+
 """
 ssdata contains all specific data used, and is disinct from configs, which are 
 package specific global configurations, while ssdata contains information that
 is unambigious as well-defined.
-
 """
-##
-##                                       _ _              _ 
-##   ___ __ _ _ __ ___  _ __   __ _ _ __(_) |_ _ __ __ _ (_)
-##  / __/ _` | '_ ` _ \| '_ \ / _` | '__| | __| '__/ _` || |
-## | (_| (_| | | | | | | |_) | (_| | |  | | |_| | | (_| || |
-##  \___\__,_|_| |_| |_| .__/ \__,_|_|  |_|\__|_|  \__,_|/ |
-##                     |_|                             |__/ 
-##
-## Alex Holehouse (Pappu Lab and Holehouse Lab)
-## Simulation analysis package
-## Copyright 2014 - 2021
-##
 
 
 

@@ -1,15 +1,13 @@
-##
-##
-##                                       _ _              _ 
-##   ___ __ _ _ __ ___  _ __   __ _ _ __(_) |_ _ __ __ _ (_)
-##  / __/ _` | '_ ` _ \| '_ \ / _` | '__| | __| '__/ _` || |
-## | (_| (_| | | | | | | |_) | (_| | |  | | |_| | | (_| || |
-##  \___\__,_|_| |_| |_| .__/ \__,_|_|  |_|\__|_|  \__,_|/ |
-##                     |_|                             |__/ 
-##
-## Alex Holehouse (Pappu Lab and Holehouse Lab)
+##     _____  ____  _    _ _____   _____  ____  _____  
+##   / ____|/ __ \| |  | |  __ \ / ____|/ __ \|  __ \ 
+##  | (___ | |  | | |  | | |__) | (___ | |  | | |__) |
+##   \___ \| |  | | |  | |  _  / \___ \| |  | |  ___/ 
+##   ____) | |__| | |__| | | \ \ ____) | |__| | |     
+##  |_____/ \____/ \____/|_|  \_\_____/ \____/|_|     
+
+## Alex Holehouse (Pappu Lab and Holehouse Lab) and Jared Lalmansing (Pappu lab)
 ## Simulation analysis package
-## Copyright 2014 - 2021
+## Copyright 2014 - 2022
 ##
 
 import mdtraj as md
@@ -32,28 +30,6 @@ K_IN_NM6   = original_K*1e42  # K constant in nm6 s-2
 
 class SSPRE:
     """
-    
-    SSPRE is a class that takes a SSProtein objecs and can perform PRE-related calculations.
-       
-    This is, in many ways, a purely functional class, but given it's very specific goal
-    it is separated out into its own class in the interest of more robust modularity. 
-
-    There are a number of internal functions, but the only public facing function is the 
-    generate_PRE_profile function below. This gives both the intensity ratio profile and 
-    the transverse relaxation rate (Gamma_2) profiles. For more detail on the calculation
-    of these profiles see the help associated with generate_PRE_profile function
-
-    For more information on caculation of PREs using method see the Supplementary information 
-    in the following two papers.
-
-    Meng, W., Lyle, N., Luan, B., Raleigh, D.P., and Pappu, R.V. (2013). Experiments and simulations 
-    show how long-range contacts can form in expanded unfolded proteins with negligible secondary structure. 
-    Proc. Natl. Acad. Sci. U. S. A. 110, 2123-2128.
-
-    Das, R.K., Huang, Y., Phillips, A.H., Kriwacki, R.W., and Pappu, R.V. (2016). Cryptic sequence 
-    features within the disordered protein p27Kip1 regulate cell cycle signaling. 
-    Proc. Natl. Acad. Sci. U. S. A. 113, 5616- 5621.
-
 
     """
 
@@ -65,27 +41,35 @@ class SSPRE:
         then be used to calculate PRE profiles from the underlying ensemble. This
         calculation is extremely fast.
 
+        Parameters
+        ---------------
+
         SSProteinObject : SSProtein-derived object
-            SSProtein object extracted from a SSTrajectory objected. The SSProtein object is the main object
-            that most protein-based analysis is performed over in SOURSOP.
+            SSProtein object extracted from a SSTrajectory objected. The SSProtein 
+            object is the main object that most protein-based analysis is performed 
+            over in SOURSOP.            
 
         tau_c : float
-            tau_c is the effective correlation time, measured in nanoseconds, which is typically between
-            1 and 30.
+            tau_c is the effective correlation time, measured in nanoseconds, which 
+            is typically between 1 and 30.
 
         t_delay : float
-            Total duration of the INEPT delays from the PRE experiment, as measured in ms. This will
-        depend on the pulse sequence used, but is typically around 1-30 ms for HSQC.
+            Total duration of the INEPT delays from the PRE experiment, as measured 
+            in ms. This will depend on the pulse sequence used, but is typically around 
+            1-30 ms for HSQC.
 
         R_2D : float
-            Is the transverse relaxation rate of the backbone amide protons in the diamagnetic form
-            of the protein, measured in Herz (i.e. 'per second'). A value of around 10 might be expected.
+            Is the transverse relaxation rate of the backbone amide protons in the 
+            diamagnetic form of the protein, measured in Herz (i.e. 'per second'). 
+            A value of around 10 might be expected.
+            
 
         W_H : float
-            Is the proton Larmor frequency, which is typically the "MHz" value associated with the magnet,
-            given in Hz. For examle, a 600 MHz magnet would use the value 600000000.
-
-            (Note that the proton Larmor frequency at 1 Tesla = 267530000 per second per Tesla).
+            Is the proton Larmor frequency, which is typically the "MHz" value 
+            associated with the magnet, given in Hz. For examle, a 600 MHz magnet 
+            would use the value 600000000. Note that the proton Larmor frequency 
+            at 1 Tesla = 267530000 per second per Tesla.
+            
 
         """
                 
@@ -144,7 +128,7 @@ class SSPRE:
         """
         Construct a PRE intensity profile and gamma profile based on a nitroxide spin label being placed at the label position
         position on the $spin_label_atom atom. By default this is the CB and the PRE distance to be used to asses relaxation
-        comes from the CB-backbone N distances (as used in work by Meng & Lyle [1] and Das [2]).
+        comes from the CB-backbone N distances (as used in work by Meng & Lyle [1], Das [2], and Peran & Holehouse [3]).
 
         The PRE profile describes the intensity ratio (I_paramagnetic / I_diamagnetic), and typically varies between 0 and 1.
         When the intensity ratio ~0 the spin label dominantes relaxation and suggests the residue in question is near the
@@ -156,35 +140,44 @@ class SSPRE:
 
         This function is extremely fast (sub 10 seconds on a ~6000 frame ensemble).
 
+        Parameters
+        --------------
+
+        label_position : int
+            Position in the sequence at which the spin-label is located. Should ideally contain a CB atom 
+            (i.e. not be be glycine), else the label atom must be set to 'CA' see below.
+
+        spin_label_atom : str (default = 'CB')
+            Name of the atom upon which the spin label is located. Should really be CB but may be changed if 
+            a residue lacks a CB atom (e.g. a glycine is in the place of the Cys nitroxide spin labeled residue). 
+
+        target_relaxation_atom : str (default='N')
+            Name of the atom where relaxation is being performed. This should be 'N' (backbone amide) as that's 
+            how this approach is parameterized - highly recommended that this isn't changed. If it is changed the 
+            method will look for an atom of this name in every residue. Again, it is STRONGLY recommended this 
+            isn't changed.
+        
         Returns
         -------
-        Returns a 2 place tuple - tuple position 0 is the PRE intensity profile and tuple position 1 is the PRE H1 relaxatation
-        profile.
+        tuple
+            Returns a 2 place tuple - tuple position 0 is the PRE intensity profile and tuple position 1 is the 
+            PRE H1 relaxatation profile.
+
 
         References
-        ----------
+        -------------
 
         [1] Meng, W., Lyle, N., Luan, B., Raleigh, D.P., and Pappu, R.V. (2013). Experiments and simulations show how long-range 
         contacts can form in expanded unfolded proteins with negligible secondary structure. 
         Proc. Natl. Acad. Sci. U. S. A. 110, 2123-2128.
+
         [2] Das, R.K., Huang, Y., Phillips, A.H., Kriwacki, R.W., and Pappu, R.V. (2016). Cryptic sequence features within the 
         disordered protein p27Kip1 regulate cell cycle signaling. Proc. Natl. Acad. Sci. U. S. A. 113, 5616- 5621.
-               
-        Parameters
-        ----------
 
-        label_position : int
-            Position in the sequence at which the spin-label is located. Should ideally contain a CB atom (i.e. not be be glycine),
-            else the label atom must be set to 'CA' see below.
+        [3] Peran, I., Holehouse, A. S., Carrico, I. S., Pappu, R. V., Bilsel, O., & Raleigh, D. P. (2019). Unfolded states under 
+        folding conditions accommodate sequence-specific conformational preferences with random coil-like dimensions. Proceedings 
+        of the National Academy of Sciences of the United States of America, 116(25), 12301–12310.
 
-        spin_label_atom : str, default='CB'
-            Name of the atom upon which the spin label is located. Should really be CB but may be changed if a residue lacks a CB atom
-            (e.g. a glycine is in the place of the Cys nitroxide spin labeled residue). Ideally
-
-        target_relaxation_atom : str, default='N'
-            Name of the atom where relaxation is being performed. This should be 'N' (backbone amide) as that's how this approach is
-            parameterized - highly recommended that this isn't changed. If it is changed the method will look for an atom of this name
-            in every residue. Again, it is STRONGLY recommended this isn't changed.
         """
         
         # get index value of all residues 
@@ -202,7 +195,7 @@ class SSPRE:
         # it's important the former method is used (i.e. only average at the end). This calculates the gamma coefficient for
         # each residue, which measures relaxation 
         for idx in residue_list:                        
-            r_6_nm = np.power((0.1*self.SSPO.get_inter_residue_atomic_distance(label_position, idx, A1=spin_label_atom, A2=target_relaxation_atom),6)
+            r_6_nm = np.power(0.1*self.SSPO.get_inter_residue_atomic_distance(label_position, idx, A1=spin_label_atom, A2=target_relaxation_atom),6)
             gamma.append(np.mean(self.PREFACTOR/r_6_nm))
         
         # convert the t_delay from ms to seconds

@@ -30,7 +30,7 @@ from . import conftest
 #       `__get_proteins_by_residue`
 
 def test_trajectory_repr_string(GS6_CO):
-    repr_string = (hex(id(GS6_CO)), GS6_CO.num_proteins, GS6_CO.n_frames)
+    repr_string = (hex(id(GS6_CO)), GS6_CO.n_proteins, GS6_CO.n_frames)
     return repr_string == repr(GS6_CO)
 
 
@@ -100,7 +100,7 @@ def test_read_in_protein_grouping_simple():
                                            protein_grouping=protein_groups)
 
     # verify that we have loaded the number of proteins expected
-    assert trajectory.num_proteins == len(protein_groups)
+    assert trajectory.n_proteins == len(protein_groups)
 
 
 def test_read_in_protein_grouping_multiple():
@@ -112,7 +112,7 @@ def test_read_in_protein_grouping_multiple():
                                            protein_grouping=protein_groups)
 
     # verify that we have loaded the number of proteins expected
-    assert trajectory.num_proteins == len(protein_groups)
+    assert trajectory.n_proteins == len(protein_groups)
 
 
 def test_read_in_protein_grouping_invalid_residues():
@@ -125,7 +125,7 @@ def test_read_in_protein_grouping_invalid_residues():
 
     # Since this is a failing but non-disruptive test (i.e. no Exceptions), we
     # check the number of proteins which should be 0.
-    assert trajectory.num_proteins == 0
+    assert trajectory.n_proteins == 0
 
 
 def test_read_in_protein_grouping_multiple_mixed_order():
@@ -138,7 +138,7 @@ def test_read_in_protein_grouping_multiple_mixed_order():
                                            protein_grouping=protein_groups)
 
     # verify that we have loaded the number of proteins expected
-    assert trajectory.num_proteins == len(protein_groups)
+    assert trajectory.n_proteins == len(protein_groups)
 
 
 # -------------------------------------------------------------------------------------------------
