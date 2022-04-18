@@ -20,7 +20,7 @@
 # -- Project information -----------------------------------------------------
 
 project = 'soursop'
-copyright = ("2015-2021, Alex Holehouse, Jared Lalmansingh [a MOLSSI sponsored project]")
+copyright = ("2015-2022   , Alex Holehouse, Jared Lalmansingh [a MOLSSI sponsored project]")
 author = 'Alex Holehouse'
 
 # The short X.Y version
@@ -59,10 +59,10 @@ extensions = [
 ]
 
 
-mathjax_config = {
-    'extensions': ['tex2jax.js'],
-    'jax': ['input/TeX', 'output/HTML-CSS'],
-}
+#mathjax_config = {
+#    'extensions': ['tex2jax.js'],
+#    'jax': ['input/TeX', 'output/HTML-CSS'],
+#}
 
 
 

@@ -74,7 +74,7 @@ class SSProtein:
         the correct residue index for a region of interest being examined. The region will NOT
         (necessarily) correspond to the residue index in the PDB file used.**
         
-        To make this easier the function `SSProtein.print_residues()` will print the mapping of residue
+        To make this easier the function ``SSProtein.print_residues()`` will print the mapping of residue
         index to residue name and residue number.
 
         To re-iterate:
@@ -156,7 +156,7 @@ class SSProtein:
     def resid_with_CA(self):
         """
         Return a list of resids that have CA (alpha-carbon) atoms. The values associated with this
-        property are built using the internal function `__get_resid_with_CA()`.
+        property are built using the internal function ``__get_resid_with_CA()``.
 
         Returns
         --------
@@ -552,7 +552,7 @@ class SSProtein:
     def __residue_atom_lookup(self, resid, atom_name=None):
         """
         Memoisation function to lookup the atomic index of a specific residues atom. Originally I'd assumed
-        the underlying MDTraj `topology.select()` operation was basically a lookup, BUT it turns out it's
+        the underlying MDTraj ``topology.select()`` operation was basically a lookup, BUT it turns out it's
         actually *really* expensive, so this method converts atom/residue lookup information into a
         dynamic O(1) operation, greatly improving the performance of a number of different methods
         in the processes.
@@ -689,7 +689,7 @@ class SSProtein:
         Parameters
         ----------
         verbose : bool {True}
-            If set to `True`, `print_residues()` will print out to screen and also return
+            If set to True, ``print_residues()`` will print out to screen and also return
             a list. If set to False, means nothing is printed to the screen.
 
         Returns
@@ -1204,7 +1204,7 @@ class SSProtein:
         that the reduced chi-squared value will be -1 if nu and A0 are provided manually.
 
         If no options are provided, the function calculates the best fit to a homopolymer mode using the
-        default parameters associated with the get_scaling_exponent() function, and then uses this
+        default parameters associated with the ``get_scaling_exponent()`` function, and then uses this
         model to determine pairwise deviations.
 
         Parameters
@@ -2332,29 +2332,26 @@ class SSProtein:
         R2 : int
             Residue index of second residue
 
-        A1 : str {CA}
-            Atom name of the atom in R1 we're looking at
+        A1 : str 
+            Atom name of the atom in R1 we're looking at. Default = CA.
 
-        A2 : str {CA}
-            Atom name of the atom in R2 we're looking at
+        A2 : str 
+            Atom name of the atom in R2 we're looking at. Default = CA.
 
-        mode : str {'atom'}
+        mode : str 
             Mode allows the user to define differnet modes for computing atomic distance. The
             default is 'atom' whereby a pair of atoms (A1 and A2) are provided. Other options
             are detailed below and are identical to those offered by mdtraj in compute_contacts
 
-            'ca' - same as setting 'atom' and A1='CA' and A2='CA', this uses the C-alpha atoms
+            * ``ca`` - same as setting 'atom' and A1='CA' and A2='CA', this uses the C-alpha atoms
 
-            'closest' - closest atom associated with each of the residues, i.e. the is the point
-                        of closest approach between the two residues
+            * ``closest`` - closest atom associated with each of the residues, i.e. the is the point of closest approach between the two residues
+                        
+            * ``closest-heavy`` - same as closest, except only non-hydrogen atoms are considered
 
-            'closest-heavy' - same as closest, except only non-hydrogen atoms are considered
+            * ``sidechain`` - closest atom where that atom is in the sidechain. Note this requires mdtraj version 1.8.0 or higher.                          
 
-            'sidechain' - closest atom where that atom is in the sidechain. Note this requires
-                          mdtraj version 1.8.0 or higher.
-
-            'sidechain-heavy' - closest atom where that atom is in the sidechain and is heavy.
-                                Note this requires mdtraj version 1.8.0 or higher.
+            * ``sidechain-heavy`` - closest atom where that atom is in the sidechain and is heavy. Note this requires mdtraj version 1.8.0 or higher.                                
 
         periodic : bool
             Flag which - if set to true - means we use minimum image convention for computing distances.
@@ -3054,102 +3051,99 @@ class SSProtein:
     #
     def get_scaling_exponent(self, inter_residue_min=15, end_effect=5, subdivision_batch_size=20, mode='COM', num_fitting_points=40, fraction_of_points=0.5, fraction_override=False, stride=1, weights=False, verbose=True):
         """
-        Estimation for the A0 and nu exponents for the standard polymer relationship
+        Estimation for the A0 and nu-app exponents for the standard polymer relationship:
 
-        sqrt(<Rij^2>) = A0|i-j|^(nu)
+        .. math::
 
-        Nu reports on the solvent quality, while the prefactor (A0) reports on the average chain persistence length. For polymers that are
-        above a 0.5 scaling exponent this works, but below this they deviate from fractal behaviour, so formally this relationship stops
-        working. In practice, the best possible fit line does still track with relative compactness, although we urge that the meaning of 
-        nu calculated from a single-chain polymer when that chain is compact makes minimal sense.
+           < r_{i,j}^{2} > ^{1/2} = A_0 |i - j| ^{\\nu_{app}}
 
-        Returns a 9 position tuple with the following associated values:
-        0 - best nu
 
-        1 - best A0
-
-        2 - minimum nu identified in bootstrap fitting
-
-        3 - maximum nu identified in bootstrap fitting
-
-        4 - minimum A0 identified in bootstrap fitting
-
-        5 - maximum A0 identified in bootstrap fitting
-
-        6 - reduced chi^2 for the fit region
-
-        7 - reduced chi^2 for ALL points
-
-        8 - 2-column array, where col 1 is the sequence separation and col 2
-            is the real spatila separation for the ACTUAL data used to fit to
-            the polymer model (i.e. these points are uniformly spaced from
-            one another on a log-log plot). Reduced chi^2 for the fit region
-            is calculated using this dataset.
-
-        9 - 3-column array, where col 1 is the sequence separation, col 2 is
-            the real spatial separation observed and col 3 is the best fit
-            curve, for ALL i-j distances. Reduced chi^2 for all points is
-            calculated using this dataset.
-
-        NOTE: Despite their precision nu and A0 should be treated as qualitative metrics, and are subject to finite
+        Here, nu app reports on the solvent quality, while the prefactor (A0) reports on the average chain 
+        persistence length and volume, which itself also depends on the solvent quality - see [1]. For 
+        polymers with an apparently scaling exponent above a 0.5  this works, but below this internal 
+        scaling starts to increasingly deviate from fractal behavior; as such, formally, this relationship
+        becomes increasingly inaccurate as the apparent nu-app becomes smaller working. In practice, the 
+        best possible fit line does still track with relative compactness, although we urge that the meaning of         
+        nu-app calculated from a single-chain polymer when that chain is compact does not necessarily track with
+        the nu-app calculated from multiple chains of varying length where the radius of gyration is fitted to
+        the number of residues in the chain.
+            
+        :NOTE: Despite their precision nu-app and A0 should be treated as qualitative metrics, and are subject to finite
               chain effects. The idea of a polymer scaling behaviour is only necessarily useful in the case of a
               homopolymer, whereas heterpolymers engender massive averaging that can mask underlying conformational
-              complexity. We _strongly_ caution against over interpretation of the scaling exponent. For a better
+              complexity. We *strongly* caution against over interpretation of the scaling exponent. For a better
               assement of how your chain actually deviates from homopolymer behaviour, see the function
-              get_polymer_scaled_distance_map()
+              ``get_polymer_scaled_distance_map()``
 
 
-        ........................................
-        OPTIONS
-        ........................................
-        inter_residue_min [int] {15}
-        Minimum distances used when selecting pairs of residues. This 25 threshold was determined previously,
-        and essentially avoids scenarios where the two residues (i and j) are close to each other. The goal
-        of this limit is to avoid finite chain size strongly influencing the scaling exponent limit.
+        Parameters
+        ------------------
 
-        end_effect [int] {5}
-        Avoid pairs where one of the residues is $end_effect residues from the end. Helps mitigate end-effects.
-        5 chosen as it's around above the blob-length in a polypeptide. Note that for homopolymers this is much
-        less of an issue.
+        inter_residue_min : int
+            Minimum distances used when selecting pairs of residues. This 25 threshold was determined previously,
+            and essentially avoids scenarios where the two residues (i and j) are close to each other. The goal
+            of this limit is to avoid finite chain size strongly influencing the scaling exponent limit.
+            Default = 10.
 
+        end_effect : int
+            Avoid pairs where one of the residues is $end_effect residues from the end. Helps mitigate end-effects.
+            5 chosen as it's around above the blob-length in a polypeptide. Note that for homopolymers this is much
+            less of an issue. Default = 5
 
-        mode [string, either 'COM' or 'CA'] {'COM'}
-        Defines the mode in which the internal scaling profile is calculated, can use either
-        COM (center of mass) of each residue or the CA carbon of each residue. COM is more
-        appropriate as CA will inherently give a larger profile.
+        mode : str 
+            Defines the mode in which the internal scaling profile is calculated, can use either
+            COM (center of mass) of each residue or the CA carbon of each residue. COM is more
+            appropriate as CA will inherently give a larger profile. Default = COM
 
-        num_fitting_points [int] {40}
-        Number of evenly spaced points to used to fit the scaling exponent in loglog space. 40
-        seems to be a decent number that scales well
+        num_fitting_points : int 
+            Number of evenly spaced points to used to fit the scaling exponent in loglog space. 40
+            seems to be a decent number that scales well. Default = 40
 
-        fraction_of_points [float between 0 and 1] {0.5}
-        This is only used if fraction_override is set to True OR the sequence has less than
-        the num_of_fitting_points residues. Means that instead of using a an absolute number
-        of points (e.g. 40) to fit the loglog data, we use this fraction of residues. i.e.
-        if the protein had 20 residues and fraction_of_points = 0.5 we'd use 10 points
+        fraction_of_points : float
+            This is only used if fraction_override is set to True OR the sequence has less than
+            the num_of_fitting_points residues. Means that instead of using a an absolute number
+            of points (e.g. 40) to fit the loglog data, we use this fraction of residues. i.e.
+            if the protein had 20 residues and fraction_of_points = 0.5 we'd use 10 points. 
+            Default = 0.5
 
-        fraction_override [bool] {False}
-        If set to False then fraction_of_points ONLY used if the length of the sequence is
-        less than the num_fitting points. If true then we explicitly use fraction_of_points
-        and ignore num_fitting_points.
+        fraction_override : bool
+            If set to False then fraction_of_points ONLY used if the length of the sequence is
+            less than the num_fitting points. If true then we explicitly use fraction_of_points
+            and ignore num_fitting_points. Default is True.
 
         stride : int {1}
             Defines the spacing between frames to compare - i.e. if comparing frame1 to a trajectory
             we'd compare frame 1 and every stride-th frame. Note this operation may scale poorly as
             protein length increases at which point increasing the stride may become necessary.
 
-
-        weights [list or array of floats] {False}
-        Defines the frame-specific weights if re-weighted analysis is required. This can be
-        useful if an ensemble has been re-weighted to better match experimental data, or in
-        the case of analysing replica exchange data that is re-combined using T-WHAM.
+        weights : list or array of floats or bool
+            Defines the frame-specific weights if re-weighted analysis is required. This can be
+            useful if an ensemble has been re-weighted to better match experimental data, or in
+            the case of analysing replica exchange data that is re-combined using T-WHAM. 
+            Default is False.
 
         verbose : bool
-            Flag that by default is True determines if the function prints status updates. This is relevant because
-            this function can be computationally expensive, so having some report on status can be comforting!
+            Flag that by default is True determines if the function prints status updates. This is 
+            relevant because this function can be computationally expensive, so having some report 
+            on status can be comforting!
 
 
+        Returns
+        ----------
+        tuple
 
+            Returns a 10 position tuple with the following associated values:
+
+            * 0 - best nu
+            * 1 - best A0
+            * 2 - minimum nu identified in bootstrap fitting
+            * 3 - maximum nu identified in bootstrap fitting
+            * 4 - minimum A0 identified in bootstrap fitting
+            * 5 - maximum A0 identified in bootstrap fitting
+            * 6 - reduced chi^2 for the fit region
+            * 7 - reduced chi^2 for ALL points
+            * 8 - 2-column array, where col 1 is the sequence separation and col 2 is the real spatila separation for the ACTUAL data used to fit to the polymer model (i.e. these points are uniformly spaced from one another on a log-log plot). Reduced chi^2 for the fit region is calculated using this dataset.
+            * 9 - 3-column array, where col 1 is the sequence separation, col 2 is the real spatial separation observed and col 3 is the best fit curve, for ALL i-j distances. Reduced chi^2 for all points is calculated using this dataset.
 
         """
 

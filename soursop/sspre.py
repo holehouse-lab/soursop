@@ -63,13 +63,11 @@ class SSPRE:
             diamagnetic form of the protein, measured in Herz (i.e. 'per second'). 
             A value of around 10 might be expected.
             
-
         W_H : float
             Is the proton Larmor frequency, which is typically the "MHz" value 
             associated with the magnet, given in Hz. For examle, a 600 MHz magnet 
             would use the value 600000000. Note that the proton Larmor frequency 
-            at 1 Tesla = 267530000 per second per Tesla.
-            
+            at 1 Tesla = 267530000 per second per Tesla.            
 
         """
                 
@@ -116,7 +114,6 @@ class SSPRE:
     #                 
     def __repr__(self):
         """
-
 
         """
         return "["+hex(id(self)) + "]: SSPRE OBJ - (R_2D = %3.2f Hz, t_delay = %3.2f ms, tau_c = %3.2f ns, H1 Larmor = %3.3e Hz)" % (self.R_2D, self.t_delay, self.tau_c, self.W_h)

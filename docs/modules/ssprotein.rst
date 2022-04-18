@@ -65,6 +65,7 @@ SSProtein Functions
         .. automethod:: get_secondary_structure_BBSEG
         .. automethod:: get_internal_scaling
         .. automethod:: get_internal_scaling_RMS
+        .. automethod:: get_scaling_exponent
         .. automethod:: get_local_heterogeneity
         .. automethod:: get_D_vector
         .. automethod:: get_RMSD

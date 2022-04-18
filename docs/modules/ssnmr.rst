@@ -2,9 +2,7 @@
 ssnmr 
 =========================================================
 
-ssnmr contains functions related to nuclear magnetic resonance.
-ssnmr was written to be independent of needing a trajectory, as it
-includes some sequence-only functions.
+ssnmr contains functions related to nuclear magnetic resonance. Unlike the SSTrajectory and SSProtein code, SSNMR contains stateless functions that can take a sequence or an SSProtein object and return some observable.
 
 
 .. automodule:: soursop.ssnmr

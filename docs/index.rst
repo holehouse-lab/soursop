@@ -21,30 +21,15 @@ This documentation is currently being generated as we finalize **SOURSOP**.
    :maxdepth: 1
    :caption: Contents:
    
-   usage/quickstart
+   usage/overview
+   usage/installation
    usage/examples
    modules/sstrajectory
    modules/ssprotein
    modules/ssnmr
    modules/sspre
+   usage/development
 
-
-Quickstart!
-==============
-
-To install **soursop** first install ``mdtraj``. We HIGHLY recommend installing ``mdtraj`` using ``conda``:
-
-.. code-block:: 
-
-	conda install -c conda-forge mdtraj
-	
-Once ``mdtraj`` is installed, **soursop** can be installed using
-
-.. code-block:: 
-
-	pip install soursop
-
-This should install `soursop`.
 
 
 
