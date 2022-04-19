@@ -3,7 +3,7 @@ SOURSOP
 [![Build Status](https://travis-ci.org/holehouse-lab/camparitraj.svg?branch=master)](https://travis-ci.org/holehouse-lab/camparitraj)
 [![codecov](https://codecov.io/gh/holehouse-lab/camparitraj/branch/master/graph/badge.svg)](https://codecov.io/gh/holehouse-lab/camparitraj)
 [![Documentation Status](https://readthedocs.org/projects/soursop/badge/?version=latest)](https://soursop.readthedocs.io/en/latest/?badge=latest)
-#### Current Release Candidate: 0.1.8
+#### Current Release Candidate: 0.1.9.x (small increments are patches)
 
 Analysis package for all-atom simulations of disordered and unfolded proteins.
 
