@@ -41,6 +41,7 @@ SSProtein Functions
 
 .. autoclass:: soursop.ssprotein.SSProtein
 
+        .. automethod:: reset_cache
         .. automethod:: print_residues
         .. automethod:: get_amino_acid_sequence
         .. automethod:: get_residue_atom_indices
@@ -61,6 +62,7 @@ SSProtein Functions
         .. automethod:: get_asphericity
         .. automethod:: get_t
         .. automethod:: get_gyration_tensor
+        .. automethod:: get_angles
         .. automethod:: get_secondary_structure_DSSP
         .. automethod:: get_secondary_structure_BBSEG
         .. automethod:: get_internal_scaling

@@ -16,7 +16,6 @@ The **SOURSOP** GitHub page can be accessed here: `https://github.com/holehouse-
 
 This documentation is currently being generated as we finalize **SOURSOP**. 
 
-
 .. toctree::
    :maxdepth: 1
    :caption: Contents:
@@ -30,14 +29,11 @@ This documentation is currently being generated as we finalize **SOURSOP**.
    modules/sspre
    usage/development
 
-
-
-
 Changelog
 ==========
 
 *Update: April 2022*
-Moved SOURSOP onto PyPI in anticipation of final release. Additional tests, code clean up etc.
+Moved SOURSOP onto PyPI in anticipation of final release. Additional tests, code clean up etc. Also added 
 
 *Update: March 2022*
 Numerous updates to internal code documentation, removal of `soursop_cli`, update to pip install over git to use https.
@@ -51,9 +47,7 @@ The anticipated release of `soursop` is August 2021! We have nearly finished all
 *Update: May 2019*
 **CAMPARITraj** is currently still being finalized, so we do not currently recommend installation directly from the GitHub repository as tests, final code tweaks, and even major changes to the code-base are occurring constantly. However, in principle, assuming **camparitraj** is building, once downloaded from GitHub it can be installed via
 
-``pip install .``
 
-We plan to release **CAMPARITraj** over ``conda-forge`` once it has finalized and all tests are building. For more information see the installation page.
 
 
 About

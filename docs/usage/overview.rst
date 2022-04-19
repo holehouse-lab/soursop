@@ -1,11 +1,7 @@
 Overview
 ==========
 
-SOURSOP is a Python-based simulation analysis package developed for the analysis of conformational ensembles of disordered proteins. 
-
-.. math::
-
-   \langle a \rangle == 1
+SOURSOP is a Python-based simulation analysis package developed for the analysis of conformational ensembles of disordered proteins. The goal is to make it as easy as possible to quickly read in and analyze an ensemble of an IDR. In addition to the many pre-built analysis routines, SOURSOP provides easy and rapid access to all inter-residue or inter-atomic distances.
 
 As an example:
 
