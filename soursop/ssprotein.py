@@ -1,8 +1,3 @@
-"""
-SSProtein is the main protein trajectory class in SOURSOP
-
-"""
-
 ##     _____  ____  _    _ _____   _____  ____  _____  
 ##   / ____|/ __ \| |  | |  __ \ / ____|/ __ \|  __ \ 
 ##  | (___ | |  | | |  | | |__) | (___ | |  | | |__) |
@@ -122,6 +117,9 @@ class SSProtein:
         # initialze various protein-centric data
         self.__num_residues       = sum( 1 for _ in self.topology.residues)
 
+        ## DEVELOPMENT NOTES
+        # Anything below this lines should be reset by the delete_cache() function
+
         # initialize some empty values that are populated on demand by functions that drive local
         # memoization.
         self.__amino_acids_3LTR   = None
@@ -132,6 +130,7 @@ class SSProtein:
         self.__residue_COM        = {}
         self.__residue_atom_COM   = {}
         self.__SASA_saved         = {}
+        self.__all_angles         = {} # will be used to store different dihedral (backbone and sidechain) angles
 
         self.__resid_with_CA = self.__get_resid_with_CA()
 
@@ -145,6 +144,52 @@ class SSProtein:
             self.__ccap = False
         else:
             self.__ccap = True
+
+    # <><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><>
+    #
+    # IMPORTANT FUNCTION - enables the user to manually override stored 
+    def reset_cache(self):
+        """
+        Function that enables the user to manually delete data that the SSProtein object has precomputed.
+        In general this shouldn't be necessary, but there could be some edge cases where resetting the
+        stored data cache is helpful.
+
+        No input or return type
+
+        Parameters
+        -----------
+        None
+
+        Returns
+        ------------
+        None
+        """
+        
+        # initialize some empty values that are populated on demand by functions that drive local
+        # memoization.
+        self.__amino_acids_3LTR   = None
+        self.__amino_acids_1LTR   = None
+        self.__residue_index_list = None
+        self.__CA_residue_atom    = {}
+        self.__residue_atom_table = {}
+        self.__residue_COM        = {}
+        self.__residue_atom_COM   = {}
+        self.__SASA_saved         = {}
+        self.__all_angles         = {} # will be used to store different dihedral (backbone and sidechain) angles
+
+        self.__resid_with_CA = self.__get_resid_with_CA()
+
+        # define if caps are present or not - specifically, if the resid 0 is in the CA-containing
+        if 0 in self.resid_with_CA:
+            self.__ncap = False
+        else:
+            self.__ncap = True
+
+        if (self.n_residues - 1) in self.resid_with_CA:
+            self.__ccap = False
+        else:
+            self.__ccap = True
+
 
 
     # <><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><>
@@ -937,7 +982,6 @@ class SSProtein:
                 continue
 
         return CAlist
-
 
 
     # ........................................................................
@@ -2757,6 +2801,88 @@ class SSProtein:
         return K(rg)
 
 
+    # ........................................................................
+    #
+    #
+    def get_angles(self, angle_name):
+
+        """
+        Returns all angle values for the specified angle name. Valid angle names are ``phi``, 
+        ``psi``, ``omega``, ``chi1``, ``chi2``, ``chi3``, ``chi4``, ``chi5``. Returns a tuple
+        with both angle values for each frame and also also for each indexed angle the name
+        of the atoms used to calculate that atom (based on the intrinsic underlying protein
+        topology). 
+
+        Parameters
+        --------------
+        angle_name : str
+            Name of angle being investigated. Must be one of ``phi``, ``psi``, ``omega``, 
+            ``chi1``, ``chi2``, ``chi3``, ``chi4``, ``chi5``. 
+
+        Returns
+        ---------
+        tuple
+            Returns a tuple where element 0 is the list of lists, where each sub-list defines 
+            the atom names that are used to calculate each angle, while element 2 is a list of 
+            arrays, where each element in the array maps to the atoms defined in the corresponding
+            element in tuple element 0, and each array defines the list of angles associated with
+            each frame.
+
+            For example, in a protein with two arginine residues::
+
+                chi5 = ssprotein_object._angles('chi5')
+
+                # will print the atom names (chi5[0]) associated with the 2nd ([1]) arginine
+                # in the sequence
+                print(chi5[0][1])
+
+                # will print the actual chi5 angles associated with the 2nd arginine
+                print(chi5[1][1])
+
+        
+        """
+
+
+        # check input ketword selector
+        ssutils.validate_keyword_option(angle_name, ['chi1', 'chi2','chi3', 'chi4','chi5','phi', 'psi', 'omega'], 'angle_name')
+
+        # construct the selector dictionary - enables mapping of an angle name to an internal function
+        selector = {"phi":md.compute_phi, 
+                    "omega":md.compute_omega, 
+                    "psi":md.compute_psi, 
+                    "chi1":md.compute_chi1,
+                    "chi2":md.compute_chi2,
+                    "chi3":md.compute_chi3,
+                    "chi4":md.compute_chi4,
+                    "chi5":md.compute_chi5}
+
+        if angle_name not in self.__all_angles:
+
+            # compute all phi angles
+            fx = selector[angle_name]
+            tmp = fx(self.traj)
+
+            # extract out atomic indices and angles
+            atoms = tmp[0]
+            angles = np.rad2deg(tmp[1].transpose())
+
+            # sanity check
+            if len(atoms) != len(angles):
+                raise SSException('ERROR: This is a bug in how angle selection happens in get_angles - please open an Issue on GitHub')
+
+            all_atom_names = []
+            for res_atoms in atoms:
+                local_atom_names = []
+
+                for atom_idx in res_atoms:
+                    local_atom_names.append(str(self.traj.topology.atom(atom_idx)))
+                all_atom_names.append(local_atom_names)
+
+            self.__all_angles[angle_name] = [all_atom_names, angles]
+
+        return self.__all_angles[angle_name]
+
+
 
     # ........................................................................
     #
@@ -2935,8 +3061,6 @@ class SSProtein:
     #
     def get_internal_scaling_RMS(self, R1=None, R2=None, mode='COM', stride=1, weights=False, verbose=True):
         """
-        If :math:`r_{i,j} = \langle \langle \sum \sigma_{1}` equals :math:`\sigma_{2}` then etc, etc.
-
         Calculates the averaged internal scaling info for the protein in the simulation in terms of
         root mean square (i.e. `sqrt(<Rij^2>`) vs `| i - j |`.
 
