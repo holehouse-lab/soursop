@@ -1,10 +1,10 @@
 
-##     _____  ____  _    _ _____   _____  ____  _____  
-##   / ____|/ __ \| |  | |  __ \ / ____|/ __ \|  __ \ 
+##     _____  ____  _    _ _____   _____  ____  _____
+##   / ____|/ __ \| |  | |  __ \ / ____|/ __ \|  __ \
 ##  | (___ | |  | | |  | | |__) | (___ | |  | | |__) |
-##   \___ \| |  | | |  | |  _  / \___ \| |  | |  ___/ 
-##   ____) | |__| | |__| | | \ \ ____) | |__| | |     
-##  |_____/ \____/ \____/|_|  \_\_____/ \____/|_|     
+##   \___ \| |  | | |  | |  _  / \___ \| |  | |  ___/
+##   ____) | |__| | |__| | | \ \ ____) | |__| | |
+##  |_____/ \____/ \____/|_|  \_\_____/ \____/|_|
 
 ## Alex Holehouse (Pappu Lab and Holehouse Lab) and Jared Lalmansing (Pappu lab)
 ## Simulation analysis package
@@ -42,7 +42,7 @@ def _set_mkl_numpy_threads(mkl_path, num_threads):
     # Traditional UNIX-like systems will have shared objects available.
     if 'bsd' in sys.platform or 'lin' in sys.platform:
         mkl_rt = ctypes.CDLL(mkl_path)
-    
+
     # Darwin / Apple uses `*.dylib` by default for included Intel compiler libraries.
     # Traditional UNIX-like shared objects can be created (`*.so`), but are more
     # represented in third-party libraries. This is a more dynamic way of finding
@@ -91,7 +91,7 @@ def _identify_library_paths():
     # environments live across multiple OSes, and can be packaged in different
     # ways. Here we limit the results to Anaconda and regular Python environment
     # installations.
-    
+
     # Check existing environment variables and stop on the first match. The basis
     # for this approach is that only one should be active.
     virtualized_env = None
@@ -111,7 +111,7 @@ def _identify_library_paths():
         lib_paths = _locate_libraries(library)
         for lib_path in lib_paths:
             numpy_path_fragment = os.path.join('site-packages', 'numpy') # os-agnostic
-            if env_path is not None and env_path in lib_path and numpy_path_fragment in lib_path:
+            if virtualized_env is not None and virtualized_env in lib_path and numpy_path_fragment in lib_path:
                 candidates.append(lib_path)
             elif env_path in lib_path:
                 other_candidates.append(lib_path)
@@ -135,7 +135,7 @@ def _set_numpy_threads(candidate_library_paths, num_threads):
             library = 'unknown'
         break # stop on first set library
     return library, set_threads
-        
+
 
 def set_numpy_threads(num_threads):
     candidates, other_candidates = _identify_library_paths()
@@ -144,7 +144,7 @@ def set_numpy_threads(num_threads):
     else:
         set_threads, library = _set_numpy_threads(other_candidates, num_threads)
     return set_threads, library
-    
+
 
 def validate_keyword_option(keyword, allowed_vals, keyword_name, error_message=None):
     """
