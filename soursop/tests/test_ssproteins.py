@@ -662,6 +662,7 @@ def test_get_sidechain_alignment_angle_unsupported_angle(GS6_CP, NTL9_CP):
             protein.get_sidechain_alignment_angle(R1, R2, sidechain_atom_2='invalid_atom')
 
 
+# From: https://stackoverflow.com/a/42327075
 @contextmanager
 def not_raises(exception):
     try:
