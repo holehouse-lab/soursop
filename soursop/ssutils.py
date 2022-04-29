@@ -113,7 +113,7 @@ def _identify_library_paths():
             numpy_path_fragment = os.path.join('site-packages', 'numpy') # os-agnostic
             if virtualized_env is not None and virtualized_env in lib_path and numpy_path_fragment in lib_path:
                 candidates.append(lib_path)
-            elif env_path in lib_path:
+            else:
                 other_candidates.append(lib_path)
     return candidates, other_candidates
 
