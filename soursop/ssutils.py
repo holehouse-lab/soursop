@@ -64,25 +64,41 @@ def _set_openblas_numpy_threads(openblas_path, num_threads):
 
 
 def _locate_libraries(library_name):
+    import fnmatch
     # Since `threadctl` is hit or miss on a Mac (especially for the latest versions),
     # we have to do what the package does but in an ad-hoc manner using `locate`.
     # This reasonably well in principle on both the Mac and on Linux. However, the
     # requirement for `locatedb` may be a security issue for sensitive environments.
     # But, for the vast majority of other use-cases, it should be sufficient.
-    import subprocess as sp
     os_name = platform.system().lower()
     if os_name == 'darwin':
-        libname = f"'*{library_name}*.dylib*'" # fuzzy match for locate
+        libname = f'*{library_name}*.dylib*' # fuzzy match for filtering with find
     elif os_name == 'linux':
-        libname = f"'*{library_name}*.so*'"  # fuzzy match for locate
+        libname = f'*{library_name}*.so*'  # fuzzy match for filtering with find
     else:
         warnings.warn(f'Unsupported OS: {os_name}.')
 
-    proc = sp.Popen(['/usr/bin/locate', library_name], stdout=sp.PIPE, stderr=sp.PIPE)
+    # Checking existing environment variables and stop on the first match. The
+    # basis for this approach is that only one should be active.
+    virtualized_env = None
+    for env_var in 'CONDA_DEFAULT_ENV,VIRTUAL_ENV'.split(','):
+        env_path = os.environ.get(env_var, None)
+        if env_path is not None:
+            virtualized_env = env_path
+            break
+
+    # If no virtual environment is active, terminate. Support for system-wide
+    # Python installations is not yet supported.
+    if virtualized_env is None:
+        raise SSException('No Anaconda or Python Virtual Environment found. Exiting.')
+
     lib_locations = list()
-    for line in proc.stdout:
-        loc = line.decode('utf-8').replace('\n', '').strip()
-        lib_locations.append(loc)
+    include_filenames = [libname]
+    for root, dirs, files in os.walk(virtualized_env, topdown=True):
+        for filename_pattern in include_filenames:
+            for filename in fnmatch.filter(files, filename_pattern):
+                filepath = os.path.join(root, filename)
+                lib_locations.append(filepath)
     return lib_locations
 
 
@@ -91,15 +107,6 @@ def _identify_library_paths():
     # environments live across multiple OSes, and can be packaged in different
     # ways. Here we limit the results to Anaconda and regular Python environment
     # installations.
-
-    # Check existing environment variables and stop on the first match. The basis
-    # for this approach is that only one should be active.
-    virtualized_env = None
-    for env_var in 'CONDA_DEFAULT_ENV,VIRTUAL_ENV'.split(','):
-        env_path = os.environ.get(env_var, None)
-        if env_path is not None:
-            virtualized_env = env_path
-            break
 
     # Identify the library paths and split them into two:
     # 1) candidates - these will be searched and attempted to be set first.
@@ -111,7 +118,7 @@ def _identify_library_paths():
         lib_paths = _locate_libraries(library)
         for lib_path in lib_paths:
             numpy_path_fragment = os.path.join('site-packages', 'numpy') # os-agnostic
-            if virtualized_env is not None and virtualized_env in lib_path and numpy_path_fragment in lib_path:
+            if numpy_path_fragment in lib_path:
                 candidates.append(lib_path)
             else:
                 other_candidates.append(lib_path)

@@ -13,10 +13,6 @@ jobs:
         uses: actions/setup-python@v3
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Install OS dependencies
-        run: |
-          sudo apt install mlocate
-          sudo updatedb
       - name: Create virtual env
         run: |
           python -m venv venv
