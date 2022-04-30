@@ -1,0 +1,13 @@
+wheel
+pytest
+pytest-cov
+pytest-forked
+pytest-xdist
+mdtraj==1.9.5
+numpy
+cx_Freeze
+PyYAML
+ruamel_yaml
+threadpoolctl
+pandas
+scipy

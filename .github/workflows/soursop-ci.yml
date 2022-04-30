@@ -9,28 +9,47 @@ jobs:
         python-version: ["3.7", "3.8", "3.9", "3.10"]
     runs-on: ${{ matrix.os }}
     steps:
-        # This is super-crucial and not well-documented (especially for conda).
+        # This is super-crucial and not well-documented (especially for conda) with Github Actions.
         # See: https://stackoverflow.com/questions/64405836/github-actions-no-such-file-or-directory-on-any-run-step
       - uses: actions/checkout@v3
+
       - name: Set up Python ${{ matrix.python-version }}
         uses: conda-incubator/setup-miniconda@v2
         with:
           auto-update-conda: true
           python-version: ${{ matrix.python-version }}
+
       - name: Configure Anaconda
         run: |
           conda init bash
+
+        # Instead of using the traditional `requirements.txt`, which are specific to a given Python version,
+        # we only supply the names for the solver to determine which versions should be installed due to
+        # library requirements and differences across Python versions.
+        #
+        # We use `mamba` instead of `conda` as its faster, multithreaded, and is a drop-in replacement for
+        # `conda`.
+        #
+        # We set the shell as `bash` for consistency across all OSes (including Windows, which now supports
+        # bash). As for the extra arguments, in the previous step we added conda to our bash environment,
+        # however, it requires a new shell instance. Sourcing can work too, but for unusually, how `bash`
+        # is updated with `conda init bash` differs across OSes. For e.g., on Linux, `~/.bashrc` is updated.
+        # But, on the Mac, `~/.bash_profile` is updated instead. Instead of sourcing the appropriate file
+        # by shell, we can generate a new `bash` instance by forcing a login shell (`-l`). Hence, no per-OS
+        # sourcing is required.
       - name: Install Python dependencies
         shell: bash -l {0}
         run: |
           conda activate test
-          conda install wheel pytest pytest-cov pytest-forked pytest-xdist
-          conda install --file requirements.txt --channel default --channel anaconda --channel conda-forge
+          conda install -conda-forge mamba
+          mamba install --file anaconda_requirements.txt --channel default --channel anaconda --channel conda-forge
+
       - name: Test with pytest
         shell: bash -l {0}
         run: |
           conda activate test
           python -m pytest --capture=sys
+
       - name: Perform code coverage test
         shell: bash -l {0}
         run: |
