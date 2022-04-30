@@ -25,9 +25,9 @@ jobs:
         run: |
           . ~/.bashrc
           conda activate test
-          python -m pip install -U pip
-          python -m pip install wheel pytest pytest-cov pytest-forked pytest-xdist
-          python -m pip install -r requirements.txt
+          conda install wheel pytest pytest-cov pytest-forked pytest-xdist
+          conda install -c conda-forge mdtraj
+          conda install numpy scipy pyyaml threadpoolctl pandas ruamel_yaml
       - name: Test with pytest
         shell: bash
         run: |
