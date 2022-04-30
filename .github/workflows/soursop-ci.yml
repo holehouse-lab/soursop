@@ -25,8 +25,7 @@ jobs:
         run: |
           conda activate test
           conda install wheel pytest pytest-cov pytest-forked pytest-xdist
-          conda install -c conda-forge mdtraj
-          conda install numpy scipy pyyaml threadpoolctl pandas ruamel_yaml
+          conda install --file requirements.txt --channel default --channel conda-forge
       - name: Test with pytest
         shell: bash -l {0}
         run: |
