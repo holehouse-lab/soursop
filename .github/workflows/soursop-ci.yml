@@ -41,7 +41,7 @@ jobs:
         shell: bash -l {0}
         run: |
           conda activate test
-          conda install -conda-forge mamba
+          conda install -c conda-forge mamba
           mamba install --file anaconda_requirements.txt --channel default --channel anaconda --channel conda-forge
 
       - name: Test with pytest
