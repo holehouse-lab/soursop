@@ -9,6 +9,9 @@ jobs:
         python-version: ["3.7", "3.8", "3.9", "3.10"]
     runs-on: ${{ matrix.os }}
     steps:
+        # This is super-crucial and not well-documented (especially for conda).
+        # See: https://stackoverflow.com/questions/64405836/github-actions-no-such-file-or-directory-on-any-run-step
+      - uses: actions/checkout@v3  
       - name: Set up Python ${{ matrix.python-version }}
         uses: conda-incubator/setup-miniconda@v2
         with:
