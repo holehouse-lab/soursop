@@ -138,7 +138,7 @@ def set_numpy_threads(num_threads):
     # Currently only MKL is supported on Windows as it's installed alongside
     # the other packages via conda. A "traditional" virtual environment requires
     # access to a compiler and other libraries for successful compilation.
-    if platform.system.lower() == 'windows':
+    if platform.system().lower() == 'windows':
         import mkl
         mkl.set_num_threads(num_threads)
         return mkl.get_max_threads(), MKL_LIBRARY
