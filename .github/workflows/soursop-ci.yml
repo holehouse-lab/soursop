@@ -21,19 +21,19 @@ jobs:
         run: |
           conda init bash
       - name: Install Python dependencies
-        shell: bash
+        shell: bash -l {0}
         run: |
           conda activate test
           conda install wheel pytest pytest-cov pytest-forked pytest-xdist
           conda install -c conda-forge mdtraj
           conda install numpy scipy pyyaml threadpoolctl pandas ruamel_yaml
       - name: Test with pytest
-        shell: bash
+        shell: bash -l {0}
         run: |
           conda ativate test
           python -m pytest --capture=sys
       - name: Perform code coverage test
-        shell: bash
+        shell: bash -l {0}
         run: |
           conda activate test
           python -m pytest --cov=soursop --cov-report term-missing -n auto soursop/tests
