@@ -125,7 +125,7 @@ def _set_numpy_threads(candidate_library_paths, num_threads):
             warnings.warn('Unsupported library. Please install OPENBLAS or the Intel MKL library. No threads set.')
             library = 'unknown'
         break # stop on first set library
-    return library, set_threads
+    return set_threads, library
 
 
 ##

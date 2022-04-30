@@ -14,7 +14,7 @@ from threadpoolctl import threadpool_info, threadpool_limits
 
 def test_set_numpy_threads():
     num_threads = 2
-    blas_library, set_threads = ssutils.set_numpy_threads(num_threads)
+    set_threads, blas_library = ssutils.set_numpy_threads(num_threads)
     assert blas_library != 'unknown'
     assert set_threads == num_threads
 
