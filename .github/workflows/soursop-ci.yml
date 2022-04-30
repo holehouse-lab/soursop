@@ -17,14 +17,17 @@ jobs:
       - name: Install Python dependencies
         shell: bash
         run: |
+          conda activate test
           python -m pip install -U pip
           python -m pip install wheel pytest pytest-cov pytest-forked pytest-xdist
           python -m pip install -r requirements.txt
       - name: Test with pytest
         shell: bash
         run: |
+          conda ativate test
           python -m pytest --capture=sys
       - name: Perform code coverage test
         shell: bash
         run: |
+          conda activate test
           python -m pytest --cov=soursop --cov-report term-missing -n auto soursop/tests
