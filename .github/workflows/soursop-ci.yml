@@ -11,7 +11,7 @@ jobs:
     steps:
         # This is super-crucial and not well-documented (especially for conda).
         # See: https://stackoverflow.com/questions/64405836/github-actions-no-such-file-or-directory-on-any-run-step
-      - uses: actions/checkout@v3  
+      - uses: actions/checkout@v3
       - name: Set up Python ${{ matrix.python-version }}
         uses: conda-incubator/setup-miniconda@v2
         with:
@@ -25,7 +25,7 @@ jobs:
         run: |
           conda activate test
           conda install wheel pytest pytest-cov pytest-forked pytest-xdist
-          conda install --file requirements.txt --channel default --channel conda-forge
+          conda install --file requirements.txt --channel default --channel anaconda --channel conda-forge
       - name: Test with pytest
         shell: bash -l {0}
         run: |
