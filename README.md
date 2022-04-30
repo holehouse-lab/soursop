@@ -1,6 +1,6 @@
 SOURSOP
 ==============================
-[![Build Status](https://travis-ci.org/holehouse-lab/camparitraj.svg?branch=master)](https://travis-ci.org/holehouse-lab/camparitraj)
+[![Build Status](https://github.com/jaredl7/soursop/actions/workflows/soursop-ci.yml/badge.svg?branch=master)](https://github.com/jaredl7/soursop/actions)
 [![codecov](https://codecov.io/gh/holehouse-lab/camparitraj/branch/master/graph/badge.svg)](https://codecov.io/gh/holehouse-lab/camparitraj)
 [![Documentation Status](https://readthedocs.org/projects/soursop/badge/?version=latest)](https://soursop.readthedocs.io/en/latest/?badge=latest)
 #### Current Release Candidate: 0.1.9.x (small increments are patches)
@@ -10,12 +10,12 @@ Analysis package for all-atom simulations of disordered and unfolded proteins.
 SOURSOP was fully developed in the Pappu Lab (http://pappulab.wustl.edu) but is maintained by the Holehouse lab (https://holehouselab.com).
 
 #### Update April 2022
-For version 0.1.9 the documentation has been extensively extended 
+For version 0.1.9 the documentation has been extensively extended
 
 #### Update July 2021
-CAMPARITraj is SOURSOP! For the final release we have re-named and re-branded CAMPARITraj as SOURSOP. This change in the name serves two important purposes. 
+CAMPARITraj is SOURSOP! For the final release we have re-named and re-branded CAMPARITraj as SOURSOP. This change in the name serves two important purposes.
 
-Firstly, CAMPARITraj was borne out of a collection of scripts and code built to work with CAMPARI. However, it has evolved into a stand-alone package for the analysis of all-atom simulations of IDPs and IDRs, and importantly, much of the analysis it performs can also be done in CAMPARI. As such, we felt it was important to decoupled SOURSOP from CAMPARI, both to avoid the implication that CAMPARI cannot perform analyses itself, and to avoid a scenario in which it may appear that this package only works with CAMPARI simulations. 
+Firstly, CAMPARITraj was borne out of a collection of scripts and code built to work with CAMPARI. However, it has evolved into a stand-alone package for the analysis of all-atom simulations of IDPs and IDRs, and importantly, much of the analysis it performs can also be done in CAMPARI. As such, we felt it was important to decoupled SOURSOP from CAMPARI, both to avoid the implication that CAMPARI cannot perform analyses itself, and to avoid a scenario in which it may appear that this package only works with CAMPARI simulations.
 
 Secondly, there is a long, rich tradition of naming software tools after drinks in the Pappu lab (CAMPARI, ABSINTH, CIDER, LASSI etc.). As such SOURSOP is first-author Jared's Caribbean twist on this theme!
 
