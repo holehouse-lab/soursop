@@ -18,16 +18,28 @@ jobs:
         run: |
           python -m venv venv
       - name: Install Python dependencies
+        shell: bash
         run: |
-          source venv/bin/activate
+          if [ "$RUNNER_OS" == "Windows" ]; then
+            . venv/Scripts/activate
+          else:
+            source venv/bin/activate
           python -m pip install -U pip
-          pip install wheel pytest pytest-cov pytest-forked pytest-xdist
-          pip install -r requirements.txt
+          python -m pip install wheel pytest pytest-cov pytest-forked pytest-xdist
+          python -m pip install -r requirements.txt
       - name: Test with pytest
+        shell: bash
         run: |
-          source venv/bin/activate
-          pytest --capture=sys
+          if [ "$RUNNER_OS" == "Windows" ]; then
+            . venv/Scripts/activate
+          else:
+            source venv/bin/activate
+          python -m pytest --capture=sys
       - name: Perform code coverage test
+        shell: bash
         run: |
-          source venv/bin/activate
-          pytest --cov=soursop --cov-report term-missing -n auto soursop/tests
+          if [ "$RUNNER_OS" == "Windows" ]; then
+            . venv/Scripts/activate
+          else:
+            source venv/bin/activate
+          python -m pytest --cov=soursop --cov-report term-missing -n auto soursop/tests
