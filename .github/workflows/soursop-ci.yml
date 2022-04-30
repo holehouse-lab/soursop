@@ -22,8 +22,9 @@ jobs:
         run: |
           if [ "$RUNNER_OS" == "Windows" ]; then
             . venv/Scripts/activate
-          else:
+          else
             source venv/bin/activate
+          fi
           python -m pip install -U pip
           python -m pip install wheel pytest pytest-cov pytest-forked pytest-xdist
           python -m pip install -r requirements.txt
@@ -32,14 +33,16 @@ jobs:
         run: |
           if [ "$RUNNER_OS" == "Windows" ]; then
             . venv/Scripts/activate
-          else:
+          else
             source venv/bin/activate
+          fi
           python -m pytest --capture=sys
       - name: Perform code coverage test
         shell: bash
         run: |
           if [ "$RUNNER_OS" == "Windows" ]; then
             . venv/Scripts/activate
-          else:
+          else
             source venv/bin/activate
+          fi
           python -m pytest --cov=soursop --cov-report term-missing -n auto soursop/tests
