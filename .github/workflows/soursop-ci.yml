@@ -23,7 +23,6 @@ jobs:
       - name: Install Python dependencies
         shell: bash
         run: |
-          . ~/.bashrc
           conda activate test
           conda install wheel pytest pytest-cov pytest-forked pytest-xdist
           conda install -c conda-forge mdtraj
@@ -31,12 +30,10 @@ jobs:
       - name: Test with pytest
         shell: bash
         run: |
-          . ~/.bashrc
           conda ativate test
           python -m pytest --capture=sys
       - name: Perform code coverage test
         shell: bash
         run: |
-          . ~/.bashrc
           conda activate test
           python -m pytest --cov=soursop --cov-report term-missing -n auto soursop/tests
