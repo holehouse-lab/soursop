@@ -26,18 +26,6 @@ MKL_LIBRARY = 'mkl_rt'
 OPENBLAS_LIBRARY = 'openblas'
 
 
-##
-## This is included the force numpy to use defined number of cores. For
-## some of the linear algebra routines numpy will default to using as many
-## cores as it can get its greedy little hands on - this function allows that
-## thirst to be quenched...
-##
-def mkl_set_num_threads(cores):
-    mkl_rt = ctypes.CDLL('libmkl_rt.so')
-    mkl_get_max_threads = mkl_rt.mkl_get_max_threads()
-    mkl_rt.mkl_set_num_threads(ctypes.byref(ctypes.c_int(cores)))
-
-
 def _set_mkl_numpy_threads(mkl_path, num_threads):
     # Traditional UNIX-like systems will have shared objects available.
     #
@@ -46,7 +34,8 @@ def _set_mkl_numpy_threads(mkl_path, num_threads):
     # represented in third-party libraries. This is a more dynamic way of finding
     # the MKL library and using it on a Mac that has an Intel compiler installed.
     mkl_rt = ctypes.CDLL(mkl_path)
-    mkl_set_num_threads(num_threads)
+    mkl_get_max_threads = mkl_rt.mkl_get_max_threads()
+    mkl_rt.mkl_set_num_threads(ctypes.byref(ctypes.c_int(num_threads)))
     set_threads = mkl_rt.mkl_get_max_threads()
     return set_threads
 
@@ -63,17 +52,13 @@ def _set_openblas_numpy_threads(openblas_path, num_threads):
 def _locate_libraries(library_name):
     import fnmatch
     # Since `threadctl` is hit or miss on a Mac (especially for the latest versions),
-    # we have to do what the package does but in an ad-hoc manner using `locate`.
-    # This reasonably well in principle on both the Mac and on Linux. However, the
-    # requirement for `locatedb` may be a security issue for sensitive environments.
-    # But, for the vast majority of other use-cases, it should be sufficient.
+    # we implement a custom finder that examines the virtual environment to find
+    # library path candidates.
     os_name = platform.system().lower()
     if os_name == 'darwin':
         libname = f'*{library_name}*.dylib*' # fuzzy match for filtering with find
     elif os_name == 'linux':
         libname = f'*{library_name}*.so*'  # fuzzy match for filtering with find
-    elif os_name == 'win32':
-        libname = f'*{library_name}*'
     else:
         warnings.warn(f'Unsupported OS: {os_name}.')
 
@@ -143,7 +128,21 @@ def _set_numpy_threads(candidate_library_paths, num_threads):
     return library, set_threads
 
 
+##
+## This is included the force numpy to use defined number of cores. For
+## some of the linear algebra routines numpy will default to using as many
+## cores as it can get its greedy little hands on - this function allows that
+## thirst to be quenched...
+##
 def set_numpy_threads(num_threads):
+    # Currently only MKL is supported on Windows as it's installed alongside
+    # the other packages via conda. A "traditional" virtual environment requires
+    # access to a compiler and other libraries for successful compilation.
+    if platform.system.lower() == 'windows':
+        import mkl
+        mkl.set_num_threads(num_threads)
+        return mkl.get_max_threads(), MKL_LIBRARY
+
     candidates, other_candidates = _identify_library_paths()
     if len(candidates) > 0:
         set_threads, library = _set_numpy_threads(candidates, num_threads)
