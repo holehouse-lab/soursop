@@ -40,15 +40,12 @@ def mkl_set_num_threads(cores):
 
 def _set_mkl_numpy_threads(mkl_path, num_threads):
     # Traditional UNIX-like systems will have shared objects available.
-    if 'bsd' in sys.platform or 'lin' in sys.platform:
-        mkl_rt = ctypes.CDLL(mkl_path)
-
+    #
     # Darwin / Apple uses `*.dylib` by default for included Intel compiler libraries.
     # Traditional UNIX-like shared objects can be created (`*.so`), but are more
     # represented in third-party libraries. This is a more dynamic way of finding
     # the MKL library and using it on a Mac that has an Intel compiler installed.
-    elif sys.platform == 'darwin':
-        mkl_rt = ctypes.CDLL(mkl_path)
+    mkl_rt = ctypes.CDLL(mkl_path)
     mkl_set_num_threads(num_threads)
     set_threads = mkl_rt.mkl_get_max_threads()
     return set_threads
@@ -75,6 +72,8 @@ def _locate_libraries(library_name):
         libname = f'*{library_name}*.dylib*' # fuzzy match for filtering with find
     elif os_name == 'linux':
         libname = f'*{library_name}*.so*'  # fuzzy match for filtering with find
+    elif os_name == 'win32':
+        libname = f'*{library_name}*'
     else:
         warnings.warn(f'Unsupported OS: {os_name}.')
 

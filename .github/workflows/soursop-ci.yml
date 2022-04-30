@@ -5,6 +5,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
+        #os: [windows-latest]
         # These are the currently supported Python versions: https://endoflife.date/python
         python-version: ["3.7", "3.8", "3.9", "3.10"]
     runs-on: ${{ matrix.os }}
@@ -26,9 +27,6 @@ jobs:
         # Instead of using the traditional `requirements.txt`, which are specific to a given Python version,
         # we only supply the names for the solver to determine which versions should be installed due to
         # library requirements and differences across Python versions.
-        #
-        # We use `mamba` instead of `conda` as its faster, multithreaded, and is a drop-in replacement for
-        # `conda`.
         #
         # We set the shell as `bash` for consistency across all OSes (including Windows, which now supports
         # bash). As for the extra arguments, in the previous step we added conda to our bash environment,
