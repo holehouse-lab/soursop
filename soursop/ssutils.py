@@ -81,7 +81,7 @@ def _locate_libraries(library_name):
     # Checking existing environment variables and stop on the first match. The
     # basis for this approach is that only one should be active.
     virtualized_env = None
-    for env_var in 'CONDA_DEFAULT_ENV,VIRTUAL_ENV'.split(','):
+    for env_var in 'CONDA_PREFIX,VIRTUAL_ENV'.split(','):
         env_path = os.environ.get(env_var, None)
         if env_path is not None:
             virtualized_env = env_path
