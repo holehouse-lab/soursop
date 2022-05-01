@@ -55,4 +55,8 @@ jobs:
           python -m pytest --cov=soursop --cov-report=term-missing --junitxml=junit.xml -n auto
 
       - name: Upload coverage reports to Codecov with GitHub Action
+        shell: bash -l {0}
         uses: codecov/codecov-action@v3
+        with:
+          files: ./junit.xml
+          name: codecov-umbrella
