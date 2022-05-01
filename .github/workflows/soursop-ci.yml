@@ -47,13 +47,12 @@ jobs:
           conda activate test
           python -m pytest --capture=sys
 
+        # Generate code coverage data for upload (secrets not necessary as the repository is public)/
       - name: Perform code coverage test
         shell: bash -l {0}
         run: |
           conda activate test
-          python -m pytest --cov=soursop --cov-report=term-missing -n auto
+          python -m pytest --cov=soursop --cov-report=term-missing --junitxml=junit.xml -n auto
 
       - name: Upload coverage reports to Codecov with GitHub Action
         uses: codecov/codecov-action@v3
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
