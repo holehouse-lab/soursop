@@ -1,7 +1,7 @@
 SOURSOP
 ==============================
 [![Build Status](https://github.com/jaredl7/soursop/actions/workflows/soursop-ci.yml/badge.svg?branch=master)](https://github.com/jaredl7/soursop/actions)
-[![codecov]([![codecov](https://codecov.io/gh/jaredl7/soursop/branch/master/graph/badge.svg?token=RHGII0235L)](https://codecov.io/gh/jaredl7/soursop))](https://app.codecov.io/gh/jaredl7/soursop)
+[![codecov](https://codecov.io/gh/jaredl7/soursop/branch/master/graph/badge.svg?token=RHGII0235L)](https://codecov.io/gh/jaredl7/soursop)
 [![Documentation Status](https://readthedocs.org/projects/soursop/badge/?version=latest)](https://soursop.readthedocs.io/en/latest/?badge=latest)
 #### Current Release Candidate: 0.1.9.x (small increments are patches)
 
