@@ -4491,12 +4491,15 @@ class SSProtein:
     def get_angle_decay(self, atom1='C', atom2='N', return_all_pairs=False):
 
         """
-        Function that returns the correlation getween C->N bond vectors along the chain as a function of sequence separation.
-        This decay can be used to estimate the persisence length.
+        Function that returns the correlation getween C->N bond vectors along
+        the chain as a function of sequence separation. This decay can be used 
+        to estimate the persisence length.
+        
 
-        TO DO - finish off sig
+        TO DO - finish off function signature
 
-        Returns the a 4 by n numpy array in which column 1 gives residue number, column 2 is local helicity,
+        Returns the a 4 by n numpy array in which column 1 gives residue number, 
+        column 2 is local helicity,
 
         No checking of atom1 and atom2...
 
@@ -4603,32 +4606,51 @@ class SSProtein:
     #
     def get_local_collapse(self, window_size=10, bins=None, verbose=True):
         """
-        local collapse calculates a vectorial representation of the radius of gyration along a
-        polypeptide chain. This makes it very easy to determine where you see local collapse
-        vs. local expansion.
+        This function calculates a vectorial representation of the radius of gyration 
+        along a polypeptide chain, using a sliding window to calculate the local Rg. 
+        This makes it very easy to determine where you see local collapse vs. local 
+        expansion.
 
+        Local collapse is calculated using a stepsize of 1 and a window size of
+        window_size. As such, the resulting output will be of length ``n``, where
+        ``n`` = (number of residues - window_size)+1.
+        
+        
         Parameters
         ----------
 
         window_size : int, default=10
-            Size of the window over which conformations are examined. Default is 10.
+            Size of the window along the chain in which conformations are examined. 
 
         bins : np.arange or list
-            A range of values (np.arange or list) spanning histogram bins. Default is np.arange(0, 10, 0.1).
+            A range of values (np.arange or list) spanning histogram bins. Default is 
+            np.arange(0, 10, 0.1).
 
         verbose : bool
-            Flag that by default is True determines if the function prints status updates. This is relevant because
-            this function can be computationally expensive, so having some report on status can be comforting!
-
+            Flag that by default is True determines if the function prints status 
+            updates. This is relevant because this function can be computationally 
+            expensive, so having some report on status can be comforting!
 
         Returns
         -------
         tuple (len = 4)
 
-            * 0 - list of floats of len *n*, where each float reports on the mean local collapse a specific position along the sequence as defined by the fragment_size.                         
-            * 1 - list of floats of len *n* , where each float reports on the standard deviation of the local collapse at a specific position along the sequence as defined by the fragment_size.
-            * 2 - List of np.ndarrays of len *n*, where each sub-array reports on the histogram values associated with the local collapse at a given position along the sequence.
-            * 3 - np.ndarray which corresponds to bin values for each of the histograms in return[2]
+            * [0] - list of floats (length = n)
+                  Each float reports on the mean Rg at a specific position 
+                  along the sequence.                   
+                  
+            * [1] - list of floats (length = n)
+                  Each float reports on the standard deviation of the 
+                  Rg distribution at a specific position along the sequence. 
+                                    
+            * [2] - list of np.ndarrays (length = n)
+                  Histogram counts  associated with the local Rg at a given 
+                  position along the sequence. Basically, this is the emprical
+                  distribution that the standard devaitions and mean report on
+
+            * [3] - np.ndarray (length = n)
+                  Bin values for histogram counts returned in [2]
+                  
 
         """
         # validate bins
