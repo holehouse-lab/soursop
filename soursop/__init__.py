@@ -31,3 +31,6 @@ def get_data(path):
 
 def get_version():
     return "%s - %s" % (str(__version__), str(__git_revision__))
+
+from . import _version
+__version__ = _version.get_versions()['version']
