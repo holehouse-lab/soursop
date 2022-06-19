@@ -92,12 +92,13 @@ def calc_MI(X, Y, bins, weights=False,normalize=False):
     MI = H_X + H_Y - H_XY
 
     if normalize:
-        # *Locally* suppress numpy divide by zero runtime warning - This will be cleaned up before returning nmi.
+        # Uncomment to *locally* suppress numpy divide by zero runtime warning.
+        # This will be cleaned up before returning nmi.
         # with np.errstate(invalid='ignore'):
         nmi = MI / H_XY
         # aforementioned cleanup
         if np.isnan(nmi):
-            print(f"Normalization led to {np.nan} - replacing with 0.")
+            # print(f"Normalization led to {np.nan} - replacing with 0.")
             nmi = 0
         return nmi
     else:

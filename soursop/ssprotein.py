@@ -3896,11 +3896,11 @@ class SSProtein:
         model (e.g., an EV or FRC simulation).
 
         An optional flag is included to normalize the mutual information by the 
-        joint shannon entropy. This may be useful when comparing the MI matrix 
-        from a simulation to a limiting polymer model.
+        joint shannon entropy. This may also be useful when looking for differences 
+        in MI matrices between a simulation and a limiting polymer model.
 
         Return:
-        Mutual information matrix ( n x n) where n is the number of that type of
+        Mutual information matrix (n x n) where n is the number of that type of
         bonds in the protein.
        
         Parameters
