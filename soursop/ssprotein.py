@@ -17,8 +17,6 @@ from itertools import combinations
 from scipy import stats
 import scipy.optimize as SPO
 from numpy.random import choice
-from torch import normal
-
 from .configs import DEBUGGING
 from .ssdata import THREE_TO_ONE, DEFAULT_SIDECHAIN_VECTOR_ATOMS, ALL_VALID_RESIDUE_NAMES
 from .ssexceptions import SSException
