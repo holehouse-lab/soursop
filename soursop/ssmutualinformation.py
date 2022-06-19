@@ -18,7 +18,6 @@ including this function in any one other class.
 """
 
 import numpy as np
-import scipy
 from .ssexceptions import SSWarning, SSException
 
 
@@ -49,7 +48,7 @@ def calc_MI(X, Y, bins, weights=False,normalize=False):
         An array or list of numerical values. If provided means, X,Y and weights must
         all be the same length, and these weights are passed when generating histograms
         from the data
-        
+
     normalize : boolean (Default=False)
         Normalize a given mutual information matrix derived from two observables, X and Y.
         The normalized mutual information is given by:
