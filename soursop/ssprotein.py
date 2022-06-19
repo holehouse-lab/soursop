@@ -17,6 +17,7 @@ from itertools import combinations
 from scipy import stats
 import scipy.optimize as SPO
 from numpy.random import choice
+from torch import normal
 
 from .configs import DEBUGGING
 from .ssdata import THREE_TO_ONE, DEFAULT_SIDECHAIN_VECTOR_ATOMS, ALL_VALID_RESIDUE_NAMES
@@ -3874,7 +3875,7 @@ class SSProtein:
     # ........................................................................
     #
     #
-    def get_dihedral_mutual_information(self, angle_name='psi',  bwidth = np.pi/5.0, stride=1, weights=False):
+    def get_dihedral_mutual_information(self, angle_name='psi',  bwidth = np.pi/5.0, stride=1, weights=False, normalize=False):
         """
         Generate the full mutual information matrix for a specific diehdral
         type. The resulting matrix describes the mutual information between each
@@ -3919,6 +3920,9 @@ class SSProtein:
         weights : array_like
             An `numpy.array` object that corresponds to the number of frames within an input 
             trajectory. Default = False.
+            
+        normalize : boolean
+            Boolean flag to determine whether the mutual information matrix will be normalized (Default = False).
 
         Returns
         ---------
@@ -3972,7 +3976,7 @@ class SSProtein:
 
                 X = np.transpose(angles[1])[j]
                 Y = np.transpose(angles[1])[i]
-                MI = ssmutualinformation.calc_MI(X,Y, bins, weights)
+                MI = ssmutualinformation.calc_MI(X,Y, bins, weights,normalize)
 
                 MI_mat[i,j] = MI
                 MI_mat[j,i] = MI
