@@ -30,7 +30,8 @@ def calc_MI(X, Y, bins, weights=False,normalize=False):
     the bins as 1D and as 2D. Can pass a set of weights for the observables
     (i.e. each element in X and Y). If weights provided - requires len(X) == len(Y)
     == len(weights). Note that we could in the future extend this to provide custom
-    weights numbers but in general it's likely X and Y will be same length.
+    weights numbers but in general it's likely X and Y will be same length. Optionally,
+    one can normalize the MI by the joint shannon entropy to obtain the NMI. 
 
     Parameters
     --------------
