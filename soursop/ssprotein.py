@@ -3926,8 +3926,8 @@ class SSProtein:
             trajectory. Default = False.
             
         normalize : boolean
-            Boolean flag to determine whether the mutual information matrix should be normalized
-            by the joint shannon entropy (Default = False).
+            Boolean flag to determine whether the mutual information matrix should be 
+            normalized by the joint shannon entropy (Default = False).
 
         Returns
         ---------
@@ -3943,7 +3943,7 @@ class SSProtein:
         ##
         # verify binwidth input values
         if bwidth > 2*np.pi or not (bwidth > 0):
-           raise SSException('The bwidth parameter must be between 2*pi and greater than 0')
+           raise SSException(f'The bwidth parameter must be between 2*pi and greater than 0. Received {bwidth}')
 
         # if stride was passed make sure it's ok
         self.__check_stride(stride)
@@ -3951,7 +3951,7 @@ class SSProtein:
         # if weights were passed make sure they're LEGIT!
         weights = self.__check_weights(weights, stride)
 
-        # check input ketword selector
+        # check input keyword selector
         ssutils.validate_keyword_option(angle_name, ['chi1', 'phi', 'psi', 'omega'], 'angle_name')
 
         ## ..................................................
