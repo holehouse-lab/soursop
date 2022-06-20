@@ -17,7 +17,6 @@ from itertools import combinations
 from scipy import stats
 import scipy.optimize as SPO
 from numpy.random import choice
-
 from .configs import DEBUGGING
 from .ssdata import THREE_TO_ONE, DEFAULT_SIDECHAIN_VECTOR_ATOMS, ALL_VALID_RESIDUE_NAMES
 from .ssexceptions import SSException
@@ -3874,28 +3873,32 @@ class SSProtein:
     # ........................................................................
     #
     #
-    def get_dihedral_mutual_information(self, angle_name='psi',  bwidth = np.pi/5.0, stride=1, weights=False):
+    def get_dihedral_mutual_information(self, angle_name='psi',  bwidth = np.pi/5.0, stride=1, weights=False, normalize=False):
         """
-        Generate the full mutual information matrix for a specific diehdral
+        Generate the full mutual information matrix for a specific dihedral
         type. The resulting matrix describes the mutual information between each
         dihedral angle as defined by the variable angle_name. A weights parameter
         can be passed if frames are to be re-weighted, but this requires that
         the (number of frames) / stride = the number of weights.
 
         The mutual information for a pair of angles is determined by generating
-        a histogram of each dihedral induvidually (p(phi1), p(phi2)) and the joint
+        a histogram of each dihedral individually (p(phi1), p(phi2)) and the joint
         probability histogram (p(phi1,phi2)), and then computing the Shannon
-        entropy associated with the single and joing probability histograms (H_phi1,
+        entropy associated with the single and joint probability histograms (H_phi1,
         H_phi2, H_phi1_phi2). The mutual information is then returned as
 
-        H_phi1 + H_phi2 - (H_phi1 * H_phi2 )
+        H_phi1 + H_phi2 - (H_phi1_H_phi2)
 
         The easiest way to interpret these results is to normalize the inferred
         matrix using an equivalent matrix generated using a limiting polymer
-        model (e.g. an EV or FRC simulation).
+        model (e.g., an EV or FRC simulation).
+
+        An optional flag is included to normalize the mutual information by the 
+        joint shannon entropy. This may also be useful when looking for differences 
+        in MI matrices between a simulation and a limiting polymer model.
 
         Return:
-        Mutual information matrix ( n x n) where n is the number of that type of
+        Mutual information matrix (n x n) where n is the number of that type of
         bonds in the protein.
        
         Parameters
@@ -3919,6 +3922,10 @@ class SSProtein:
         weights : array_like
             An `numpy.array` object that corresponds to the number of frames within an input 
             trajectory. Default = False.
+            
+        normalize : boolean
+            Boolean flag to determine whether the mutual information matrix should be 
+            normalized by the joint shannon entropy (Default = False).
 
         Returns
         ---------
@@ -3934,7 +3941,7 @@ class SSProtein:
         ##
         # verify binwidth input values
         if bwidth > 2*np.pi or not (bwidth > 0):
-           raise SSException('The bwidth parameter must be between 2*pi and greater than 0')
+           raise SSException(f'The bwidth parameter must be between 2*pi and greater than 0. Received {bwidth}')
 
         # if stride was passed make sure it's ok
         self.__check_stride(stride)
@@ -3942,7 +3949,7 @@ class SSProtein:
         # if weights were passed make sure they're LEGIT!
         weights = self.__check_weights(weights, stride)
 
-        # check input ketword selector
+        # check input keyword selector
         ssutils.validate_keyword_option(angle_name, ['chi1', 'phi', 'psi', 'omega'], 'angle_name')
 
         ## ..................................................
@@ -3972,7 +3979,7 @@ class SSProtein:
 
                 X = np.transpose(angles[1])[j]
                 Y = np.transpose(angles[1])[i]
-                MI = ssmutualinformation.calc_MI(X,Y, bins, weights)
+                MI = ssmutualinformation.calc_MI(X,Y, bins, weights,normalize)
 
                 MI_mat[i,j] = MI
                 MI_mat[j,i] = MI
