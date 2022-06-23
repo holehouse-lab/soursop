@@ -110,6 +110,7 @@ def test_get_radius_of_gyration(GS6_CP):
     assert abs(GS6_CP.get_radius_of_gyration()[0] - 5.728453763896514) < 0.0001
     assert abs(GS6_CP.get_radius_of_gyration(R1=1,R2=3)[0] - 2.8815625777553278) < 0.0001
 
+
 def test_get_t(GS6_CP):
 
     assert len(GS6_CP.get_t()) == 5
@@ -191,12 +192,21 @@ def test_get_distance_map(GS6_CO):
         assert np.allclose(distance_map, np.triu(distance_map)) is True
 
 
-
 def test_get_hydrodynamic_radius(GS6_CO):
 
     CP = GS6_CO.proteinTrajectoryList[0]
     rh = CP.get_hydrodynamic_radius()
     assert (11.840569781179006 - rh[0]) < 0.001
+
+def test_get_molecular_volume(NTL9_CO):
+
+    CP = NTL9_CO.proteinTrajectoryList[0]
+    mol_vol = CP.get_molecular_volume()
+    assert len(mol_vol) == 10
+    assert mol_vol[0] - 20839.78797511 < 0.0000001
+    assert np.mean(mol_vol) - 24064.633461433674 < 0.0000001
+
+
 
 
 # ====

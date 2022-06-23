@@ -16,6 +16,7 @@ from numpy import linalg as LA
 from itertools import combinations
 from scipy import stats
 import scipy.optimize as SPO
+from scipy.spatial import ConvexHull
 from numpy.random import choice
 from .configs import DEBUGGING
 from .ssdata import THREE_TO_ONE, DEFAULT_SIDECHAIN_VECTOR_ATOMS, ALL_VALID_RESIDUE_NAMES
@@ -2751,6 +2752,32 @@ class SSProtein:
         Rg_over_Rh = ((alpha1*(rg - alpha2*N_033)) / (N_060 - N_033)) + alpha3
 
         return (1/Rg_over_Rh)*rg
+
+    # ........................................................................
+    #
+    #
+    def get_molecular_volume(self, **kwargs):
+        """
+        Returns the molecular volume of a macromolecule at all frames in a trajectory. 
+
+        Molecular volume is returned in Angstroms^3.
+
+        Parameters
+        ---------------
+        kwargs : optional
+            Keyword arguments are passed into scipy's ConvexHull function
+
+        Returns
+        -----------
+        np.ndarray
+            Returns a numpy array with per-frame instantaneous molecular volume in A^3
+
+        """
+        NM_TO_ANGSTROM = 1000 # 1000 A^3 / nm^3
+        
+        # in angstroms
+        volumes = np.array([ConvexHull(xyz,**kwargs).volume for xyz in self.traj.xyz])*NM_TO_ANGSTROM
+        return volumes
 
 
     # ........................................................................
