@@ -96,7 +96,7 @@ class SSPRE:
 
         # if Larmor frequency less than 100 MhZ or above 2 GHz assume something is wrong
         if W_H < 50000000 or tau_c > 2000000000:
-            SSWarning("WARNING: The value of W_h (proton Larmor frequency) is far from the normal expected value of ~600 000 000 - recal this value should be provided in Herz" %(self.W_H))
+            SSWarning(f"WARNING: The value of W_h {self.W_H} (proton Larmor frequency) is far from the normal expected value of ~600 000 000 - recal this value should be provided in Herz")
 
         # # convert tau_c to seconds and calculate tau_c squared
         tau_c = float(tau_c)/1000000000     # tau c in seconds
@@ -116,7 +116,7 @@ class SSPRE:
         """
 
         """
-        return "["+hex(id(self)) + "]: SSPRE OBJ - (R_2D = %3.2f Hz, t_delay = %3.2f ms, tau_c = %3.2f ns, H1 Larmor = %3.3e Hz)" % (self.R_2D, self.t_delay, self.tau_c, self.W_h)
+        return "["+hex(id(self)) + "]: SSPRE OBJ - (R_2D = %3.2f Hz, t_delay = %3.2f ms, tau_c = %3.2f ns, H1 Larmor = %3.3e Hz)" % (self.R_2D, self.t_delay, self.tau_c, self.W_H)
 
 
     # ........................................................................
