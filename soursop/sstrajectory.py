@@ -693,6 +693,130 @@ class SSTrajectory:
     #oxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxo
     #
     #
+    def get_interchain_contact_map(self, proteinID1, proteinID2, threshold=5.0, mode='atom', A1='CA', A2='CA', periodic=False, verbose=False):
+        
+        """        
+        Function which returns a matrix with inter-residue contact fractions 
+        i.e., this returns the fraction of simulation that each residue from
+        one chain is in contact with each residue from the other chain, where
+        "contact" is defined as the inter-residue distance being below the
+        passed threshold.
+
+        By *default* the mode here is CA-CA distance, which depending on the
+        question may not be what you want. See the various options under
+        'mode' for alternatives.
+
+        Note that this analysis can take some time for large trajectories. If
+        this is an issue consider setting the verbose flag to True, and the
+        progress will be printed. By default this is off, but it can be 
+        reassuring to confirm things are running.
+        
+        
+        Parameters
+        ------------
+
+        proteinID1 : int
+            The ID of the first protein of the two being considered, where the 
+            ID is the proteins position in the `self.proteinTrajectoryList` 
+            list.             
+
+        proteinID2 : int
+            The ID of the second protein of the two being considered, where 
+            the ID is the proteins position in the 
+            `self.proteinTrajectoryList` list.
+
+        threshold : float 
+            Distance that is used as the distance cutoff to define something
+            as a contact or not
+
+        mode : str (default = 'atom')
+            Mode allows the user to define different modes for computing atomic 
+            distance.
+
+            The default is ``atom`` whereby a pair of atoms (A1 and A2) are 
+            provided. Other options are detailed below and are identical to 
+            those offered by mdtraj in compute_contacts.
+
+            Note that if modes other than ``atom`` are used the A1 and A2 
+            options are ignored.
+
+            + ``ca`` - same as setting ``atom`` and then defining atoms 1 and 2 (A1 and A2) as CA. 
+            + ``closest`` - closest atom associated with each of the residues, i.e. the is the point \
+                            of closest approach between the two residues.
+            + ``closest-heavy`` - same as `'closest'`, except only non-hydrogen atoms are considered.
+            + ``sidechain`` - closest atom where that atom is in the sidechain.
+            + ``sidechain-heavy`` - closest atom where that atom is in the sidechain and is heavy.
+
+        A1 : str (default = 'CA')
+            Atom name of the atom in R1 we're looking at. 
+
+        A2 : str (default = 'CA')
+            Atom name of the atom in R2 we're looking at. 
+
+        periodic : bool (default = False)
+            Flag which if distances mode is passed as anything other than 'atom' 
+            then this determines if the minimum image convention should be used. 
+            Note that this is only available if pdb crystal dimensions are provided, 
+            and in general it's better to set this to false and  center the molecule 
+            first. Default = False. 
+
+        verbose : bool
+            Flag which, if set to true, will print each iteraction through the outer
+            loop of each residue in the protein as the distances are calculated.
+            Default = False.
+
+
+        Returns
+        ---------
+        np.ndarray [n x m] 
+            Returns an matrix with inter-residue contact fractions reported at each
+            intersection.
+        
+        """
+
+        # get number of residues/bases for the two proteins
+        n_res_P1 = self.proteinTrajectoryList[proteinID1].n_residues
+        n_res_P2 = self.proteinTrajectoryList[proteinID2].n_residues
+
+        # 
+        all_contact_fractions = []
+
+        # cycle over each residue in protein 1
+        for p1_res_idx in range(0, n_res_P1):
+            if verbose:
+                print(f'On {p1_res_idx} of {n_res_P1}')
+    
+            tmp = []
+
+            # cycle over each residue in protein 2
+            for p2_res_idx in range(0, n_res_P2):
+
+                # calculate distances between unique residues in P1 and P2
+                distances = self.get_interchain_distance(proteinID1, proteinID2, p1_res_idx, p2_res_idx, A1=A1, A2=A2, mode=mode, periodic=periodic)
+
+                
+                # find number of distances below the threshold and calculat as a 
+                # a fraction of all frames
+                contact_fraction = np.sum(distances<threshold)/self.n_frames
+
+                # add that fraction to the temporary 
+                tmp.append(contact_fraction)
+    
+            all_contact_fractions.append(tmp)   
+
+        return np.array(all_contact_fractions)
+
+    
+
+
+
+
+
+
+
+    #oxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxo
+    #
+    #
     def get_interchain_distance(self, proteinID1, proteinID2, R1, R2, A1='CA', A2='CA', mode='atom', periodic=False):
         """
         Function which returns the distance between two specific atoms on 
