@@ -941,6 +941,37 @@ class SSProtein:
 
     # ........................................................................
     #
+    def get_all_atomic_indices(self, resid):
+        """
+        Get all the atomic indices for the residue defined by resid. This
+        via memoization - i.e. the first time a specific residue is requested 
+        the function looks up the information and then stores it locally in 
+        case its needed again.
+        
+        Defensivly checks for errors.
+
+        Parameters
+        ----------
+
+        resid : int
+            Defines the residue ID to select the atomic indices from
+
+        Returns
+        -------
+        list
+            A list of size 1 containing the CA atom index for the residue index, ``residueIndex``.
+
+        Raises
+        ------
+        SSException
+            When the number of CA atoms do not equal 1.
+        """
+
+        return self.__residue_atom_lookup(resid)
+
+
+    # ........................................................................
+    #
     def get_multiple_CA_index(self, resID_list=None):
         """
         Returns the atom indices associated with the C-alpha (CA) atom for the
@@ -1216,6 +1247,7 @@ class SSProtein:
         return (distanceMap, stdMap)
 
 
+
     # ........................................................................
     #
     def get_polymer_scaled_distance_map(self, nu=None, A0=None, min_separation=10, mode='fractional-change', stride=1, weights=False, verbose=True):
@@ -1428,6 +1460,8 @@ class SSProtein:
                     return_matrix[i,j] = d_funct(distance_map[i,j], expected_distances[(j-i)])
 
         return (return_matrix, nu, A0, REDCHI)
+
+
 
     # ........................................................................
     #
@@ -1673,6 +1707,7 @@ class SSProtein:
         return np.array(D_vector)
 
 
+
     # ........................................................................
     #
     def get_RMSD(self, frame1, frame2=-1, region=None, backbone=True, stride=1):
@@ -1732,6 +1767,7 @@ class SSProtein:
 
         # return the RMSD comparison in Angstroms
         return 10*md.rmsd(target, ref, frame1, atom_indices=selectionatoms)
+
 
 
     # ........................................................................
@@ -2653,6 +2689,19 @@ class SSProtein:
         return distance
 
 
+    def get_center_of_mass(self):
+        """
+        Function that returns the center of mass of each frame of the trajectory
+
+        TO DO - untested!!
+
+        Returns
+        ------------
+        """ 
+
+        return md.compute_center_of_mass(self.traj)
+        
+
     # ........................................................................
     #
     #
@@ -2758,25 +2807,29 @@ class SSProtein:
     #
     def get_molecular_volume(self, **kwargs):
         """
-        Returns the molecular volume of a macromolecule at all frames in a trajectory. 
+        Returns the molecular volume of a macromolecule at all frames in a 
+        trajectory. 
 
         Molecular volume is returned in Angstroms^3.
 
         Parameters
         ---------------
         kwargs : optional
-            Keyword arguments are passed into scipy's ConvexHull function
+            Keyword arguments are passed into scipy's ConvexHull 
+            function
 
         Returns
         -----------
         np.ndarray
-            Returns a numpy array with per-frame instantaneous molecular volume in A^3
+            Returns a numpy array with per-frame instantaneous 
+            molecular volume in A^3
 
         """
         NM_TO_ANGSTROM = 1000 # 1000 A^3 / nm^3
         
         # in angstroms
         volumes = np.array([ConvexHull(xyz,**kwargs).volume for xyz in self.traj.xyz])*NM_TO_ANGSTROM
+
         return volumes
 
 
@@ -2785,9 +2838,10 @@ class SSProtein:
     #
     def get_t(self, R1=None, R2=None):
         """
-        Returns the <t>, a dimensionless parameter which describes the
-        size of the ensemble.
+        Returns the parameter <t>, a dimensionless parameter which 
+        describes the size of the ensemble.
 
+        <t> is defined in [1] 
 
         Parameters
         ---------------
@@ -2803,6 +2857,12 @@ class SSProtein:
         -----------
         np.ndarray
             Returns a numpy array with per-frame instantaneous t-values
+
+        References
+        ------------
+        1. Vitalis, A. (2009). Probing the Early Stages of Polyglutamine 
+        Aggregation with Computational Methods (R. Pappu (ed.)) 
+        [Ph.D. thesis from Washington University in St. Louis]. 
 
         """
 
