@@ -373,22 +373,32 @@ class SSProtein:
     #
     def __get_first_and_last(self, R1, R2, withCA=False):
         """
-        Internal helper function which returns first and last residue for a range, which is able to identify residues
-        that do or do not have CA
+        Internal helper function which returns first and last residue 
+        for a range, which is able to identify residues that do or do 
+        not have CA.
+
+        Note that this sanity checks to make sure residues R1 and 
+        R2 (if provided) fall within the possible residue indices.
 
         Parameters
         ----------
-        R1 : int or False/None {False}
-            First residue in range - can be an integer (assumes first residue in chain indexed at 0).
-            If `False` assume we start at 0.
+        R1 : int or None 
+            First residue in range - can be an integer (assumes first 
+            residue in chain indexed at 0). If `None` assume we start 
+            at 0.
+            
 
-        R2 : int or False/None {False}
-            Last residue in range - can be an integer (assumes first residue in chain indexed at 0).
-            If `False` assumes we're using the whole chain.
+        R2 : int or None 
+            Last residue in range - can be an integer (assumes first 
+            residue in chain indexed at 0). If `None` assumes we're 
+            using the whole chain.
+            
 
         withCA : bool {False}
-            Flag which, if `True` and R1 or R2 are `False`, selects R1/R2 values that contain a CA, which basically
-            means caps are dealt with here if present.
+            Flag which, if `True` and R1 or R2 are `False`, selects 
+            R1/R2 values that contain a CA, which basically means 
+            caps are dealt with here if present.
+            
 
         Returns
         -------
@@ -401,18 +411,24 @@ class SSProtein:
 
         """
 
+        # this is a defensive sanity check to revert a potentially bug-causing
+        # flexibility in a previous version of the code
+        if isinstance(R1, bool) or isinstance(R2, bool):
+            raise SSException(f'Deprecation error: Prior to 0.1.9x versions __get_first_and_last() could take boolean values for R1 and R2. Starting with 0.2.0 it can only take integers and None. This message reflects a bug in SOURSOP, please contact Alex directly or raise an issue on GitHub')
+
         # first define as if we're starting from first and last residue with/without caps
-        if R1 == False or R1 == None:
+        if R1 == None:
             R1 = 0
             if withCA:
                 if self.ncap:
                     R1 = 1
 
-        if R2 == False or R2 == None:
+        if R2 == None:
             R2 = self.n_residues - 1
             if withCA:
                 if self.ccap:
                    R2 = self.n_residues - 2
+
 
 
         # finally flip around if R1 is larger than R2
@@ -421,7 +437,15 @@ class SSProtein:
             R2 = R1
             R1 = tmp
 
-        return (R1, R2, "resid %i to %i" %(R1,R2))
+        if R1 < 0:
+            raise SSException('ERROR: Requested a residue index (resid) less than 0')
+
+        if R2 >= self.n_residues:
+            raise SSException(f'ERROR: This protein only has {self.n_residues:d} residues, SO valid indices for selection are between 0 and {self.n_residues-1:d}, yet [{R2}] was passed to function.')
+
+
+
+        return (R1, R2, f"resid {R1} to {R2}")
 
 
     # ........................................................................
@@ -723,12 +747,16 @@ class SSProtein:
     #
     def print_residues(self, verbose=True):
         """
-        Function to help determine the mapping of residue ID to PDB residue value.
-        Prints the mapping between resid and PDB residue, and returns this information
-        in a list.
+        Function to help determine the mapping of residue ID to PDB 
+        residue value. Prints the mapping between resid and PDB 
+        residue, and returns this information in a list.
+        
+        
 
-        Returns a list of lists, where each list element is itself a list of two elements,
-        index position and the resname-resid from the PDB file.
+        Returns a list of lists, where each list element is itself 
+        a list of two elements, index position and the resname-resid 
+        from the PDB file.
+        
 
 
         Parameters
@@ -795,7 +823,8 @@ class SSProtein:
     def get_residue_COM(self, resid, atom_name=None):
         """
         Property that returns the 3 x n np.ndarray with the COM of the residue in 
-        question for every frame in the simulation.
+        question for every frame in the simulation. The absolute positions are 
+        returned in Angstroms
 
         Computes it once and then looks up this data.
 
@@ -804,11 +833,15 @@ class SSProtein:
         resid : int
             Resid for residue of interest
 
+        atom_name : str
+            Lets you pass a specific atom names associated with the residue
+            of interest
+
         Returns
         -------------
         np.ndarray
-            Returns an [x,y,z] x n np.ndarray of x/y/z positions for this residue COM for EVERY
-            frame.
+            Returns an [x,y,z] x n np.ndarray of x/y/z positions for this 
+            residue COM for EVERY frame.
 
         """
 
@@ -820,7 +853,7 @@ class SSProtein:
             if resid not in self.__residue_COM:
                 atoms = self.__residue_atom_lookup(resid)
                 TRJ_1 = self.traj.atom_slice(atoms)
-                self.__residue_COM[resid] = md.compute_center_of_mass(TRJ_1)
+                self.__residue_COM[resid] = 10*md.compute_center_of_mass(TRJ_1)
                 del TRJ_1
 
             return self.__residue_COM[resid]
@@ -834,7 +867,7 @@ class SSProtein:
             if atom_name not in self.__residue_atom_COM[resid]:
                 atoms = self.__residue_atom_lookup(resid, atom_name)
                 TRJ_1 = self.traj.atom_slice(atoms)
-                self.__residue_atom_COM[resid][atom_name] = md.compute_center_of_mass(TRJ_1)
+                self.__residue_atom_COM[resid][atom_name] = 10*md.compute_center_of_mass(TRJ_1)
                 del TRJ_1
 
             return self.__residue_atom_COM[resid][atom_name]
@@ -1876,7 +1909,9 @@ class SSProtein:
             LAMBDA_CONST = float(lambda_const)    # For all-atom simulations
 
             # Native contact threshold distance in nm (not param is passed in Angstroms but the calculation
-            # happens expecting nanometers so have to update (hence divide by 10)
+            # happens expecting nanometers so have to update (hence divide by 10). NB: This breaks standard
+            # soursop convention and we probably should rescale the various parameters so this works in 
+            # A instead of bm
             NATIVE_CUTOFF = float(native_contact_threshold)/10
 
 
@@ -1891,6 +1926,8 @@ class SSProtein:
                     native.topology.atom(j).residue.index) > 3])
 
         # compute the distances between these pairs in the native state
+        ## NB: This breaks soursop convention of converting nm->A at the site of 
+        ## where it's calculated.
         heavy_pairs_distances = md.compute_distances(native[0], heavy_pairs)[0]
 
         # and get the pairs s.t. the distance is less than NATIVE_CUTOFF. This returns the
@@ -2332,10 +2369,9 @@ class SSProtein:
 
 
         # calculate distance
-        # note 10* to get angstroms
-        d = 10*np.sqrt(np.square(np.transpose(COM_1)[0] - np.transpose(COM_2)[0]) + np.square(np.transpose(COM_1)[1] - np.transpose(COM_2)[1])+np.square(np.transpose(COM_1)[2] - np.transpose(COM_2)[2]))
+        # note 10* to get angstroms was done at the get_residue_COM level
+        d = np.sqrt(np.square(np.transpose(COM_1)[0] - np.transpose(COM_2)[0]) + np.square(np.transpose(COM_1)[1] - np.transpose(COM_2)[1])+np.square(np.transpose(COM_1)[2] - np.transpose(COM_2)[2]))
 
-        # finally fill in the table
 
         return d
 
@@ -2344,13 +2380,17 @@ class SSProtein:
     # ........................................................................
     #
     #
-    def get_inter_residue_COM_vector(self, R1, R2, stride=1):
+    def get_inter_residue_COM_vector(self, R1, R2):
         """
         Function which calculates the complete set of distances between two residues'
         centers of mass (COM) and returns the inter-residue distance vector.
 
         NOTE: This gives a VECTOR and not the distance between the two centers of
-        mass (which is calculated by get_inter_residue_COM_distance)
+        mass (which is calculated by get_inter_residue_COM_distance). Note units
+        for the relative positions in the vector are in Angstroms.
+
+        WARNING: This changed in 0.2.0, where in 0.1.9x the return units was 
+        in nm).        
 
         Parameters
         ----------------
@@ -2361,30 +2401,17 @@ class SSProtein:
         R2 : int
             Residue index of second residue
 
-        stride : int
-            Defines the spacing betwen frames to compare with - i.e. take every $stride-th frame.
-            Default = 1.
-
         Returns
         ------------
         np.ndarray
            Returns an array of inter-residue distances in angstroms
 
         """
-        if stride == 1:
-            COM_1 = self.get_residue_COM(R1)
-            COM_2 = self.get_residue_COM(R2)
-        else:
-            TRJ_1 = self.traj.atom_slice(self.topology.select('resid %i' % R1 ))
-            TRJ_1 = self.__get_subtrajectory(TRJ_1, stride)
+        
+        COM_1 = self.get_residue_COM(R1)
+        COM_2 = self.get_residue_COM(R2)
 
-            TRJ_2 = self.traj.atom_slice(self.topology.select('resid %i'% R2 ))
-            TRJ_2 = self.__get_subtrajectory(TRJ_2, stride)
-
-            COM_1 = md.compute_center_of_mass(TRJ_1)
-            COM_2 = md.compute_center_of_mass(TRJ_2)
-
-        # note 10* to get Angstroms
+        # note 10* to get Angstroms is done at the get_residue_COM level
         return (COM_1 - COM_2)
 
 
@@ -2473,10 +2500,10 @@ class SSProtein:
                 TRJ_2 = self.traj.atom_slice(atom2)
                 TRJ_2 = self.__get_subtrajectory(TRJ_2, stride)
 
-                COM_1 = md.compute_center_of_mass(TRJ_1)
-                COM_2 = md.compute_center_of_mass(TRJ_2)
+                COM_1 = 10*md.compute_center_of_mass(TRJ_1)
+                COM_2 = 10*md.compute_center_of_mass(TRJ_2)
 
-                distances = 10*np.sqrt(np.square(np.transpose(COM_1)[0] - np.transpose(COM_2)[0]) + np.square(np.transpose(COM_1)[1] - np.transpose(COM_2)[1])+np.square(np.transpose(COM_1)[2] - np.transpose(COM_2)[2]))
+                distances = np.sqrt(np.square(np.transpose(COM_1)[0] - np.transpose(COM_2)[0]) + np.square(np.transpose(COM_1)[1] - np.transpose(COM_2)[1])+np.square(np.transpose(COM_1)[2] - np.transpose(COM_2)[2]))
 
             except IndexError as e:
                 ssio.exception_message("This is likely because one of [%s] or [%s] is not a valid atom type for the residue in question. Full error printed below\n%s" %( A1,A2, str(e)), e, with_frills=True)
@@ -2621,10 +2648,16 @@ class SSProtein:
             count = count + 1
 
             # compute the center of mass for the relevant atoms
-            COM = md.compute_center_of_mass(frame)
+            COM = 10*md.compute_center_of_mass(frame)
 
-            # calculate the COM to position difference matrix
-            DIF = frame.xyz[0] - COM
+            # calculate the COM to position difference matrix. Note
+            # we have to multiply the frame positions by 10 so that the COM
+            # units and the frame units match up.
+            ## QUICK ASSIDE: we could actually leave both in nm because the gyration tensor ends up being
+            ## unitless. HOWEVER, for consistency we're following the convention of converting ANY
+            ## nm-based values to angstroms at the point at which the numbers enter soursop...
+        
+            DIF = 10*frame.xyz[0] - COM
 
             # old slow method
             """
@@ -2689,17 +2722,44 @@ class SSProtein:
         return distance
 
 
-    def get_center_of_mass(self):
+    # ........................................................................
+    #
+    #
+    def get_center_of_mass(self, R1=None, R2=None):
         """
-        Function that returns the center of mass of each frame of the trajectory
+        Function that returns the center of mass of the protein (or a 
+        subregion of the protein) for each frame in the trajectory.
 
-        TO DO - untested!!
+        The resulting [n x 3] matrix has absolute position of the 
+        molecule in x,y,z in each frame given in Angstroms.
+
+        WARNING: This changed in 0.2.0, where in 0.1.9x the return 
+        units was in nm). This is a breaking change.
+
+        Parameters
+        ----------------
+        R1 : int
+            First residue if a sub-region of the chain is to be 
+            interrogated. Default = None (first residue of 
+            molecule, including caps, if present).
+
+        R2 : int
+            Final residue if a sub-region of the chain is to be
+            interrogated. Default = None (last residue in 
+            molecule, including caps, if present).
 
         Returns
         ------------
+        np.ndarray
+            Returns a [n x 3] array to give x,y,z positions 
+            for each frame, where the absolute position is in
+            Angstroms.
+
         """ 
 
-        return md.compute_center_of_mass(self.traj)
+        (R1_new, R2_new, selection_string) = self.__get_first_and_last(R1, R2, withCA=False)
+
+        return 10*md.compute_center_of_mass(self.traj.atom_slice(self.topology.select(selection_string)))
         
 
     # ........................................................................
@@ -2707,9 +2767,10 @@ class SSProtein:
     #
     def get_radius_of_gyration(self, R1=None, R2=None):
         """
-        Returns the radius of gyration associated with the region defined by the intervening stretch of residues between
-        R1 and R2. When residues are not provided the full protein's radius of gyration (INCLUDING the caps,
-        if present) is calculated.
+        Returns the radius of gyration associated with the region defined by 
+        the intervening stretch of residues between R1 and R2. When residues 
+        are not provided the full protein's radius of gyration (INCLUDING the 
+        caps, if present) is calculated.
 
         Radius of gyration is returned in Angstroms.
 
@@ -2731,10 +2792,10 @@ class SSProtein:
 
         """
 
-        (R1,R2, _) = self.__get_first_and_last(R1,R2, withCA=False)
+        (_, _, selection_string) = self.__get_first_and_last(R1,R2, withCA=False)
 
         # in angstroms
-        return 10*md.compute_rg(self.traj.atom_slice(self.topology.select('resid %i to %i'%(R1, R2))))
+        return 10*md.compute_rg(self.traj.atom_slice(self.topology.select(selection_string)))
 
 
     # ........................................................................

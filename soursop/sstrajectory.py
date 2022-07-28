@@ -680,8 +680,8 @@ class SSTrajectory:
                 if P2.ncap:
                     p2_index = r2 - 1
                 
-                # compute distance...
-                d = 10*np.sqrt(np.square(np.transpose(COM_1)[0] - np.transpose(COM_2)[0]) + np.square(np.transpose(COM_1)[1] - np.transpose(COM_2)[1])+np.square(np.transpose(COM_1)[2] - np.transpose(COM_2)[2]))
+                # compute distance... Note the COM gives values in Angstroms so no need to do a 10x correction here
+                d = np.sqrt(np.square(np.transpose(COM_1)[0] - np.transpose(COM_2)[0]) + np.square(np.transpose(COM_1)[1] - np.transpose(COM_2)[1])+np.square(np.transpose(COM_1)[2] - np.transpose(COM_2)[2]))
 
                 
                 distanceMap[p1_index, p2_index] =  np.mean(d, 0)
@@ -938,16 +938,16 @@ class SSTrajectory:
             if len(atom1) != 1:
                 raise SSException("In get_interchain_distance() when selecting atom %s from residue %i in protein %i no atoms were found " % (A1, R1,  proteinID1))                
 
-            COM_1 = md.compute_center_of_mass(full_subtraj.atom_slice(atom1))
+            COM_1 = 10*md.compute_center_of_mass(full_subtraj.atom_slice(atom1))
 
             atom2 = full_subtraj.topology.select('resid 1 and name "%s"' % A2)
             if len(atom2) != 1:
                 raise SSException("In get_interchain_distance() when selecting atom %s from residue %i in protein %i no atoms were found " % (A2, R2,  proteinID2))                
 
-            COM_2 = md.compute_center_of_mass(full_subtraj.atom_slice(atom2))
+            COM_2 = 10*md.compute_center_of_mass(full_subtraj.atom_slice(atom2))
             
             # finally compute distances
-            distances = 10*np.sqrt(np.square(np.transpose(COM_1)[0] - np.transpose(COM_2)[0]) + np.square(np.transpose(COM_1)[1] - np.transpose(COM_2)[1])+np.square(np.transpose(COM_1)[2] - np.transpose(COM_2)[2]))
+            distances = np.sqrt(np.square(np.transpose(COM_1)[0] - np.transpose(COM_2)[0]) + np.square(np.transpose(COM_1)[1] - np.transpose(COM_2)[1])+np.square(np.transpose(COM_1)[2] - np.transpose(COM_2)[2]))
 
         else:
 

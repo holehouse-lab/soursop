@@ -92,11 +92,11 @@ def test_code_coverage(NTL9_CP):
 
 
     a = NTL9_CP.get_inter_residue_COM_distance(10,30)
-    a = NTL9_CP.get_inter_residue_COM_distance(10,30, stride=2)
+    a = NTL9_CP.get_inter_residue_COM_distance(10,30)
 
 
     a = NTL9_CP.get_inter_residue_COM_vector(10,30)
-    a = NTL9_CP.get_inter_residue_COM_vector(10,30, stride=2)
+    a = NTL9_CP.get_inter_residue_COM_vector(10,30)
 
 
     a = NTL9_CP.get_inter_residue_atomic_distance(2,10)
@@ -109,6 +109,7 @@ def test_get_radius_of_gyration(GS6_CP):
     assert len(GS6_CP.get_radius_of_gyration()) == 5
     assert abs(GS6_CP.get_radius_of_gyration()[0] - 5.728453763896514) < 0.0001
     assert abs(GS6_CP.get_radius_of_gyration(R1=1,R2=3)[0] - 2.8815625777553278) < 0.0001
+    assert GS6_CP.get_radius_of_gyration(R1=0,R2=7)[0]  == GS6_CP.get_radius_of_gyration()[0]
 
 
 def test_get_t(GS6_CP):
@@ -876,3 +877,42 @@ def test_get_angles_1(GS6_CP, NTL9_CP):
     assert len(NTL9_CP.get_angles('chi3')[0]) == 21
     assert len(NTL9_CP.get_angles('chi4')[0]) == 12
     assert len(NTL9_CP.get_angles('chi5')[0]) == 1
+
+
+
+def test_get_inter_residue_COM_vector(GS6_CP, NTL9_CP):
+    """
+    Test that the inter-residue COM vector matches the distances
+    calculated using inter_residue_COM_distance.
+
+    """
+
+    
+    com_distances = GS6_CP.get_inter_residue_COM_distance(0,5) 
+    com_distances_manually = np.sqrt(np.sum(np.square(GS6_CP.get_inter_residue_COM_vector(0,5)),1))
+    assert np.sum(com_distances - com_distances_manually) < 0.001
+
+
+    com_distances = NTL9_CP.get_inter_residue_COM_distance(0,25) 
+    com_distances_manually = np.sqrt(np.sum(np.square(NTL9_CP.get_inter_residue_COM_vector(0, 25)),1))
+    assert np.sum(com_distances - com_distances_manually) < 0.001
+
+
+
+def test_get_center_of_mass(GS6_CP, NTL9_CP):
+
+    
+    molecular_com = GS6_CP.get_center_of_mass()
+    assert(len(molecular_com)) == GS6_CP.n_frames
+    
+    # compute COM of residues 0 and 1
+    R0_com = GS6_CP.get_center_of_mass(0,0)
+    R5_com = GS6_CP.get_center_of_mass(5,5)
+
+    com_distances_from_center_of_mass = np.sqrt(np.sum(np.square(R0_com - R5_com),1))
+    com_distances_manually = np.sqrt(np.sum(np.square(GS6_CP.get_inter_residue_COM_vector(0,5)),1))
+    com_distances = GS6_CP.get_inter_residue_COM_distance(0,5) 
+
+    assert np.sum(com_distances_manually - com_distances_from_center_of_mass) == 0
+    assert np.sum(com_distances - com_distances_from_center_of_mass) == 0
+    
