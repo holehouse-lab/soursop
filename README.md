@@ -9,6 +9,12 @@ Analysis package for all-atom simulations of disordered and unfolded proteins.
 
 SOURSOP was fully developed in the Pappu Lab (http://pappulab.wustl.edu) but is maintained by the Holehouse lab (https://holehouselab.com).
 
+#### Update July 2022
+For version 0.2.1 we introduce potentially breaking changes into how COM distances are reported. 
+
+##### Details:
+All center-of-mass (COM)-based functions now return distances (as before) and relative positions in x/y/z (this is new) in Angstroms, not nanometers. Previously, the various center-of-mass based functions that returned absolute positions (i.e. 3xn matrices of x/y/z vs frame number) returned them where x/y/z was in units nm. This is fine if you know this, but means if you manually calculate distance between two COM vectors you'd get a distance in nanometers and not Angstroms. This is an unhelpful and unexpected behavior given all other distances are in Angstroms, so we have made the decision to fully update to Angstroms even for vector positions. This DOES NOT break any code internal to soursop, but if you were using COM positions to manually calculate distances these may need to be recalculated.
+
 #### Update April 2022
 For version 0.1.9 the documentation has been extensively extended
 
