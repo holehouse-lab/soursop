@@ -18,7 +18,8 @@ By way of an example::
   ProtObj = TrajOb.proteinTrajectoryList[0]
 
   # print the mean radius of gyration
-  print(np.mean(ProtObj.get_end_to_end_distance))
+  mean_e2e = np.mean(ProtObj.get_end_to_end_distance())
+  print(mean_e2e)
 
 
 SSProtein Properties

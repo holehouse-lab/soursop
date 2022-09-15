@@ -32,8 +32,11 @@ This documentation is currently being generated as we finalize **SOURSOP**.
 Changelog
 ==========
 
+*Update: Sept. 2022*
+Additional tests and docs updates ahead of preprint.
+
 *Update: April 2022*
-Moved SOURSOP onto PyPI in anticipation of final release. Additional tests, code clean up etc. Also added 
+Moved SOURSOP onto PyPI in anticipation of final release. Additional tests, code clean up etc. 
 
 *Update: March 2022*
 Numerous updates to internal code documentation, removal of `soursop_cli`, update to pip install over git to use https.
