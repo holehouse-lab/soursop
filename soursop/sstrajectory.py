@@ -29,6 +29,7 @@ class SSTrajectory:
     #
     #
     def __init__(self, trajectory_filename=None, pdb_filename=None, TRJ=None, protein_grouping=None, pdblead=False, debug=False, extra_valid_residue_names=None):
+        
         """
         SSTrajectory is the class used to read in a work with simulation
         trajectories in SOURSOP.
@@ -99,7 +100,7 @@ class SSTrajectory:
             trajectory read-in. Default = False.
             
         extra_valid_residue_names : list
-            By default SOURSOP identifies chains as proteins based on the a set of
+            By default, SOURSOP identifies chains as proteins based on the a set of
             normally seen protein residue names. These are defined in soursop/ssdata,
             and are listed below::
 
@@ -112,7 +113,9 @@ class SSTrajectory:
                         
             This keyword allows the user to pass a list of ADDITIONAL residues that
             we want SOURSOP to recognize as valid residues to extract a chain as a
-            protein molecule.
+            protein molecule. This can be especially useful if you want to trick
+            SOURSOP into analyzing polymer simulations where your PDB file may 
+            have non-standard residue names (e.g., XXX).
 
 
         Example
@@ -516,7 +519,7 @@ class SSTrajectory:
         protein residue in the trajectory. For systems with multiple protein chains, 
         all chains are combined together. For systems with a single protein chain,
         this function offers no advantage over interacting directly with the
-        SSProtein object in the .proteinTrajectoryList.
+        SSProtein object in the ``.proteinTrajectoryList``.
 
         Parameters
         -------------
@@ -600,7 +603,7 @@ class SSTrajectory:
 
             TrajObj # TrajOb is an SSTrajectory object
 
-            TrajObj.intra_chain_distance_Map(0,0)
+            TrajObj.get_interchain_distance_map(0,0)
 
         would be the same as::
 
@@ -615,13 +618,13 @@ class SSTrajectory:
 
         proteinID1 : int
             The ID of the first protein of the two being considered, where the 
-            ID is the proteins position in the `self.proteinTrajectoryList` 
+            ID is the proteins position in the ``self.proteinTrajectoryList`` 
             list.             
 
         proteinID2 : int
             The ID of the second protein of the two being considered, where 
             the ID is the proteins position in the 
-            `self.proteinTrajectoryList` list
+            ``self.proteinTrajectoryList`` list
             
         mode : str (default = 'CA')
             String, must be one of either 'CA' or 'COM', where CA means alpha
@@ -740,12 +743,21 @@ class SSTrajectory:
             Note that if modes other than ``atom`` are used the A1 and A2 
             options are ignored.
 
-            + ``ca`` - same as setting ``atom`` and then defining atoms 1 and 2 (A1 and A2) as CA. 
-            + ``closest`` - closest atom associated with each of the residues, i.e. the is the point \
-                            of closest approach between the two residues.
-            + ``closest-heavy`` - same as `'closest'`, except only non-hydrogen atoms are considered.
-            + ``sidechain`` - closest atom where that atom is in the sidechain.
-            + ``sidechain-heavy`` - closest atom where that atom is in the sidechain and is heavy.
+            + ``ca`` - same as setting ``atom`` and then defining atoms \
+                       1 and 2 (A1 and A2) as CA. 
+                      
+            + ``closest`` - closest atom associated with each of the \
+                            residues, i.e. the point of closest approach \
+                            between the two residues.
+                                                        
+            + ``closest-heavy`` - same as `'closest'`, except only non-\
+                                  hydrogen atoms are considered.
+                                  
+            + ``sidechain`` - closest atom where that atom is in the\
+                              sidechain.
+
+            + ``sidechain-heavy`` - closest atom where that atom is\
+                                    in the sidechain and is heavy.
 
         A1 : str (default = 'CA')
             Atom name of the atom in R1 we're looking at. 
@@ -806,12 +818,6 @@ class SSTrajectory:
 
         return np.array(all_contact_fractions)
 
-    
-
-
-
-
-
 
 
     #oxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxo
@@ -826,7 +832,6 @@ class SSTrajectory:
         would be normally used for the SSProtein objects associated with 
         proteinID1 and proteinID2.
         
-
         For inter-atomic distances, atoms are selected from the passed 
         residue and their 'name' field from the topology selection language 
         (e.g. "CA", "CB" "NH" etc). By default CA atoms are used, but one can 
@@ -876,18 +881,29 @@ class SSTrajectory:
             Note that if modes other than ``atom`` are used the A1 and A2 
             options are ignored.
 
-            + ``ca`` - same as setting ``atom`` and then defining atoms 1 and 2 (A1 and A2) as CA. 
-            + ``closest`` - closest atom associated with each of the residues, i.e. the is the point \
-                            of closest approach between the two residues.
-            + ``closest-heavy`` - same as `'closest'`, except only non-hydrogen atoms are considered.
-            + ``sidechain`` - closest atom where that atom is in the sidechain.
-            + ``sidechain-heavy`` - closest atom where that atom is in the sidechain and is heavy.
+            + ``ca`` - same as setting ``atom`` and then defining atoms \
+                       1 and 2 (A1 and A2) as CA. 
+                      
+            + ``closest`` - closest atom associated with each of the \
+                            residues, i.e. the point of closest approach \
+                            between the two residues.
+                                                        
+            + ``closest-heavy`` - same as `'closest'`, except only non-\
+                                  hydrogen atoms are considered.
+                                  
+            + ``sidechain`` - closest atom where that atom is in the\
+                              sidechain.
+
+            + ``sidechain-heavy`` - closest atom where that atom is\
+                                    in the sidechain and is heavy.
+                                    
 
         periodic : bool (default = False)
-            Flag which if distances mode is passed as anything other than 'atom' then this determines
-            if the minimum image convention should be used. Note that this is only available if pdb
-            crystal dimensions are provided, and in general it's better to set this to false and 
-            center the molecule first. Default = False.
+            Flag which if distances mode is passed as anything other than 'atom'
+            then this determines if the minimum image convention should be used.
+            Note that this is only available if pdb crystal dimensions are
+            provided, and in general it's better to set this to false and
+           center the molecule first. Default = False.
 
         Returns
         -----------

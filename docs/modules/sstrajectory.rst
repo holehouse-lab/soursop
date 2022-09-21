@@ -43,20 +43,28 @@ Properties are class variables that are dynamically calculated. They do not requ
 
 Will print the number of frames associated with this trajectory.
 
-.. autoclass:: soursop.sstrajectory.SSTrajectory
 
-        .. automethod:: n_frames
-        .. automethod:: n_proteins
-        .. automethod:: length
+Properties
+................
+
+.. automethod:: soursop.sstrajectory.SSTrajectory.n_frames
+.. automethod:: soursop.sstrajectory.SSTrajectory.n_proteins
+.. automethod:: soursop.sstrajectory.SSTrajectory.length
+
+In addition to these three functions, the Python builtin ``len()`` returns the number of frames in a trajectory.
+
 
 SSTrajectory Functions
 ----------------------------
+Functions enable operations to be performed on the entire system. Note if you wish to obtain information about a specific protein in isolation, you should use the ``SSProtein`` objects, but for information where multiple proteins are considered all operations should be performed at the level of the ``SSTrajectory`` object.
 
-.. autoclass:: soursop.sstrajectory.SSTrajectory
+Functions
+................
 
-        .. automethod:: get_overall_radius_of_gyration
-        .. automethod:: get_overall_asphericity
-        .. automethod:: get_overall_hydrodynamic_radius
-        .. automethod:: get_interchain_distance_map
-        .. automethod:: get_interchain_distance
+.. automethod:: soursop.sstrajectory.SSTrajectory.get_overall_radius_of_gyration
+.. automethod:: soursop.sstrajectory.SSTrajectory.get_overall_hydrodynamic_radius
+.. automethod:: soursop.sstrajectory.SSTrajectory.get_overall_asphericity
+.. automethod:: soursop.sstrajectory.SSTrajectory.get_interchain_distance_map
+.. automethod:: soursop.sstrajectory.SSTrajectory.get_interchain_contact_map
+.. automethod:: soursop.sstrajectory.SSTrajectory.get_interchain_distance
 			
