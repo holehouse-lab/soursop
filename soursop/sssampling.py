@@ -66,7 +66,12 @@ def hellinger_distance(p : np.ndarray, q : np.ndarray) -> np.ndarray:
 
 def rel_entropy(p,q) -> float:
     """Computes the relative entropy between two probability distributions p and q."""
-    return rel_entr(p,q).sum()
+    if p.ndim == 2 and q.ndim == 2:
+        relative_entropy = np.sum(rel_entr(p,q), axis=1)
+    else:
+        relative_entropy = np.sum(rel_entr(p,q))
+    return relative_entropy
+    
 
 def compute_dihedrals():
     pass
@@ -94,45 +99,50 @@ class SamplingQuality:
         if self.method == "dihedral":
             if self.bwidth > 2*np.pi or not (self.bwidth > 0):
                 raise SSException(f'The bwidth parameter must be between 2*pi and greater than 0. Received {self.bwidth}')
-            # n_res (angle) x n_frames                
+            # n_res (angle) x n_frames              
             self.psi_traj1 = self.traj1.get_angles("psi")[1]
             self.phi_traj1 = self.traj1.get_angles("phi")[1]
             self.psi_traj2 = self.traj2.get_angles("psi")[1]
             self.phi_traj2 = self.traj2.get_angles("phi")[1]
 
-    def compute_similarity(self):
-        # method = self.method
-
-        # selector = {"dihedral" : compute_dihedrals, "rmsd": md.rmsd, "p_vects" : hellinger_distance}
-
-        # if method not in list(selector.keys()):
-        #     raise SSException(f'The variable method was set to {method}, which is not one of dihedral, rmsd, p_vects')
-
-        if self.method == "dihedral":
-            bins = self.get_degree_bins()
-            psi_traj1_pdf = self.compute_pdf(self.psi_traj1, bins=bins)
-            psi_traj2_pdf = self.compute_pdf(self.psi_traj2, bins=bins)
-            
-            phi_traj1_pdf = self.compute_pdf(self.phi_traj1, bins=bins)
-            phi_traj2_pdf = self.compute_pdf(self.phi_traj2, bins=bins)
-            
-
-    def compute_pdf(self, arr : np.ndarray, bins) -> np.ndarray:
-        """_summary_
-
-        Parameters
-        ----------
-        arr : np.ndarray
-            _description_
-        bins : _type_
-            _description_
+    def compute_dihedral_hellingers(self):
+        """Compute the hellingers distance for both the phi and psi angles between two trajectories.
 
         Returns
         -------
         np.ndarray
-            _description_
+            The hellinger distances between the probability density distributions for the phi and psi angles for a pair of trajectories.
         """
-        pdf = np.apply_along_axis(lambda row: np.histogram(row, bins=bins, density=True)[0], axis=1, arr=arr)
+        bins = self.get_degree_bins()
+        psi_traj1_pdf = self.compute_pdf(self.psi_traj1, bins=bins)
+        psi_traj2_pdf = self.compute_pdf(self.psi_traj2, bins=bins)
+        
+        phi_traj1_pdf = self.compute_pdf(self.phi_traj1, bins=bins)
+        phi_traj2_pdf = self.compute_pdf(self.phi_traj2, bins=bins)
+
+        psi_hellingers = hellinger_distance(psi_traj1_pdf, psi_traj2_pdf)
+        phi_hellingers = hellinger_distance(phi_traj1_pdf, phi_traj2_pdf)
+
+        return np.array([phi_hellingers, psi_hellingers])
+
+    def compute_pdf(self, arr : np.ndarray, bins : np.ndarray) -> np.ndarray:
+        """
+        Computes a probability density by constructing a histogram of the data array with a specified set of bins. 
+
+        Parameters
+        ----------
+        arr : np.ndarray
+            A vector of shape (n_res x n_frames). The
+        bins : np.ndarray
+            The set of bin edges that specify the range for the histogram buckets.
+
+        Returns
+        -------
+        np.ndarray
+            Returns a set of histograms of the probabilities densities for each residue in the amino acid sequence.
+            Shape (n_res, len(bins) - 1) 
+        """
+        pdf = np.apply_along_axis(lambda col: np.histogram(col, bins=bins, density=True)[0], axis=1, arr=arr)
         return pdf
 
 
