@@ -12,15 +12,16 @@
 import mdtraj as md
 import numpy as np
 from scipy.special import rel_entr
-from typing import Type, List, Union
+from typing import List, Union
 import pathlib
-
-from .ssprotein import SSProtein
+import os
 from .ssexceptions import SSException
-from . import ssutils
-from .sstrajectory import SSTrajectory, parallel_load_trjs
+from .sstrajectory import parallel_load_trjs
 from glob import glob
 from natsort import natsorted
+import fnmatch
+
+
 
 def hellinger_distance(p : np.ndarray, q : np.ndarray) -> np.ndarray:
     """
@@ -44,7 +45,9 @@ def hellinger_distance(p : np.ndarray, q : np.ndarray) -> np.ndarray:
     np.ndarray
         The hellingers distance for each residue in the sequence
     """
-    if p.ndim == 2 and q.ndim == 2:
+    if p.ndim == 3 and q.ndim == 3:
+        hellingers = np.sqrt(np.sum((np.sqrt(p) - np.sqrt(q)) ** 2, axis=2)) / np.sqrt(2)
+    elif p.ndim == 2 and q.ndim == 2:
         hellingers = np.sqrt(np.sum((np.sqrt(p) - np.sqrt(q)) ** 2, axis=1)) / np.sqrt(2)
     else:
         hellingers = np.sqrt(np.sum((np.sqrt(p) - np.sqrt(q)) ** 2)) / np.sqrt(2)
@@ -53,21 +56,23 @@ def hellinger_distance(p : np.ndarray, q : np.ndarray) -> np.ndarray:
 
 def rel_entropy(p : np.ndarray, q : np.ndarray) -> np.ndarray:
     """Computes the relative entropy between two probability distributions p and q."""
-    if p.ndim == 2 and q.ndim == 2:
+    if p.ndim == 3 and q.ndim == 3:
+        relative_entropy = np.sum(rel_entr(p,q), axis=2)
+    elif p.ndim == 2 and q.ndim == 2:
         relative_entropy = np.sum(rel_entr(p,q), axis=1)
     else:
         relative_entropy = np.sum(rel_entr(p,q))
     return relative_entropy
     
 
-def glob_traj_paths(filepath : Union[str, pathlib.Path],num_reps : int, traj_name="__traj.xtc",top_name="__START.pdb",mode=None):
+def glob_traj_paths(root_dir : Union[str, pathlib.Path], num_reps : int, mode=None, traj_name="__traj.xtc",top_name="__START.pdb"):
     """
-    This function just assembles the list of trajectory and topology paths for a set of simulations
+    This function assembles the list of trajectory and topology paths for a set of simulations.
 
     Parameters
     ----------
-    filepath : Union[str, pathlib.path]
-        _description_
+    root_dir : Union[str, pathlib.path]
+        Filepath or list of file paths
     num_reps : int
         _description_
     mode : _type_, optional
@@ -80,31 +85,82 @@ def glob_traj_paths(filepath : Union[str, pathlib.Path],num_reps : int, traj_nam
     """
     top_paths, traj_paths = [], []
     if mode == "mega":
-        directories = glob("*start")
-        for directory in directories:
-            for rep in range(1,num_reps):
-                traj_paths.extend(glob(f"{directory}/{rep}/{traj_name}"))
-                top_paths.extend(glob(f"{directory}/{rep}/{top_name}"))
+        cwd = pathlib.Path().cwd()
+        for directory in ["coil_start","helical_start"]:
+            basepath = os.path.join(cwd,directory)
+            for rep in range(1,num_reps+1):
+                traj_paths.extend(glob(f"{basepath}/{rep}/{traj_name}"))
+                top_paths.extend(glob(f"{basepath}/{rep}/{top_name}"))
     else:
-        traj_paths = glob(f"{filepath}/{traj_name}")
-    
-    return top_paths, traj_paths
+        exclude_dirs = ["eq","FULL"]
+        for root, dirs, files in os.walk(root_dir):
+            if os.path.basename(root) in exclude_dirs:
+                continue
+            for filename in fnmatch.filter(files, traj_name):
+                traj_paths.append(pathlib.Path(os.path.join(root, filename)).absolute().as_posix())
+            for filename in fnmatch.filter(files, top_name):
+                top_paths.append(pathlib.Path(os.path.join(root, filename)).absolute().as_posix())
+
+    return natsorted(top_paths), natsorted(traj_paths)
 
 class SamplingQuality:
-    """Compare the sampling quality for a simulated trajectory relative to a polymer model limit.
+    """Compare the sampling quality for a trajectory relative to some arbitrary referene model, usually a polymer limiting model.
     """
  
     def __init__(self, traj_list, 
-                       polymer_model_traj_list, 
+                       polymer_model_traj_list,
+                       top_file,
+                       polymer_top,
                        method, 
                        bwidth = np.pi / 5,
+                       proteinID = 0,
+                       n_cpus=None,
                 ):
+        """_summary_
+
+        Parameters
+        ----------
+        traj_list : List[str]
+            a list of the trajectories associated with the simulated trajectories.
+        polymer_model_traj_list : List[str]
+            a list of the trajectories associated with the limiting polymer model.
+        top_file : str
+            path to the simulated trajectories topology file.
+        polymer_top : str
+            path to the polymer model's topology file.
+        method : str
+            The method used to compute the hellingers distance between the simulated trajectories and the polymer limiting model.
+        bwidth : _type_, optional
+            bin width parameter for segmenting histogrammed data into buckes, by default np.pi/5
+        proteinID : int, optional
+            The ID of the protein where the ID is the proteins position
+            in the ``self.proteinTrajectoryList`` list, by default 0.
+        n_cpus : int, optional
+            number of CPUs to use for parallel loading of SSTrajectory objects, by default None, which uses all available threads.
+
+        Raises
+        ------
+        NotImplementedError
+            _description_
+        SSException
+            _description_
+        """
 
         super(SamplingQuality, self).__init__()
         self.traj_list = traj_list
         self.polymer_model_traj_list = polymer_model_traj_list
+        self.top = top_file
+        self.polymer_top = polymer_top
+        self.proteinID = proteinID
         self.method = method
         self.bwidth = bwidth
+        self.n_cpus = n_cpus
+        
+        if not self.n_cpus:
+            self.n_cpus = os.cpu_count()
+
+        self.trajs = parallel_load_trjs(self.traj_list, top=self.top, n_procs=self.n_cpus)
+        self.polymer_trajs = parallel_load_trjs(self.polymer_model_traj_list, top=self.polymer_top, n_procs=self.n_cpus)
 
         if self.method == "rmsd" or self.method == "p_vects":
             raise NotImplementedError("This functionality has not been implemented yet")
@@ -113,30 +169,54 @@ class SamplingQuality:
         if self.method == "dihedral":
             if self.bwidth > 2*np.pi or not (self.bwidth > 0):
                 raise SSException(f'The bwidth parameter must be between 2*pi and greater than 0. Received {self.bwidth}')
-                        
-            # n_res (angle) x n_frames              
-            self.psi_traj1 = self.traj1.get_angles("psi")[1]
-            self.phi_traj1 = self.traj1.get_angles("phi")[1]
-            self.psi_traj2 = self.traj2.get_angles("psi")[1]
-            self.phi_traj2 = self.traj2.get_angles("phi")[1]
 
-    def compute_dihedral_hellingers(self):
-        """Compute the hellingers distance for both the phi and psi angles between two trajectories.
+            self.psi_angles, self.polymer_psi_angles, self.phi_angles, self.polymer_phi_angles = self.__compute_dihedrals(proteinID=self.proteinID)
+                        
+    def __compute_dihedrals(self, proteinID : int = 0) -> np.ndarray:
+        """internal function to computes the phi/psi backbone dihedrals at a given index (proteinID) in the proteinTrajectoryList of an SSTrajectory.
+
+        Parameters
+        ----------
+        proteinID : int, optional
+            The ID of the protein where the ID is the proteins position
+            in the ``self.proteinTrajectoryList`` list, by default 0.
 
         Returns
         -------
         np.ndarray
-            The hellinger distances between the probability density distributions for the phi and psi angles for a pair of trajectories.
+            Returns the psi and phi backbone dihedrals for the simulated trajectory and the limiting polyer model.
+        """
+        psi_angles = []
+        phi_angles = []
+        polymer_psi_angles = []
+        polymer_phi_angles = []
+
+        for trj, pol_trj in zip(self.trajs, self.polymer_trajs):
+            psi_angles.append(trj.proteinTrajectoryList[proteinID].get_angles("psi")[1])
+            phi_angles.append(trj.proteinTrajectoryList[proteinID].get_angles("phi")[1])
+            polymer_psi_angles.append(pol_trj.proteinTrajectoryList[proteinID].get_angles("psi")[1])
+            polymer_phi_angles.append(pol_trj.proteinTrajectoryList[proteinID].get_angles("phi")[1])
+        
+        return np.array([psi_angles, polymer_psi_angles, phi_angles, polymer_phi_angles])
+
+    def compute_dihedral_hellingers(self) -> np.ndarray:
+        """Compute the hellingers distance for both the phi and psi angles between a set of trajectories.
+
+        Returns
+        -------
+        np.ndarray
+            The hellinger distances between the probability density distributions for the phi and psi angles for a set of trajectories.
         """
         bins = self.get_degree_bins()
-        psi_traj1_pdf = self.compute_pdf(self.psi_traj1, bins=bins)
-        psi_traj2_pdf = self.compute_pdf(self.psi_traj2, bins=bins)
-        
-        phi_traj1_pdf = self.compute_pdf(self.phi_traj1, bins=bins)
-        phi_traj2_pdf = self.compute_pdf(self.phi_traj2, bins=bins)
 
-        psi_hellingers = hellinger_distance(psi_traj1_pdf, psi_traj2_pdf)
-        phi_hellingers = hellinger_distance(phi_traj1_pdf, phi_traj2_pdf)
+        psi_trj_pdfs = self.compute_pdf(self.psi_angles, bins=bins)
+        psi_pol_trj_pdfs = self.compute_pdf(self.polymer_psi_angles, bins=bins)
+        
+        phi_trj_pdfs = self.compute_pdf(self.phi_angles, bins=bins)
+        phi_pol_trj_pdfs = self.compute_pdf(self.polymer_phi_angles, bins=bins)
+
+        psi_hellingers = hellinger_distance(psi_trj_pdfs, psi_pol_trj_pdfs)
+        phi_hellingers = hellinger_distance(phi_trj_pdfs, phi_pol_trj_pdfs)
 
         return np.array([phi_hellingers, psi_hellingers])
 
@@ -147,7 +227,7 @@ class SamplingQuality:
         Parameters
         ----------
         arr : np.ndarray
-            A vector of shape (n_res x n_frames). The
+            A vector of shape (n_res x n_frames) or (traj x n_res x frames)
         bins : np.ndarray
             The set of bin edges that specify the range for the histogram buckets.
 
@@ -157,26 +237,34 @@ class SamplingQuality:
             Returns a set of histograms of the probabilities densities for each residue in the amino acid sequence.
             Shape (n_res, len(bins) - 1) 
         """
-        pdf = np.apply_along_axis(lambda col: np.histogram(col, bins=bins, density=True)[0], axis=1, arr=arr)
+        # Lambda function is used to ignore the bin edges returned by np.histogram at index 1
+        if arr.ndim == 3:
+            pdf = np.apply_along_axis(lambda col: np.histogram(col, bins=bins, density=True)[0], axis=2, arr=arr)
+        else:
+            pdf = np.apply_along_axis(lambda col: np.histogram(col, bins=bins, density=True)[0], axis=1, arr=arr)
         return pdf
 
 
     def get_radian_bins(self) -> np.ndarray:
+        """Returns the edges of the bins in radians
+
+        Returns
+        -------
+        np.ndarray
+            an array of the bin edges in radians
+        """
         bwidth = self.bwidth
         bins = np.arange(-np.pi, np.pi+bwidth, bwidth)
         return bins
         
-        
     def get_degree_bins(self) -> np.ndarray:
+        """Returns the edges of the bins in degrees
+
+        Returns
+        -------
+        np.ndarray
+            an array of the bin edges in degrees
+        """
         bwidth = np.rad2deg(self.bwidth)
         bins = np.arange(-180, 180+bwidth, bwidth)
         return bins
-    
-
-    
-def main():
-    print("passed")
-
-
-if __name__ == "__main__":
-    main()
