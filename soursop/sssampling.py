@@ -12,28 +12,15 @@
 import mdtraj as md
 import numpy as np
 from scipy.special import rel_entr
-from typing import Type
+from typing import Type, List, Union
+import pathlib
 
 from .ssprotein import SSProtein
 from .ssexceptions import SSException
 from . import ssutils
-from .sstrajectory import SSTrajectory
-
-# class Blocking:
-#     """docstring for Blocking."""
-#     def __init__(self, data, chunks, dt, weights=None):
-#         super(Blocking, self).__init__()
-#         self.data = data
-#         self.chunks = chunks 
-#         self.dt = dt 
-#         self.weights = weights
-        
-#         if weights is not None: 
-#             raise NotImplementedError("This functionality has not been implemented yet")
-        
-# def main():
-#     Blocking([2,1],1,1)
-
+from .sstrajectory import SSTrajectory, parallel_load_trjs
+from glob import glob
+from natsort import natsorted
 
 def hellinger_distance(p : np.ndarray, q : np.ndarray) -> np.ndarray:
     """
@@ -55,7 +42,7 @@ def hellinger_distance(p : np.ndarray, q : np.ndarray) -> np.ndarray:
     Returns
     -------
     np.ndarray
-        _description_
+        The hellingers distance for each residue in the sequence
     """
     if p.ndim == 2 and q.ndim == 2:
         hellingers = np.sqrt(np.sum((np.sqrt(p) - np.sqrt(q)) ** 2, axis=1)) / np.sqrt(2)
@@ -64,7 +51,7 @@ def hellinger_distance(p : np.ndarray, q : np.ndarray) -> np.ndarray:
     return hellingers
 
 
-def rel_entropy(p,q) -> float:
+def rel_entropy(p : np.ndarray, q : np.ndarray) -> np.ndarray:
     """Computes the relative entropy between two probability distributions p and q."""
     if p.ndim == 2 and q.ndim == 2:
         relative_entropy = np.sum(rel_entr(p,q), axis=1)
@@ -73,22 +60,49 @@ def rel_entropy(p,q) -> float:
     return relative_entropy
     
 
-def compute_dihedrals():
-    pass
+def glob_traj_paths(filepath : Union[str, pathlib.Path],num_reps : int, traj_name="__traj.xtc",top_name="__START.pdb",mode=None):
+    """
+    This function just assembles the list of trajectory and topology paths for a set of simulations
+
+    Parameters
+    ----------
+    filepath : Union[str, pathlib.path]
+        _description_
+    num_reps : int
+        _description_
+    mode : _type_, optional
+        _description_, by default None
+    traj_name : str, optional
+        _description_, by default "__traj.xtc"
+    top_name : str, optional
+        _description_, by default "__START.pdb"
+    
+    """
+    top_paths, traj_paths = [], []
+    if mode == "mega":
+        directories = glob("*start")
+        for directory in directories:
+            for rep in range(1,num_reps):
+                traj_paths.extend(glob(f"{directory}/{rep}/{traj_name}"))
+                top_paths.extend(glob(f"{directory}/{rep}/{top_name}"))
+    else:
+        traj_paths = glob(f"{filepath}/{traj_name}")
+    
+    return top_paths, traj_paths
 
 class SamplingQuality:
     """Compare the sampling quality for a simulated trajectory relative to a polymer model limit.
     """
  
-    def __init__(self, traj1 : Type[SSProtein], 
-                       traj2 : Type[SSProtein], 
-                       method : str,
-                       bwidth : float = np.pi / 5,
+    def __init__(self, traj_list, 
+                       polymer_model_traj_list, 
+                       method, 
+                       bwidth = np.pi / 5,
                 ):
 
         super(SamplingQuality, self).__init__()
-        self.traj1 = traj1
-        self.traj2 = traj2
+        self.traj_list = traj_list
+        self.polymer_model_traj_list = polymer_model_traj_list
         self.method = method
         self.bwidth = bwidth
 
@@ -99,6 +113,7 @@ class SamplingQuality:
         if self.method == "dihedral":
             if self.bwidth > 2*np.pi or not (self.bwidth > 0):
                 raise SSException(f'The bwidth parameter must be between 2*pi and greater than 0. Received {self.bwidth}')
+                        
             # n_res (angle) x n_frames              
             self.psi_traj1 = self.traj1.get_angles("psi")[1]
             self.phi_traj1 = self.traj1.get_angles("phi")[1]

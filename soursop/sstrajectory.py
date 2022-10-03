@@ -21,6 +21,8 @@ from . import ssutils
 from . import ssio
 
 from copy import copy
+from functools import partial
+from multiprocessing import Pool
 
 
 class SSTrajectory:
@@ -975,3 +977,26 @@ class SSTrajectory:
         return distances
       
 
+def parallel_load_trjs(trj_filenames : str, top : str, n_procs=1,**kwargs):
+    """
+    Parallel loading of trajectories with optional kwargs.
+
+    Parameters
+    ----------
+    trj_filenames : str
+        A list of strings containing the trajetory filepaths to be loaded
+    top : str
+        a string for the specified path to the topology file.
+    n_procs : int, optional
+        Number of separate processors to use for loading, by default 1
+
+    Returns
+    -------
+    SSTrajectory 
+        Returns a list of SSTrajectory objects.
+    """
+    # parallelize load with **kwargs
+    partial_load = partial(SSTrajectory, pdb_filename=top,**kwargs)
+    with Pool(processes=n_procs) as pool:
+        trjs = pool.map(partial_load, trj_filenames)
+    return trjs
