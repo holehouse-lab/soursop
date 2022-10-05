@@ -10,6 +10,7 @@
 ## Copyright 2014 - 2022
 ##
 
+from typing import List
 import mdtraj as md
 import numpy as np
 from .configs import *
@@ -977,7 +978,7 @@ class SSTrajectory:
         return distances
       
 
-def parallel_load_trjs(trj_filenames : str, top : str, n_procs=1,**kwargs):
+def parallel_load_trjs(trj_filenames, top, n_procs=1,**kwargs):
     """
     Parallel loading of trajectories with optional kwargs.
 

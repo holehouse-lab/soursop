@@ -15,12 +15,12 @@ from scipy.special import rel_entr
 from typing import List, Union
 import pathlib
 import os
+import soursop.ssutils 
 from .ssexceptions import SSException
 from .sstrajectory import parallel_load_trjs
 from glob import glob
 from natsort import natsorted
 import fnmatch
-
 
 
 def hellinger_distance(p : np.ndarray, q : np.ndarray) -> np.ndarray:
@@ -65,7 +65,7 @@ def rel_entropy(p : np.ndarray, q : np.ndarray) -> np.ndarray:
     return relative_entropy
     
 
-def glob_traj_paths(root_dir : Union[str, pathlib.Path], num_reps : int, mode=None, traj_name="__traj.xtc",top_name="__START.pdb"):
+def glob_traj_paths(root_dir : Union[str, pathlib.Path], num_reps : int, mode=None, traj_name="__traj.xtc",top_name="__START.pdb", exclude_dirs=None):
     """
     This function assembles the list of trajectory and topology paths for a set of simulations.
 
@@ -85,14 +85,16 @@ def glob_traj_paths(root_dir : Union[str, pathlib.Path], num_reps : int, mode=No
     """
     top_paths, traj_paths = [], []
     if mode == "mega":
-        cwd = pathlib.Path().cwd()
+        cwd = pathlib.Path(f"{root_dir}").absolute().resolve()
         for directory in ["coil_start","helical_start"]:
             basepath = os.path.join(cwd,directory)
             for rep in range(1,num_reps+1):
                 traj_paths.extend(glob(f"{basepath}/{rep}/{traj_name}"))
                 top_paths.extend(glob(f"{basepath}/{rep}/{top_name}"))
     else:
-        exclude_dirs = ["eq","FULL"]
+        if not exclude_dirs:
+            exclude_dirs = ["eq","FULL"]
+
         for root, dirs, files in os.walk(root_dir):
             if os.path.basename(root) in exclude_dirs:
                 continue
@@ -107,14 +109,15 @@ class SamplingQuality:
     """Compare the sampling quality for a trajectory relative to some arbitrary referene model, usually a polymer limiting model.
     """
  
-    def __init__(self, traj_list, 
-                       polymer_model_traj_list,
-                       top_file,
-                       polymer_top,
-                       method, 
-                       bwidth = np.pi / 5,
-                       proteinID = 0,
-                       n_cpus=None,
+    def __init__(self, traj_list : List[str], 
+                       polymer_model_traj_list : List[str],
+                       top_file : str,
+                       polymer_top : str,
+                       method : str, 
+                       bwidth : float = np.pi / 5,
+                       proteinID : int = 0,
+                       n_cpus : int = None,
+                       truncate : bool = False,
                 ):
         """_summary_
 
@@ -130,7 +133,7 @@ class SamplingQuality:
             path to the polymer model's topology file.
         method : str
             The method used to compute the hellingers distance between the simulated trajectories and the polymer limiting model.
-        bwidth : _type_, optional
+        bwidth : float, optional
             bin width parameter for segmenting histogrammed data into buckes, by default np.pi/5
         proteinID : int, optional
             The ID of the protein where the ID is the proteins position
@@ -155,24 +158,34 @@ class SamplingQuality:
         self.method = method
         self.bwidth = bwidth
         self.n_cpus = n_cpus
+        self.truncate = truncate
         
         if not self.n_cpus:
             self.n_cpus = os.cpu_count()
-
+        
+        # Should probably add option to pass trajectories directly, and then also check for that optionality here 
+        # best way to do this? idk alex halppp
         self.trajs = parallel_load_trjs(self.traj_list, top=self.top, n_procs=self.n_cpus)
         self.polymer_trajs = parallel_load_trjs(self.polymer_model_traj_list, top=self.polymer_top, n_procs=self.n_cpus)
 
         if self.method == "rmsd" or self.method == "p_vects":
             raise NotImplementedError("This functionality has not been implemented yet")
 
-        # ssutils.validate_keyword_option(method, ['dihedral', 'rmsd', 'p_vects'], 'method')
+        soursop.ssutils.validate_keyword_option(method, ['dihedral', 'rmsd', 'p_vects'], 'method')
         if self.method == "dihedral":
             if self.bwidth > 2*np.pi or not (self.bwidth > 0):
                 raise SSException(f'The bwidth parameter must be between 2*pi and greater than 0. Received {self.bwidth}')
-
-            self.psi_angles, self.polymer_psi_angles, self.phi_angles, self.polymer_phi_angles = self.__compute_dihedrals(proteinID=self.proteinID)
-                        
-    def __compute_dihedrals(self, proteinID : int = 0) -> np.ndarray:
+            
+            if truncate:
+                lengths = []
+                for trj, pol_trj in zip(self.trajs, self.polymer_trajs):
+                    lengths.append([trj.n_frames,pol_trj.n_frames])
+                self.min_length = np.min(lengths) - 1
+                self.psi_angles, self.polymer_psi_angles, self.phi_angles, self.polymer_phi_angles = self.__compute_dihedrals(proteinID=self.proteinID, truncate=self.truncate)
+            else:
+                self.psi_angles, self.polymer_psi_angles, self.phi_angles, self.polymer_phi_angles = self.__compute_dihedrals(proteinID=self.proteinID)
+        
+    def __compute_dihedrals(self, proteinID : int = 0, truncate : bool = None) -> np.ndarray:
         """internal function to computes the phi/psi backbone dihedrals at a given index (proteinID) in the proteinTrajectoryList of an SSTrajectory.
 
         Parameters
@@ -180,7 +193,9 @@ class SamplingQuality:
         proteinID : int, optional
             The ID of the protein where the ID is the proteins position
             in the ``self.proteinTrajectoryList`` list, by default 0.
-
+        truncate  : bool, optional
+            If True, will truncate each numpy array such that the longest array is the same length as the shortest trajectory.
+        
         Returns
         -------
         np.ndarray
@@ -190,14 +205,52 @@ class SamplingQuality:
         phi_angles = []
         polymer_psi_angles = []
         polymer_phi_angles = []
-
+        
         for trj, pol_trj in zip(self.trajs, self.polymer_trajs):
             psi_angles.append(trj.proteinTrajectoryList[proteinID].get_angles("psi")[1])
             phi_angles.append(trj.proteinTrajectoryList[proteinID].get_angles("phi")[1])
             polymer_psi_angles.append(pol_trj.proteinTrajectoryList[proteinID].get_angles("psi")[1])
             polymer_phi_angles.append(pol_trj.proteinTrajectoryList[proteinID].get_angles("phi")[1])
         
-        return np.array([psi_angles, polymer_psi_angles, phi_angles, polymer_phi_angles])
+        if truncate:
+            trunc_psi_angles, trunc_polymer_psi_angles, trunc_phi_angles,trunc_polymer_phi_angles = self.__truncate_arrays_by_min_length(psi_angles, polymer_psi_angles, phi_angles, polymer_phi_angles)
+            return np.array([trunc_psi_angles, trunc_polymer_psi_angles, trunc_phi_angles, trunc_polymer_phi_angles])
+        else:
+            return np.array([psi_angles, polymer_psi_angles, phi_angles, polymer_phi_angles])
+
+    def __truncate_arrays_by_min_length(self, 
+                                        psi_angles : List[np.ndarray], 
+                                        polymer_psi_angles : List[np.ndarray], 
+                                        phi_angles : List[np.ndarray],
+                                        polymer_phi_angles : List[np.ndarray]
+                                        ) -> np.ndarray:
+        """internal function to truncate arrays to ensure they're all the same shape. This is useful for when 
+        performing analysis on trajectories that haven't completed, and have a varied number of conformations.
+
+        Parameters
+        ----------
+        psi_angles : List[np.ndarray]
+            _description_
+        polymer_psi_angles : List[np.ndarray]
+            _description_
+        phi_angles : List[np.ndarray]
+            _description_
+        polymer_phi_angles : List[np.ndarray]
+            _description_
+
+        Returns
+        -------
+        np.ndarray
+            _description_
+        """
+        trunc_psi_angles, trunc_phi_angles, trunc_polymer_psi_angles, trunc_polymer_phi_angles = [],[],[],[]
+        for psi, pol_psi, phi, pol_phi in zip(psi_angles, polymer_psi_angles, phi_angles, polymer_phi_angles):
+                trunc_psi_angles.append(psi[:,self.min_length])
+                trunc_polymer_psi_angles.append(pol_psi[:,self.min_length])
+                trunc_phi_angles.append(phi[:,self.min_length])
+                trunc_polymer_phi_angles.append(pol_phi[:,self.min_length])
+                
+        return np.array([trunc_psi_angles,trunc_polymer_psi_angles,trunc_phi_angles,trunc_polymer_phi_angles])
 
     def compute_dihedral_hellingers(self) -> np.ndarray:
         """Compute the hellingers distance for both the phi and psi angles between a set of trajectories.
@@ -219,6 +272,27 @@ class SamplingQuality:
         phi_hellingers = hellinger_distance(phi_trj_pdfs, phi_pol_trj_pdfs)
 
         return np.array([phi_hellingers, psi_hellingers])
+
+    def compute_dihedral_rel_entropy(self) -> np.ndarray:
+        """Compute the relative entropy for both the phi and psi angles between a set of trajectories.
+
+        Returns
+        -------
+        np.ndarray
+            The relative entropy between the probability density distributions for the phi and psi angles for a set of trajectories.
+        """
+        bins = self.get_degree_bins()
+
+        psi_trj_pdfs = self.compute_pdf(self.psi_angles, bins=bins)
+        psi_pol_trj_pdfs = self.compute_pdf(self.polymer_psi_angles, bins=bins)
+        
+        phi_trj_pdfs = self.compute_pdf(self.phi_angles, bins=bins)
+        phi_pol_trj_pdfs = self.compute_pdf(self.polymer_phi_angles, bins=bins)
+
+        psi_rel_entr = rel_entropy(psi_trj_pdfs, psi_pol_trj_pdfs)
+        phi_rel_entr = rel_entropy(phi_trj_pdfs, phi_pol_trj_pdfs)
+
+        return np.array([phi_rel_entr, psi_rel_entr])
 
     def compute_pdf(self, arr : np.ndarray, bins : np.ndarray) -> np.ndarray:
         """
