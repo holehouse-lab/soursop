@@ -74,17 +74,17 @@ def glob_traj_paths(root_dir : Union[str, pathlib.Path], num_reps : int, mode=No
     root_dir : Union[str, pathlib.path]
         Filepath or list of file paths
     num_reps : int
-        _description_
-    mode : _type_, optional
-        _description_, by default None
+        number of replicates - will iterate over directories from [1,num_reps+1].
+    mode : str, optional
+        if "mega", the globbing will iterate over directories labeled both "coil_start" and "helical_start", by default None
     traj_name : str, optional
-        _description_, by default "__traj.xtc"
+        trajectory filename, by default "__traj.xtc"
     top_name : str, optional
-        _description_, by default "__START.pdb"
+        topology filename, by default "__START.pdb"
     
     """
     top_paths, traj_paths = [], []
-    if mode == "mega":
+    if str(mode).lower() == "mega":
         cwd = pathlib.Path(f"{root_dir}").absolute().resolve()
         for directory in ["coil_start","helical_start"]:
             basepath = os.path.join(cwd,directory)
@@ -114,7 +114,7 @@ class SamplingQuality:
                        top_file : str,
                        polymer_top : str,
                        method : str, 
-                       bwidth : float = np.pi / 5,
+                       bwidth : float = 0.2617993877991494,
                        proteinID : int = 0,
                        n_cpus : int = None,
                        truncate : bool = False,
@@ -133,13 +133,17 @@ class SamplingQuality:
             path to the polymer model's topology file.
         method : str
             The method used to compute the hellingers distance between the simulated trajectories and the polymer limiting model.
+            options include: 'dihedral' and 'rmsd' or 'p_vects' [not currently implemented]
         bwidth : float, optional
-            bin width parameter for segmenting histogrammed data into buckes, by default np.pi/5
+            bin width parameter for segmenting histogrammed data into buckes\
+            by default 0.2617993877991494 which corresponds to 15 degrees.
         proteinID : int, optional
             The ID of the protein where the ID is the proteins position
             in the ``self.proteinTrajectoryList`` list, by default 0.
         n_cpus : int, optional
             number of CPUs to use for parallel loading of SSTrajectory objects, by default None, which uses all available threads.
+        truncate : bool, optional
+            if True, will truncate trajectories arrays 
 
         Raises
         ------
@@ -168,11 +172,11 @@ class SamplingQuality:
         self.trajs = parallel_load_trjs(self.traj_list, top=self.top, n_procs=self.n_cpus)
         self.polymer_trajs = parallel_load_trjs(self.polymer_model_traj_list, top=self.polymer_top, n_procs=self.n_cpus)
 
-        if self.method == "rmsd" or self.method == "p_vects":
+        if str(self.method).lower() == "rmsd" or str(self.method).lower() == "p_vects":
             raise NotImplementedError("This functionality has not been implemented yet")
 
         soursop.ssutils.validate_keyword_option(method, ['dihedral', 'rmsd', 'p_vects'], 'method')
-        if self.method == "dihedral":
+        if str(self.method).lower() == "dihedral":
             if self.bwidth > 2*np.pi or not (self.bwidth > 0):
                 raise SSException(f'The bwidth parameter must be between 2*pi and greater than 0. Received {self.bwidth}')
             
@@ -245,10 +249,10 @@ class SamplingQuality:
         """
         trunc_psi_angles, trunc_phi_angles, trunc_polymer_psi_angles, trunc_polymer_phi_angles = [],[],[],[]
         for psi, pol_psi, phi, pol_phi in zip(psi_angles, polymer_psi_angles, phi_angles, polymer_phi_angles):
-                trunc_psi_angles.append(psi[:,self.min_length])
-                trunc_polymer_psi_angles.append(pol_psi[:,self.min_length])
-                trunc_phi_angles.append(phi[:,self.min_length])
-                trunc_polymer_phi_angles.append(pol_phi[:,self.min_length])
+                trunc_psi_angles.append(psi[:, self.min_length])
+                trunc_polymer_psi_angles.append(pol_psi[:, self.min_length])
+                trunc_phi_angles.append(phi[:, self.min_length])
+                trunc_polymer_phi_angles.append(pol_phi[:, self.min_length])
                 
         return np.array([trunc_psi_angles,trunc_polymer_psi_angles,trunc_phi_angles,trunc_polymer_phi_angles])
 
@@ -342,3 +346,33 @@ class SamplingQuality:
         bwidth = np.rad2deg(self.bwidth)
         bins = np.arange(-180, 180+bwidth, bwidth)
         return bins
+
+    @property
+    def polymer_pdfs(self):
+        """property for getting the pdfs computed from the phi/psi angles respectively
+
+        Returns
+        -------
+        np.ndarray
+            pdfs computed from the phi and psi angles with the specified bins.
+        """
+        bins = self.get_degree_bins()
+        pol_phi_pdf = self.compute_pdf(self.phi_angles,bins=bins)
+        pol_psi_pdf = self.compute_pdf(self.psi_angles,bins=bins)
+        return np.array([pol_phi_pdf, pol_psi_pdf])
+
+    @property
+    def trj_pdfs(self):
+        """property for getting the pdfs computed from the phi/psi angles respectively
+
+        Returns
+        -------
+        np.ndarray
+            pdfs computed from the phi and psi angles with the specified bins.
+        """
+        bins = self.get_degree_bins()
+        trj_phi_pdf = self.compute_pdf(self.polymer_phi_angles, bins=bins)
+        trj_psi_pdf = self.compute_pdf(self.polymer_psi_angles, bins=bins)
+        return np.array([trj_phi_pdf, trj_psi_pdf])
+
+
