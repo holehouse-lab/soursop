@@ -21,7 +21,8 @@ from .sstrajectory import parallel_load_trjs
 from glob import glob
 from natsort import natsorted
 import fnmatch
-
+import seaborn as sns
+import matplotlib.pyplot as plt
 
 def hellinger_distance(p : np.ndarray, q : np.ndarray) -> np.ndarray:
     """
@@ -104,7 +105,6 @@ def glob_traj_paths(root_dir : Union[str, pathlib.Path], num_reps : int, mode=No
                 top_paths.append(pathlib.Path(os.path.join(root, filename)).absolute().as_posix())
 
     return natsorted(top_paths), natsorted(traj_paths)
-
 class SamplingQuality:
     """Compare the sampling quality for a trajectory relative to some arbitrary referene model, usually a polymer limiting model.
     """
@@ -118,6 +118,7 @@ class SamplingQuality:
                        proteinID : int = 0,
                        n_cpus : int = None,
                        truncate : bool = False,
+                       **kwargs : dict,
                 ):
         """_summary_
 
@@ -169,8 +170,8 @@ class SamplingQuality:
         
         # Should probably add option to pass trajectories directly, and then also check for that optionality here 
         # best way to do this? idk alex halppp
-        self.trajs = parallel_load_trjs(self.traj_list, top=self.top, n_procs=self.n_cpus)
-        self.polymer_trajs = parallel_load_trjs(self.polymer_model_traj_list, top=self.polymer_top, n_procs=self.n_cpus)
+        self.trajs = parallel_load_trjs(self.traj_list, top=self.top, n_procs=self.n_cpus,**kwargs)
+        self.polymer_trajs = parallel_load_trjs(self.polymer_model_traj_list, top=self.polymer_top, n_procs=self.n_cpus, **kwargs)
 
         if str(self.method).lower() == "rmsd" or str(self.method).lower() == "p_vects":
             raise NotImplementedError("This functionality has not been implemented yet")
@@ -347,6 +348,50 @@ class SamplingQuality:
         bins = np.arange(-180, 180+bwidth, bwidth)
         return bins
 
+    def plot_phi_psi_hellingers(self,figsize=(10,15),cmap=None, **kwargs):
+        """plot heatmaps for phi and psi hellingers distances.\
+        Optional keyword arguments are passed to 'plt.subplots'
+
+        Parameters
+        ----------
+        figsize : tuple, optional
+            dimensions of the figure to be rendered, by default (10,15)
+        cmap : matplotlib colormap, optional
+            The matplotlib colormap to be used for plotting the figure, by default None
+        """
+        if cmap == None:
+            cmap = sns.color_palette("light:b", as_cmap=True)
+
+        phi_hellingers, psi_hellingers = self.compute_dihedral_hellingers()
+        fig, axes = plt.subplots(2,1,figsize=figsize,sharex=True,sharey=True, **kwargs)
+        for i,ax in enumerate(axes):
+            if i == 0:
+                ax.set_xticks(np.arange(0,phi_hellingers[:,:].shape[1]+1))
+                ax.set_yticks(np.arange(0,phi_hellingers[:,:].shape[0]+1))
+
+                ax.set_xticklabels(np.arange(1,phi_hellingers[:,:].shape[1]+2),fontsize=16)
+                ax.set_yticklabels(np.arange(1,phi_hellingers[:,:].shape[0]+2),fontsize=16)
+
+                # ax.set_xlabel("Residue index",fontsize=24)
+                ax.set_ylabel("Trajectory Index",fontsize=24)
+
+                ax.set_title("Phi Hellinger's Distance",fontsize=24)
+                im1 = ax.imshow(phi_hellingers[:,:],cmap=cmap)
+            else:
+                ax.set_xticks(np.arange(0,psi_hellingers[:,:].shape[1]+1))
+                ax.set_yticks(np.arange(0,psi_hellingers[:,:].shape[0]+1))
+
+                ax.set_xticklabels(np.arange(1,psi_hellingers[:,:].shape[1]+2),fontsize=16)
+                ax.set_yticklabels(np.arange(1,psi_hellingers[:,:].shape[0]+2),fontsize=16)
+
+                ax.set_xlabel("Residue index",fontsize=24)
+                ax.set_ylabel("Trajectory Index",fontsize=24)
+
+                ax.set_title("Psi Hellinger's Distance",fontsize=24)
+                im2 = ax.imshow(psi_hellingers[:,:],cmap=cmap)
+        plt.tight_layout()
+        fig.colorbar(im1, ax=axes.ravel().tolist())
+
     @property
     def polymer_pdfs(self):
         """property for getting the pdfs computed from the phi/psi angles respectively
@@ -374,5 +419,14 @@ class SamplingQuality:
         trj_phi_pdf = self.compute_pdf(self.polymer_phi_angles, bins=bins)
         trj_psi_pdf = self.compute_pdf(self.polymer_psi_angles, bins=bins)
         return np.array([trj_phi_pdf, trj_psi_pdf])
+    
+    @property
+    def hellingers_distances(self):
+        """property for getting the pdfs computed from the phi/psi angles respectively
 
-
+        Returns
+        -------
+        np.ndarray
+            hellingers distance computed from the phi and psi angles with the specified bins.
+        """
+        return self.compute_dihedral_hellingers()
