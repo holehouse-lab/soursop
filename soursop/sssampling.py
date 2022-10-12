@@ -12,12 +12,12 @@
 import mdtraj as md
 import numpy as np
 from scipy.special import rel_entr
-from typing import List, Union
+from typing import List, Union, Tuple
 import pathlib
 import os
 import soursop.ssutils 
 from .ssexceptions import SSException
-from .sstrajectory import parallel_load_trjs
+from .sstrajectory import parallel_load_trjs, SSTrajectory
 from glob import glob
 from natsort import natsorted
 import fnmatch
@@ -105,6 +105,7 @@ def glob_traj_paths(root_dir : Union[str, pathlib.Path], num_reps : int, mode=No
                 top_paths.append(pathlib.Path(os.path.join(root, filename)).absolute().as_posix())
 
     return natsorted(top_paths), natsorted(traj_paths)
+
 class SamplingQuality:
     """Compare the sampling quality for a trajectory relative to some arbitrary referene model, usually a polymer limiting model.
     """
@@ -144,14 +145,14 @@ class SamplingQuality:
         n_cpus : int, optional
             number of CPUs to use for parallel loading of SSTrajectory objects, by default None, which uses all available threads.
         truncate : bool, optional
-            if True, will truncate trajectories arrays 
+            if True, will slice all the trajectories such that they're all of the same minimum length. 
 
         Raises
         ------
         NotImplementedError
             _description_
         SSException
-            _description_
+            _description_ 
         """
 
         super(SamplingQuality, self).__init__()
@@ -173,6 +174,14 @@ class SamplingQuality:
         self.trajs = parallel_load_trjs(self.traj_list, top=self.top, n_procs=self.n_cpus,**kwargs)
         self.polymer_trajs = parallel_load_trjs(self.polymer_model_traj_list, top=self.polymer_top, n_procs=self.n_cpus, **kwargs)
 
+        if truncate:
+            lengths = []
+            for trj, pol_trj in zip(self.trajs, self.polymer_trajs):
+                lengths.append([trj.n_frames, pol_trj.n_frames])
+            self.min_length = np.min(lengths) - 1
+         
+            self.trajs, self.polymer_trajs = self.__truncate_trajectories()
+
         if str(self.method).lower() == "rmsd" or str(self.method).lower() == "p_vects":
             raise NotImplementedError("This functionality has not been implemented yet")
 
@@ -180,17 +189,34 @@ class SamplingQuality:
         if str(self.method).lower() == "dihedral":
             if self.bwidth > 2*np.pi or not (self.bwidth > 0):
                 raise SSException(f'The bwidth parameter must be between 2*pi and greater than 0. Received {self.bwidth}')
-            
-            if truncate:
-                lengths = []
-                for trj, pol_trj in zip(self.trajs, self.polymer_trajs):
-                    lengths.append([trj.n_frames,pol_trj.n_frames])
-                self.min_length = np.min(lengths) - 1
-                self.psi_angles, self.polymer_psi_angles, self.phi_angles, self.polymer_phi_angles = self.__compute_dihedrals(proteinID=self.proteinID, truncate=self.truncate)
-            else:
-                self.psi_angles, self.polymer_psi_angles, self.phi_angles, self.polymer_phi_angles = self.__compute_dihedrals(proteinID=self.proteinID)
         
-    def __compute_dihedrals(self, proteinID : int = 0, truncate : bool = None) -> np.ndarray:
+            self.psi_angles, self.polymer_psi_angles, self.phi_angles, self.polymer_phi_angles = self.__compute_dihedrals(proteinID=self.proteinID)
+
+    def __truncate_trajectories(self) -> Tuple[List[SSTrajectory], List[SSTrajectory]]:
+        """Internal function used to truncate the lengths of trajectories such that every trajectory has the same number of total frames.
+        Useful for intermediary analysis of ongoing simulations.
+
+        Returns
+        -------
+        Tuple[List[SSTrajectory], List[SSTrajectory]]
+            A tuple containing two lists of SSTrajectory objects.\
+                The first index corresponds to the empirical trajectories.\
+                The second corresonds to the reference model - e.g., the polymer limiting model.
+        """
+        temp_trajs = []
+        temp_pol_trjs = [] 
+        for trj, pol_trj in zip(self.trajs,self.polymer_trajs):
+            temp_trajs.append(
+                    SSTrajectory(TRJ=trj.proteinTrajectoryList[self.proteinID].traj[0:self.min_length])
+                )
+            temp_pol_trjs.append(
+                    SSTrajectory(TRJ=pol_trj.proteinTrajectoryList[self.proteinID].traj[0:self.min_length])
+                )
+
+        return temp_trajs, temp_pol_trjs
+
+
+    def __compute_dihedrals(self, proteinID : int = 0) -> np.ndarray:
         """internal function to computes the phi/psi backbone dihedrals at a given index (proteinID) in the proteinTrajectoryList of an SSTrajectory.
 
         Parameters
@@ -198,8 +224,6 @@ class SamplingQuality:
         proteinID : int, optional
             The ID of the protein where the ID is the proteins position
             in the ``self.proteinTrajectoryList`` list, by default 0.
-        truncate  : bool, optional
-            If True, will truncate each numpy array such that the longest array is the same length as the shortest trajectory.
         
         Returns
         -------
@@ -217,45 +241,8 @@ class SamplingQuality:
             polymer_psi_angles.append(pol_trj.proteinTrajectoryList[proteinID].get_angles("psi")[1])
             polymer_phi_angles.append(pol_trj.proteinTrajectoryList[proteinID].get_angles("phi")[1])
         
-        if truncate:
-            trunc_psi_angles, trunc_polymer_psi_angles, trunc_phi_angles,trunc_polymer_phi_angles = self.__truncate_arrays_by_min_length(psi_angles, polymer_psi_angles, phi_angles, polymer_phi_angles)
-            return np.array([trunc_psi_angles, trunc_polymer_psi_angles, trunc_phi_angles, trunc_polymer_phi_angles])
-        else:
-            return np.array([psi_angles, polymer_psi_angles, phi_angles, polymer_phi_angles])
+        return np.array([psi_angles, polymer_psi_angles, phi_angles, polymer_phi_angles])
 
-    def __truncate_arrays_by_min_length(self, 
-                                        psi_angles : List[np.ndarray], 
-                                        polymer_psi_angles : List[np.ndarray], 
-                                        phi_angles : List[np.ndarray],
-                                        polymer_phi_angles : List[np.ndarray]
-                                        ) -> np.ndarray:
-        """internal function to truncate arrays to ensure they're all the same shape. This is useful for when 
-        performing analysis on trajectories that haven't completed, and have a varied number of conformations.
-
-        Parameters
-        ----------
-        psi_angles : List[np.ndarray]
-            _description_
-        polymer_psi_angles : List[np.ndarray]
-            _description_
-        phi_angles : List[np.ndarray]
-            _description_
-        polymer_phi_angles : List[np.ndarray]
-            _description_
-
-        Returns
-        -------
-        np.ndarray
-            _description_
-        """
-        trunc_psi_angles, trunc_phi_angles, trunc_polymer_psi_angles, trunc_polymer_phi_angles = [],[],[],[]
-        for psi, pol_psi, phi, pol_phi in zip(psi_angles, polymer_psi_angles, phi_angles, polymer_phi_angles):
-                trunc_psi_angles.append(psi[:, self.min_length])
-                trunc_polymer_psi_angles.append(pol_psi[:, self.min_length])
-                trunc_phi_angles.append(phi[:, self.min_length])
-                trunc_polymer_phi_angles.append(pol_phi[:, self.min_length])
-                
-        return np.array([trunc_psi_angles,trunc_polymer_psi_angles,trunc_phi_angles,trunc_polymer_phi_angles])
 
     def compute_dihedral_hellingers(self) -> np.ndarray:
         """Compute the hellingers distance for both the phi and psi angles between a set of trajectories.
@@ -266,15 +253,14 @@ class SamplingQuality:
             The hellinger distances between the probability density distributions for the phi and psi angles for a set of trajectories.
         """
         bins = self.get_degree_bins()
-
-        psi_trj_pdfs = self.compute_pdf(self.psi_angles, bins=bins)
-        psi_pol_trj_pdfs = self.compute_pdf(self.polymer_psi_angles, bins=bins)
-        
         phi_trj_pdfs = self.compute_pdf(self.phi_angles, bins=bins)
         phi_pol_trj_pdfs = self.compute_pdf(self.polymer_phi_angles, bins=bins)
 
-        psi_hellingers = hellinger_distance(psi_trj_pdfs, psi_pol_trj_pdfs)
+        psi_trj_pdfs = self.compute_pdf(self.psi_angles, bins=bins)
+        psi_pol_trj_pdfs = self.compute_pdf(self.polymer_psi_angles, bins=bins)
+
         phi_hellingers = hellinger_distance(phi_trj_pdfs, phi_pol_trj_pdfs)
+        psi_hellingers = hellinger_distance(psi_trj_pdfs, psi_pol_trj_pdfs)
 
         return np.array([phi_hellingers, psi_hellingers])
 
@@ -287,15 +273,15 @@ class SamplingQuality:
             The relative entropy between the probability density distributions for the phi and psi angles for a set of trajectories.
         """
         bins = self.get_degree_bins()
-
-        psi_trj_pdfs = self.compute_pdf(self.psi_angles, bins=bins)
-        psi_pol_trj_pdfs = self.compute_pdf(self.polymer_psi_angles, bins=bins)
         
         phi_trj_pdfs = self.compute_pdf(self.phi_angles, bins=bins)
         phi_pol_trj_pdfs = self.compute_pdf(self.polymer_phi_angles, bins=bins)
 
-        psi_rel_entr = rel_entropy(psi_trj_pdfs, psi_pol_trj_pdfs)
+        psi_trj_pdfs = self.compute_pdf(self.psi_angles, bins=bins)
+        psi_pol_trj_pdfs = self.compute_pdf(self.polymer_psi_angles, bins=bins)
+
         phi_rel_entr = rel_entropy(phi_trj_pdfs, phi_pol_trj_pdfs)
+        psi_rel_entr = rel_entropy(psi_trj_pdfs, psi_pol_trj_pdfs)
 
         return np.array([phi_rel_entr, psi_rel_entr])
 
@@ -422,7 +408,7 @@ class SamplingQuality:
     
     @property
     def hellingers_distances(self):
-        """property for getting the pdfs computed from the phi/psi angles respectively
+        """property for getting the hellingers distances computed from the phi/psi angles respectively
 
         Returns
         -------
