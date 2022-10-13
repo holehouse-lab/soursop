@@ -178,6 +178,8 @@ class SamplingQuality:
             lengths = []
             for trj, pol_trj in zip(self.trajs, self.polymer_trajs):
                 lengths.append([trj.n_frames, pol_trj.n_frames])
+            
+            # shift frames for np.array indexing purposes
             self.min_length = np.min(lengths) - 1
          
             self.trajs, self.polymer_trajs = self.__truncate_trajectories()
@@ -213,7 +215,7 @@ class SamplingQuality:
                     SSTrajectory(TRJ=pol_trj.proteinTrajectoryList[self.proteinID].traj[0:self.min_length])
                 )
 
-        return temp_trajs, temp_pol_trjs
+        return (temp_trajs, temp_pol_trjs)
 
 
     def __compute_dihedrals(self, proteinID : int = 0) -> np.ndarray:
@@ -334,47 +336,61 @@ class SamplingQuality:
         bins = np.arange(-180, 180+bwidth, bwidth)
         return bins
 
-    def plot_phi_psi_hellingers(self,figsize=(10,15),cmap=None, **kwargs):
-        """plot heatmaps for phi and psi hellingers distances.\
+    def plot_phi_psi_metric(self, metric : str ="hellingers",figsize=(10,15),cmap=None, **kwargs):
+        """Plot heatmaps for phi and psi metrics.\
         Optional keyword arguments are passed to 'plt.subplots'
 
         Parameters
         ----------
+        metric : str, optional
+            The distance metric to use - either "hellingers" or "relative entropy", by default "hellingers"
+            Note: relative entropy is a divergence, and not a true distance metric. 
         figsize : tuple, optional
             dimensions of the figure to be rendered, by default (10,15)
-        cmap : matplotlib colormap, optional
+        cmap : str, optional
             The matplotlib colormap to be used for plotting the figure, by default None
+
+        Raises
+        ------
+        NotImplementedError
+            There is only support for the hellingers distance and relative entropy at present.
         """
+
+        if metric == "hellingers":
+            phi_metric, psi_metric = self.compute_dihedral_hellingers()
+        elif metric == "relative entropy":
+            phi_metric, psi_metric = self.compute_dihedral_rel_entropy()
+        else:
+            raise NotImplementedError(f"The metric: {metric} is not implemented.")
+
         if cmap == None:
             cmap = sns.color_palette("light:b", as_cmap=True)
 
-        phi_hellingers, psi_hellingers = self.compute_dihedral_hellingers()
         fig, axes = plt.subplots(2,1,figsize=figsize,sharex=True,sharey=True, **kwargs)
         for i,ax in enumerate(axes):
             if i == 0:
-                ax.set_xticks(np.arange(0,phi_hellingers[:,:].shape[1]+1))
-                ax.set_yticks(np.arange(0,phi_hellingers[:,:].shape[0]+1))
+                ax.set_xticks(np.arange(0,phi_metric[:,:].shape[1]+1))
+                ax.set_yticks(np.arange(0,phi_metric[:,:].shape[0]+1))
 
-                ax.set_xticklabels(np.arange(1,phi_hellingers[:,:].shape[1]+2),fontsize=16)
-                ax.set_yticklabels(np.arange(1,phi_hellingers[:,:].shape[0]+2),fontsize=16)
+                ax.set_xticklabels(np.arange(1,phi_metric[:,:].shape[1]+2),fontsize=16)
+                ax.set_yticklabels(np.arange(1,phi_metric[:,:].shape[0]+2),fontsize=16)
 
-                # ax.set_xlabel("Residue index",fontsize=24)
                 ax.set_ylabel("Trajectory Index",fontsize=24)
 
-                ax.set_title("Phi Hellinger's Distance",fontsize=24)
-                im1 = ax.imshow(phi_hellingers[:,:],cmap=cmap)
+                ax.set_title(f"Phi {metric}",fontsize=24)
+                im1 = ax.imshow(phi_metric[:,:],cmap=cmap)
             else:
-                ax.set_xticks(np.arange(0,psi_hellingers[:,:].shape[1]+1))
-                ax.set_yticks(np.arange(0,psi_hellingers[:,:].shape[0]+1))
+                ax.set_xticks(np.arange(0,psi_metric[:,:].shape[1]+1))
+                ax.set_yticks(np.arange(0,psi_metric[:,:].shape[0]+1))
 
-                ax.set_xticklabels(np.arange(1,psi_hellingers[:,:].shape[1]+2),fontsize=16)
-                ax.set_yticklabels(np.arange(1,psi_hellingers[:,:].shape[0]+2),fontsize=16)
+                ax.set_xticklabels(np.arange(1,psi_metric[:,:].shape[1]+2),fontsize=16)
+                ax.set_yticklabels(np.arange(1,psi_metric[:,:].shape[0]+2),fontsize=16)
 
                 ax.set_xlabel("Residue index",fontsize=24)
                 ax.set_ylabel("Trajectory Index",fontsize=24)
 
-                ax.set_title("Psi Hellinger's Distance",fontsize=24)
-                im2 = ax.imshow(psi_hellingers[:,:],cmap=cmap)
+                ax.set_title(f"Psi {metric}",fontsize=24)
+                im2 = ax.imshow(psi_metric[:,:],cmap=cmap)
         plt.tight_layout()
         fig.colorbar(im1, ax=axes.ravel().tolist())
 
