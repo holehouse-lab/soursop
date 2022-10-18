@@ -336,7 +336,13 @@ class SamplingQuality:
         bins = np.arange(-180, 180+bwidth, bwidth)
         return bins
 
-    def plot_phi_psi_metric(self, metric : str ="hellingers",figsize=(10,15),cmap=None, **kwargs):
+    def plot_phi_psi_metric(self, metric : str ="hellingers",
+                                    figsize=(10,15), 
+                                    cmap=None,
+                                    filename : str="sampling_quality.png",
+                                    save_dir=None,
+                                    **kwargs,        
+                            ):
         """Plot heatmaps for phi and psi metrics.\
         Optional keyword arguments are passed to 'plt.subplots'
 
@@ -393,6 +399,9 @@ class SamplingQuality:
                 im2 = ax.imshow(psi_metric[:,:],cmap=cmap)
         plt.tight_layout()
         fig.colorbar(im1, ax=axes.ravel().tolist())
+        if save_dir is not None:
+            outpath = os.path.join(save_dir,filename)
+            fig.savefig(f"{outpath}",dpi=300)
 
     @property
     def polymer_pdfs(self):
