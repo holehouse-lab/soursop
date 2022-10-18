@@ -405,7 +405,7 @@ class SamplingQuality:
             fig.savefig(f"{outpath}",dpi=300)
 
     @property
-    def polymer_pdfs(self):
+    def trj_pdfs(self):
         """property for getting the pdfs computed from the phi/psi angles respectively
 
         Returns
@@ -419,7 +419,7 @@ class SamplingQuality:
         return np.array([pol_phi_pdf, pol_psi_pdf])
 
     @property
-    def trj_pdfs(self):
+    def polymer_pdfs(self):
         """property for getting the pdfs computed from the phi/psi angles respectively
 
         Returns
