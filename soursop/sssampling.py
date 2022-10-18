@@ -115,7 +115,7 @@ class SamplingQuality:
                        top_file : str,
                        polymer_top : str,
                        method : str, 
-                       bwidth : float = 0.2617993877991494,
+                       bwidth : float = np.deg2rad(15),  #0.2617993877991494,
                        proteinID : int = 0,
                        n_cpus : int = None,
                        truncate : bool = False,
@@ -332,7 +332,8 @@ class SamplingQuality:
         np.ndarray
             an array of the bin edges in degrees
         """
-        bwidth = np.rad2deg(self.bwidth)
+        # have to round the conversion to handle floating point error so we get the right bins
+        bwidth = np.round(np.rad2deg(self.bwidth))
         bins = np.arange(-180, 180+bwidth, bwidth)
         return bins
 
