@@ -23,6 +23,7 @@ from natsort import natsorted
 import fnmatch
 import seaborn as sns
 import matplotlib.pyplot as plt
+import pandas as pd
 
 def hellinger_distance(p : np.ndarray, q : np.ndarray) -> np.ndarray:
     """
@@ -352,7 +353,7 @@ class SamplingQuality:
         bins = np.arange(-180, 180+bwidth, bwidth)
         return bins
 
-    def plot_phi_psi_metric(self, metric : str ="hellingers",
+    def plot_phi_psi_heatmap(self, metric : str ="hellingers",
                                     figsize=(40,20), 
                                     annotate=True,
                                     cmap=None,
@@ -423,6 +424,52 @@ class SamplingQuality:
         g2.set_xticklabels(np.arange(1,psi_metric[:,:].shape[1]+1),fontsize=36)
         g2.set_yticklabels(np.arange(1,psi_metric[:,:].shape[0]+1),fontsize=36)
         axcb.tick_params(labelsize=36)
+        plt.tight_layout()
+        if save_dir is not None:
+            os.makedirs(save_dir,exist_ok=True)
+            outpath = os.path.join(save_dir,filename)
+            fig.savefig(f"{outpath}",dpi=300)
+
+    def plot_phi_psi_stripplot(self, metric : str ="hellingers",
+                                    figsize : tuple =(20,10), 
+                                    jitter : float = 0.4,
+                                    cmap=None,
+                                    vmin : float =0.0,
+                                    vmax : float =1.0,
+                                    filename : str="sampling_quality.png",
+                                    save_dir : str =None,
+                                    **kwargs,        
+                            ):
+        if metric == "hellingers":
+            ax_label = "Hellinger's Distance"
+            phi_metric, psi_metric = self.compute_dihedral_hellingers()
+            phi_df, psi_df = pd.DataFrame(phi_metric), pd.DataFrame(psi_metric)
+        elif metric == "relative entropy":
+            ax_label = "Relative Entropy"
+            phi_metric, psi_metric = self.compute_dihedral_rel_entropy()
+            phi_df, psi_df = pd.DataFrame(phi_metric), pd.DataFrame(psi_metric)
+        else:
+            raise NotImplementedError(f"The metric: {metric} is not implemented.")
+
+        fig, axes = plt.subplots(2,1,facecolor="w",figsize=figsize)
+        sns.stripplot(data=phi_df,jitter=jitter,ax=axes[0])
+        axes[0].set_title("Phi Dihedrals",fontsize=36)
+        axes[0].set_xlabel("Residue",fontsize=24)
+        axes[0].set_ylabel(f"{ax_label}",fontsize=24)
+        axes[0].set_xticks(np.arange(0,phi_df.shape[1]),fontsize=16)
+        axes[0].set_xticklabels(np.arange(1,phi_df.shape[1]+1),fontsize=16)
+        axes[0].set_yticks(np.arange(.2,1.2,0.2),fontsize=16)
+        axes[0].set_yticklabels(np.round(np.arange(.2,1.2,0.2),1),fontsize=16)
+
+        sns.stripplot(data=psi_df,jitter=jitter,ax=axes[1])
+        axes[1].set_title("Psi Dihedrals",fontsize=36)
+        axes[1].set_xlabel("Residue",fontsize=24)
+        axes[1].set_ylabel(f"{ax_label}",fontsize=24)
+        axes[1].set_xticks(np.arange(0,psi_df.shape[1]),fontsize=16)
+        axes[1].set_xticklabels(np.arange(1,psi_df.shape[1]+1),fontsize=16)
+        axes[1].set_yticks(np.arange(.2,1.2,0.2),fontsize=16)
+        axes[1].set_yticklabels(np.round(np.arange(.2,1.2,0.2),1),fontsize=16)
+
         plt.tight_layout()
         if save_dir is not None:
             os.makedirs(save_dir,exist_ok=True)
