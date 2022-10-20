@@ -15,7 +15,7 @@ from scipy.special import rel_entr
 from typing import List, Union, Tuple
 import pathlib
 import os
-import soursop.ssutils 
+from soursop import ssutils
 from .ssexceptions import SSException
 from .sstrajectory import parallel_load_trjs, SSTrajectory
 from glob import glob
@@ -56,7 +56,22 @@ def hellinger_distance(p : np.ndarray, q : np.ndarray) -> np.ndarray:
 
 
 def rel_entropy(p : np.ndarray, q : np.ndarray) -> np.ndarray:
-    """Computes the relative entropy between two probability distributions p and q."""
+    """Computes the relative entropy between two probability distributions p and q.
+    Parameters
+    ----------
+    p : np.ndarray
+        a probability distribution function, or series of probabiliy distribution functions, to compute the relative entropy distance on.
+        p and q must be the same shape
+
+    q : np.ndarray
+        a probability distribution function, or series of probabiliy distribution functions, to compute the relative entropy on
+        p and q must be the same shape
+    
+    Returns
+    -------
+    np.ndarray
+        The relative entropy for each residue in the sequence
+    """
     if p.ndim == 3 and q.ndim == 3:
         relative_entropy = np.sum(rel_entr(p,q), axis=2)
     elif p.ndim == 2 and q.ndim == 2:
@@ -187,7 +202,7 @@ class SamplingQuality:
         if str(self.method).lower() == "rmsd" or str(self.method).lower() == "p_vects":
             raise NotImplementedError("This functionality has not been implemented yet")
 
-        soursop.ssutils.validate_keyword_option(method, ['dihedral', 'rmsd', 'p_vects'], 'method')
+        ssutils.validate_keyword_option(method, ['dihedral', 'rmsd', 'p_vects'], 'method')
         if str(self.method).lower() == "dihedral":
             if self.bwidth > 2*np.pi or not (self.bwidth > 0):
                 raise SSException(f'The bwidth parameter must be between 2*pi and greater than 0. Received {self.bwidth}')
@@ -306,9 +321,9 @@ class SamplingQuality:
         """
         # Lambda function is used to ignore the bin edges returned by np.histogram at index 1
         if arr.ndim == 3:
-            pdf = np.apply_along_axis(lambda col: np.histogram(col, bins=bins, density=True)[0], axis=2, arr=arr)
+            pdf = np.apply_along_axis(lambda col: np.histogram(col, bins=bins, density=True)[0], axis=2, arr=arr)*np.round(np.rad2deg(self.bwidth))
         else:
-            pdf = np.apply_along_axis(lambda col: np.histogram(col, bins=bins, density=True)[0], axis=1, arr=arr)
+            pdf = np.apply_along_axis(lambda col: np.histogram(col, bins=bins, density=True)[0], axis=1, arr=arr)*np.round(np.rad2deg(self.bwidth))
         return pdf
 
 
@@ -338,8 +353,11 @@ class SamplingQuality:
         return bins
 
     def plot_phi_psi_metric(self, metric : str ="hellingers",
-                                    figsize=(10,15), 
+                                    figsize=(40,20), 
+                                    annotate=True,
                                     cmap=None,
+                                    vmin=0.0,
+                                    vmax=1.0,
                                     filename : str="sampling_quality.png",
                                     save_dir=None,
                                     **kwargs,        
@@ -353,54 +371,61 @@ class SamplingQuality:
             The distance metric to use - either "hellingers" or "relative entropy", by default "hellingers"
             Note: relative entropy is a divergence, and not a true distance metric. 
         figsize : tuple, optional
-            dimensions of the figure to be rendered, by default (10,15)
+            dimensions of the figure to be rendered, by default (40,20)
+        annotate : bool, optional
+            Whether to display the data values from the metric in the plot, by default True
         cmap : str, optional
             The matplotlib colormap to be used for plotting the figure, by default None
+        vmin : float, optional
+            Minimum anchor point for colorbar, by default 0.0
+        vmax : float, optional
+            Maximum anchor point for colorbar, by default 1.0
+        filename : str, optional
+            _description_, by default "sampling_quality.png"
+        save_dir : _type_, optional
+            _description_, by default None
 
         Raises
         ------
         NotImplementedError
-            There is only support for the hellingers distance and relative entropy at present.
+            _description_
         """
-
         if metric == "hellingers":
             phi_metric, psi_metric = self.compute_dihedral_hellingers()
         elif metric == "relative entropy":
             phi_metric, psi_metric = self.compute_dihedral_rel_entropy()
         else:
             raise NotImplementedError(f"The metric: {metric} is not implemented.")
-
+        
         if cmap == None:
             cmap = sns.color_palette("light:b", as_cmap=True)
 
-        fig, axes = plt.subplots(2,1,figsize=figsize,sharex=True,sharey=True, **kwargs)
-        for i,ax in enumerate(axes):
-            if i == 0:
-                ax.set_xticks(np.arange(0,phi_metric[:,:].shape[1]+1))
-                ax.set_yticks(np.arange(0,phi_metric[:,:].shape[0]+1))
+        fig, (ax1,ax2,axcb) = plt.subplots(1,3,figsize=figsize, gridspec_kw={'width_ratios':[1,1,0.05]},**kwargs)
+        
+        ax1.get_shared_y_axes().join(ax2)
+        g1 = sns.heatmap(phi_metric,annot=annotate,annot_kws={"fontsize":24,"color":"k"},vmin=vmin,vmax=vmax,cmap=cmap,cbar=False,ax=ax1)
+        g1.set_title(f'Phi {metric}',fontsize=36)
+        g1.set_ylabel('Trajectory Index',fontsize=36)
+        g1.set_xlabel('Residue Index',fontsize=36)
+        g1.set_xticks(np.arange(0,phi_metric[:,:].shape[1])+0.5)
+        g1.set_yticks(np.arange(0,phi_metric[:,:].shape[0])+0.5)
 
-                ax.set_xticklabels(np.arange(1,phi_metric[:,:].shape[1]+2),fontsize=16)
-                ax.set_yticklabels(np.arange(1,phi_metric[:,:].shape[0]+2),fontsize=16)
+        g1.set_xticklabels(np.arange(1,phi_metric[:,:].shape[1]+1),fontsize=36)
+        g1.set_yticklabels(np.arange(1,phi_metric[:,:].shape[0]+1),fontsize=36)
 
-                ax.set_ylabel("Trajectory Index",fontsize=24)
+        g2 = sns.heatmap(psi_metric,annot=annotate,annot_kws={"fontsize":24,"color":"k"},vmin=vmin,vmax=vmax,cmap=cmap,cbar_ax=axcb,ax=ax2)
+        g2.set_title(f'Psi {metric}',fontsize=36)
+        g2.set_ylabel('Trajectory Index',fontsize=36)
+        g2.set_xlabel('Residue Index',fontsize=36)
+        g2.set_xticks(np.arange(0,psi_metric[:,:].shape[1])+0.5)
+        g2.set_yticks(np.arange(0,psi_metric[:,:].shape[0])+0.5)
 
-                ax.set_title(f"Phi {metric}",fontsize=24)
-                im1 = ax.imshow(phi_metric[:,:],cmap=cmap)
-            else:
-                ax.set_xticks(np.arange(0,psi_metric[:,:].shape[1]+1))
-                ax.set_yticks(np.arange(0,psi_metric[:,:].shape[0]+1))
-
-                ax.set_xticklabels(np.arange(1,psi_metric[:,:].shape[1]+2),fontsize=16)
-                ax.set_yticklabels(np.arange(1,psi_metric[:,:].shape[0]+2),fontsize=16)
-
-                ax.set_xlabel("Residue index",fontsize=24)
-                ax.set_ylabel("Trajectory Index",fontsize=24)
-
-                ax.set_title(f"Psi {metric}",fontsize=24)
-                im2 = ax.imshow(psi_metric[:,:],cmap=cmap)
+        g2.set_xticklabels(np.arange(1,psi_metric[:,:].shape[1]+1),fontsize=36)
+        g2.set_yticklabels(np.arange(1,psi_metric[:,:].shape[0]+1),fontsize=36)
+        axcb.tick_params(labelsize=36)
         plt.tight_layout()
-        fig.colorbar(im1, ax=axes.ravel().tolist())
         if save_dir is not None:
+            os.makedirs(save_dir,exist_ok=True)
             outpath = os.path.join(save_dir,filename)
             fig.savefig(f"{outpath}",dpi=300)
 
