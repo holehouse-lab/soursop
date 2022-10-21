@@ -131,7 +131,7 @@ class SamplingQuality:
                        top_file : str,
                        polymer_top : str,
                        method : str, 
-                       bwidth : float = np.deg2rad(15),  #0.2617993877991494,
+                       bwidth : float = np.deg2rad(15),
                        proteinID : int = 0,
                        n_cpus : int = None,
                        truncate : bool = False,
@@ -153,8 +153,7 @@ class SamplingQuality:
             The method used to compute the hellingers distance between the simulated trajectories and the polymer limiting model.
             options include: 'dihedral' and 'rmsd' or 'p_vects' [not currently implemented]
         bwidth : float, optional
-            bin width parameter for segmenting histogrammed data into buckes\
-            by default 0.2617993877991494 which corresponds to 15 degrees.
+            bin width parameter for segmenting histogrammed data into buckets, by default 15 degrees.
         proteinID : int, optional
             The ID of the protein where the ID is the proteins position
             in the ``self.proteinTrajectoryList`` list, by default 0.
@@ -260,6 +259,29 @@ class SamplingQuality:
             polymer_phi_angles.append(pol_trj.proteinTrajectoryList[proteinID].get_angles("phi")[1])
         
         return np.array([psi_angles, polymer_psi_angles, phi_angles, polymer_phi_angles])
+
+    def __compute_frac_helicity(self, proteinID : int = 0) -> np.ndarray:
+        """internal function to computes the per residue fractional helicity at a given index (proteinID) in the proteinTrajectoryList of an SSTrajectory.
+
+        Parameters
+        ----------
+        proteinID : int, optional
+            The ID of the protein where the ID is the proteins position
+            in the ``self.proteinTrajectoryList`` list, by default 0.
+        
+        Returns
+        -------
+        np.ndarray
+            Returns the fractional helicity for the simulated trajectory and the reference model.
+        """
+        trj_helicity = []
+        reference_helicity = []
+                
+        for trj, ref_traj in zip(self.trajs, self.polymer_trajs):
+            trj_helicity.append(trj.proteinTrajectoryList[proteinID].get_secondary_structure_DSSP()[1])
+            reference_helicity.append(ref_traj.proteinTrajectoryList[proteinID].get_secondary_structure_DSSP()[1])
+            
+        return np.array([trj_helicity, reference_helicity])
 
 
     def compute_dihedral_hellingers(self) -> np.ndarray:
@@ -451,7 +473,10 @@ class SamplingQuality:
         else:
             raise NotImplementedError(f"The metric: {metric} is not implemented.")
 
-        fig, axes = plt.subplots(2,1,facecolor="w",figsize=figsize)
+        trj_frac_helicity, ref_traj_helicity = self.__compute_frac_helicity()
+        helicity_df = pd.DataFrame(trj_frac_helicity)
+
+        fig, axes = plt.subplots(3,1,facecolor="w",figsize=figsize)
         sns.stripplot(data=phi_df,jitter=jitter,ax=axes[0])
         axes[0].set_title("Phi Dihedrals",fontsize=36)
         axes[0].set_xlabel("Residue",fontsize=24)
@@ -469,6 +494,14 @@ class SamplingQuality:
         axes[1].set_xticklabels(np.arange(1,psi_df.shape[1]+1),fontsize=16)
         axes[1].set_yticks(np.arange(.2,1.2,0.2),fontsize=16)
         axes[1].set_yticklabels(np.round(np.arange(.2,1.2,0.2),1),fontsize=16)
+
+        sns.stripplot(data=helicity_df,jitter=jitter,ax=axes[2])
+        axes[2].set_xlabel("Residue",fontsize=24)
+        axes[2].set_ylabel(f"Fractional Helicity",fontsize=24)
+        axes[2].set_xticks(np.arange(0,helicity_df.shape[1]),fontsize=16)
+        axes[2].set_xticklabels(np.arange(1,helicity_df.shape[1]+1),fontsize=16)
+        axes[2].set_yticks(np.arange(.2,1.2,0.2),fontsize=16)
+        axes[2].set_yticklabels(np.round(np.arange(.2,1.2,0.2),1),fontsize=16)
 
         plt.tight_layout()
         if save_dir is not None:
@@ -514,3 +547,14 @@ class SamplingQuality:
             hellingers distance computed from the phi and psi angles with the specified bins.
         """
         return self.compute_dihedral_hellingers()
+
+    @property
+    def fractional_helicity(self):
+        """property for getting the per residue fractional helicity for all trajectories
+
+        Returns
+        -------
+        np.ndarray
+            The per residue fractional helicity for each trajectory in self.trajs and self.polymer_trajs.
+        """
+        return self.__compute_frac_helicity()
