@@ -990,7 +990,8 @@ def parallel_load_trjs(trj_filenames, top, n_procs=1,**kwargs):
         a string for the specified path to the topology file.
     n_procs : int, optional
         Number of separate processors to use for loading, by default 1
-
+    **kwargs: dict, optional
+        Key value pairs to be passed directly to SSTrajectory.
     Returns
     -------
     SSTrajectory 
