@@ -113,14 +113,16 @@ def glob_traj_paths(root_dir : Union[str, pathlib.Path], num_reps : int, mode=No
     else:
         if not exclude_dirs:
             exclude_dirs = ["eq","FULL"]
+        else: 
+            np.unique(exclude_dirs.extend(["eq","FULL"]))
 
         for root, dirs, files in os.walk(root_dir):
             if os.path.basename(root) in exclude_dirs:
                 continue
             for filename in fnmatch.filter(files, traj_name):
-                traj_paths.append(pathlib.Path(os.path.join(root, filename)).absolute().as_posix())
+                traj_paths.append(pathlib.Path(os.path.join(root, filename)).absolute().resolve().as_posix())
             for filename in fnmatch.filter(files, top_name):
-                top_paths.append(pathlib.Path(os.path.join(root, filename)).absolute().as_posix())
+                top_paths.append(pathlib.Path(os.path.join(root, filename)).absolute().resolve().as_posix())
 
     return natsorted(top_paths), natsorted(traj_paths)
 
@@ -190,15 +192,17 @@ class SamplingQuality:
         # best way to do this? idk alex halppp
         self.trajs = parallel_load_trjs(self.traj_list, top=self.top, n_procs=self.n_cpus,**kwargs)
         self.polymer_trajs = parallel_load_trjs(self.polymer_model_traj_list, top=self.polymer_top, n_procs=self.n_cpus, **kwargs)
-
+        
         if truncate:
             lengths = []
             for trj, pol_trj in zip(self.trajs, self.polymer_trajs):
                 lengths.append([trj.n_frames, pol_trj.n_frames])
-            
+
             # shift frames for np.array indexing purposes
             self.min_length = np.min(lengths) - 1
-         
+            
+            print(lengths)
+            f"The maximum trajectory length shared between all replicates is: {self.min_length}"
             self.trajs, self.polymer_trajs = self.__truncate_trajectories()
 
         if str(self.method).lower() == "rmsd" or str(self.method).lower() == "p_vects":
@@ -460,8 +464,8 @@ class SamplingQuality:
             outpath = os.path.join(save_dir,filename)
             fig.savefig(f"{outpath}",dpi=300)
 
-    def __get_all_to_all_trj_comparisons(self) -> Tuple[pd.DataFrame,pd.DataFrame]:
-        """internal function to aggregate an all-to-all comparison of pdfs 
+    def get_all_to_all_trj_comparisons(self, metric : str ="hellingers") -> Tuple[pd.DataFrame,pd.DataFrame]:
+        """function to aggregate an all-to-all comparison of pdfs 
 
         Returns
         -------
@@ -472,10 +476,16 @@ class SamplingQuality:
         psi_pdfs = self.trj_pdfs[1]
         phi_combinations = np.transpose(np.array(tuple(itertools.combinations(phi_pdfs,2))), axes=[1,0,2,3])
         psi_combinations = np.transpose(np.array(tuple(itertools.combinations(psi_pdfs,2))), axes=[1,0,2,3])
-        phi_hellingers = hellinger_distance(phi_combinations[0],phi_combinations[1])
-        psi_hellingers = hellinger_distance(psi_combinations[0],psi_combinations[1])
-
-        return pd.DataFrame(phi_hellingers), pd.DataFrame(psi_hellingers)
+        if metric == "hellingers": 
+            phi_metric = hellinger_distance(phi_combinations[0],phi_combinations[1])
+            psi_metric = hellinger_distance(psi_combinations[0],psi_combinations[1])
+        elif metric == "relative entropy":
+            phi_metric = rel_entropy(phi_combinations[0],phi_combinations[1])
+            psi_metric = rel_entropy(psi_combinations[0],psi_combinations[1])
+        else: 
+            raise NotImplementedError(f"The metric: {metric} is not implemented.")
+            
+        return pd.DataFrame(phi_metric), pd.DataFrame(psi_metric)
 
     def __get_all_to_all_ev_comparison(self) -> Tuple[pd.DataFrame,pd.DataFrame]:
         """internal function to aggregate an all-to-all comparison of pdfs 
@@ -489,6 +499,7 @@ class SamplingQuality:
         phi_ev_pdfs = self.polymer_pdfs[0]
         psi_pdfs = self.trj_pdfs[1]
         psi_ev_pdfs = self.polymer_pdfs[1]
+        # if using this should revisit and do combinations like above
         phi_cartesian_prod = np.transpose(np.array(tuple(itertools.product(phi_pdfs, phi_ev_pdfs))),axes=[1,0,2,3])
         psi_cartesian_prod = np.transpose(np.array(tuple(itertools.product(psi_pdfs, psi_ev_pdfs))),axes=[1,0,2,3])
         phi_hellingers = hellinger_distance(phi_cartesian_prod[0],phi_cartesian_prod[1])
@@ -523,7 +534,7 @@ class SamplingQuality:
         y_ticks = np.arange(.2,1.2,0.2)
         y_ticklabels = np.round(np.arange(.2,1.2,0.2),1)
 
-        # ref not being plotted right now
+        # ref not being juplotted right now
         trj_frac_helicity, ref_traj_helicity = self.__compute_frac_helicity()
         helicity_df = pd.DataFrame(trj_frac_helicity)
 
@@ -577,6 +588,8 @@ class SamplingQuality:
             os.makedirs(save_dir,exist_ok=True)
             outpath = os.path.join(save_dir,filename)
             fig.savefig(f"{outpath}",dpi=300)
+        
+        return (fig, axes)
 
     @property
     def trj_pdfs(self):
@@ -626,4 +639,4 @@ class SamplingQuality:
         np.ndarray
             The per residue fractional helicity for each trajectory in self.trajs and self.polymer_trajs.
         """
-        return self.__compute_frac_helicity()
+        return self.__compute_frac_helicity() 
