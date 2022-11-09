@@ -84,7 +84,7 @@ def rel_entropy(p : np.ndarray, q : np.ndarray) -> np.ndarray:
     return relative_entropy
     
 
-def glob_traj_paths(root_dir : Union[str, pathlib.Path], num_reps : int, mode=None, traj_name="__traj.xtc",top_name="__START.pdb", exclude_dirs=None):
+def glob_traj_paths(root_dir : Union[str, pathlib.Path], num_reps=None, mode=None, traj_name="__traj.xtc",top_name="__START.pdb", exclude_dirs=None):
     """
     This function assembles the list of trajectory and topology paths for a set of simulations.
 
@@ -92,15 +92,15 @@ def glob_traj_paths(root_dir : Union[str, pathlib.Path], num_reps : int, mode=No
     ----------
     root_dir : Union[str, pathlib.path]
         Filepath or list of file paths
-    num_reps : int
-        number of replicates - will iterate over directories from [1,num_reps+1].
     mode : str, optional
         if "mega", the globbing will iterate over directories labeled both "coil_start" and "helical_start", by default None
+    num_reps : int, optional
+        if mode == 'mega' then this flag controls the number of replicates in each directory. 
+        Iterates over ["coil_start","helical_start"] gathering trajectories from child directories [1,num_reps+1], by default None
     traj_name : str, optional
         trajectory filename, by default "__traj.xtc"
     top_name : str, optional
         topology filename, by default "__START.pdb"
-    
     """
     top_paths, traj_paths = [], []
     if str(mode).lower() == "mega":
@@ -127,11 +127,10 @@ def glob_traj_paths(root_dir : Union[str, pathlib.Path], num_reps : int, mode=No
     return natsorted(top_paths), natsorted(traj_paths)
 
 class SamplingQuality:
-    """Compare the sampling quality for a trajectory relative to some arbitrary referene model, usually a polymer limiting model.
-    """
+    """Compare the sampling quality for a trajectory relative to some arbitrary referene model, usually a polymer limiting model."""
  
     def __init__(self, traj_list : List[str], 
-                       polymer_model_traj_list : List[str],
+                       reference_list : List[str],
                        top_file : str,
                        polymer_top : str,
                        method : str, 
@@ -146,13 +145,14 @@ class SamplingQuality:
         Parameters
         ----------
         traj_list : List[str]
-            a list of the trajectories associated with the simulated trajectories.
-        polymer_model_traj_list : List[str]
-            a list of the trajectories associated with the limiting polymer model.
+            a list of the trajectory paths associated with the simulated trajectories.
+        reference_list : List[str]
+            a list of the trajectory paths associated with the reference model - usually a limiting polymer model.
         top_file : str
             path to the simulated trajectories topology file.
-        polymer_top : str
-            path to the polymer model's topology file.
+        reference_top : str
+            path to the reference topology - usually the same topology file if using a polymer model, 
+            but can differ if reference is e.g., a mutant.
         method : str
             The method used to compute the hellingers distance between the simulated trajectories and the polymer limiting model.
             options include: 'dihedral' and 'rmsd' or 'p_vects' [not currently implemented]
@@ -169,14 +169,14 @@ class SamplingQuality:
         Raises
         ------
         NotImplementedError
-            _description_
+            Raised when the requested functionality has not yet been implemented.
         SSException
-            _description_ 
+            Raised when the keyword methodology is not part of the validated options. 
         """
 
         super(SamplingQuality, self).__init__()
         self.traj_list = traj_list
-        self.polymer_model_traj_list = polymer_model_traj_list
+        self.self.reference_list = reference_list
         self.top = top_file
         self.polymer_top = polymer_top
         self.proteinID = proteinID
@@ -191,7 +191,7 @@ class SamplingQuality:
         # Should probably add option to pass trajectories directly, and then also check for that optionality here 
         # best way to do this? idk alex halppp
         self.trajs = parallel_load_trjs(self.traj_list, top=self.top, n_procs=self.n_cpus,**kwargs)
-        self.polymer_trajs = parallel_load_trjs(self.polymer_model_traj_list, top=self.polymer_top, n_procs=self.n_cpus, **kwargs)
+        self.polymer_trajs = parallel_load_trjs(self.self.reference_list, top=self.polymer_top, n_procs=self.n_cpus, **kwargs)
         
         if truncate:
             lengths = []
@@ -201,8 +201,7 @@ class SamplingQuality:
             # shift frames for np.array indexing purposes
             self.min_length = np.min(lengths) - 1
             
-            print(lengths)
-            f"The maximum trajectory length shared between all replicates is: {self.min_length}"
+            print(f"Successfully truncated.\nThe shortest trajectory is: {self.min_length} frames. All trajectories truncated to {self.min_length}")
             self.trajs, self.polymer_trajs = self.__truncate_trajectories()
 
         if str(self.method).lower() == "rmsd" or str(self.method).lower() == "p_vects":
