@@ -26,6 +26,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from xhistogram.core import histogram
 import itertools
+from matplotlib import transforms
 
 def hellinger_distance(p : np.ndarray, q : np.ndarray) -> np.ndarray:
     """
@@ -386,6 +387,141 @@ class SamplingQuality:
         bins = np.arange(-180, 180+bwidth, bwidth)
         return bins
 
+    def quality_plot(self, dihedral="phi", increment : int = 5, figsize=(7,5), 
+                    dpi=400, panel_labels = False, fontsize = 10, save_dir=None):
+        """plotting functionality for quick visual inspection of sampling quality
+
+        Parameters
+        ----------
+        dihedral : str, optional
+            the torsional angle to assess the quality of. Current options are phi and psi, by default "phi"
+        increment : int, optional
+            x axis stride, by default 5
+        figsize : tuple, optional
+            the dimensions of the figure, by default (7,5)
+        dpi : int, optional
+            the dpi to save the figure, by default 400
+        panel_labels : bool, optional
+            whether or not to show manuscript figure panel labels, by default False
+        fontsize : int, optional
+            fontsize for all labels, by default 10
+        save_dir : _type_, optional
+            the directory to save the plotted graph in, by default None
+
+        Returns
+        -------
+        tuple
+            corresponding figure and axis of the subplot
+
+        Raises
+        ------
+        NotImplementedError
+            Raised when quality assessment is requested on a dihedral angle
+            that is not currently supported
+        """
+        
+        fig, axd = plt.subplot_mosaic(
+                                    """AABB;CCDD""", 
+                                    sharex=True,
+                                    figsize=figsize,
+                                    dpi=dpi,
+                                    facecolor="w",
+                                    gridspec_kw={'height_ratios': [2,2]}
+                                )
+        if dihedral == "phi":
+            metric = self.hellingers_distances[0]
+        elif dihedral == "psi":
+            metric = self.hellingers_distances[1]
+        else:
+            raise NotImplementedError
+        
+        phi_all_to_all, psi_all_to_all = self.get_all_to_all_trj_comparisons()
+        
+        trj_helicity, ref_helicity = self.fractional_helicity
+        
+        n_res = metric.shape[-1]
+        idx = np.arange(1, n_res+1)
+
+        for ax in axd:
+            if ax == "A":
+                axd[ax].set_yticks([0,1], fontsize=fontsize)
+                axd[ax].set_yticklabels([0,1], fontsize=fontsize)
+                axd[ax].set_ylim([0,1])
+                axd[ax].set_ylabel("Hellinger's Distance",fontsize=fontsize)
+                axd[ax].set_title("Comparison to the Excluded Volume Limit",fontsize=fontsize)
+
+                axd[ax].set_xticks(np.arange(increment,idx[-1],increment),fontsize=fontsize)
+                axd[ax].set_xticklabels(np.arange(increment,idx[-1],increment),fontsize=fontsize)
+                axd[ax].set_xlim([0,idx[-1]+1])
+                
+                # plot all red marks
+                axd[ax].plot(idx, metric.transpose(), '.r',ms=4, alpha=0.3,mew=0)
+
+                # plot mean
+                axd[ax].plot(idx, np.mean(metric,axis=0),'sk-',ms=2, alpha=1,mew=0,linewidth=0.5)   
+                
+            elif ax == "B":
+                axd[ax].set_yticks([0,1], fontsize=fontsize)
+                axd[ax].set_yticklabels([0,1], fontsize=fontsize)
+                axd[ax].set_ylim([0,1])
+                axd[ax].set_ylabel("Hellinger's Distance",fontsize=fontsize)
+                
+                axd[ax].set_title("All-to-All Trajectory Comparison",fontsize=fontsize)
+                
+                axd[ax].set_xticks(np.arange(increment,idx[-1],increment),fontsize=fontsize)
+                axd[ax].set_xticklabels(np.arange(increment,idx[-1],increment),fontsize=fontsize)
+                axd[ax].set_xlim([0,idx[-1]+1])
+
+                axd[ax].plot(idx, phi_all_to_all.transpose(), '.r',ms=4, alpha=0.3,mew=0)
+
+                # plot mean
+                axd[ax].plot(idx, np.mean(phi_all_to_all,axis=0),'sk-',ms=2, alpha=1,mew=0,linewidth=0.5)   
+            
+            elif ax == "C":
+                axd[ax].spines.right.set_visible(False)
+                axd[ax].spines.top.set_visible(False)
+                axd[ax].set_yticks([0,1], fontsize=fontsize)
+                axd[ax].set_yticklabels([0,1], fontsize=fontsize)
+                axd[ax].set_ylim([0,1])
+                axd[ax].set_ylabel("Hellinger's Distance\nmax - min",fontsize=fontsize)
+                axd[ax].set_xlabel("Residue",fontsize=fontsize)
+                
+                max_minus_min = np.ptp(metric,axis=0)
+                axd[ax].bar(idx, max_minus_min, width=0.8, color='k')
+            
+
+            elif ax == "D":       
+                axd[ax].set_yticks([0,1], fontsize=fontsize)
+                axd[ax].set_yticklabels([0,1], fontsize=fontsize)
+                axd[ax].set_ylim([0,1])
+                axd[ax].set_ylabel("Fractional Helicity",fontsize=fontsize)        
+                axd[ax].set_xlabel("Residue",fontsize=fontsize)
+                
+                axd[ax].set_xticks(np.arange(increment,idx[-1],increment),fontsize=fontsize)
+                axd[ax].set_xticklabels(np.arange(increment,idx[-1],increment),fontsize=fontsize)
+                axd[ax].set_xlim([0,idx[-1]+1])
+                
+                # plot red
+                axd[ax].plot(idx, trj_helicity.transpose(), '.r',ms=4, alpha=0.3,mew=0)
+
+                # plot line avg helicity
+                axd[ax].plot(idx, np.mean(trj_helicity,axis=0),'sk-',ms=2, alpha=1,mew=0,linewidth=0.5)
+        
+        if panel_labels:
+            for ax in axd:
+                trans = transforms.ScaledTranslation(-20/72, 7/72, fig.dpi_scale_trans)
+                axd[ax].text(-0.0825, 1.10, ax, transform=axd[ax].transAxes+trans,
+                        fontsize=fontsize, fontweight='bold', va='top', ha='right')
+
+        plt.tight_layout()
+        
+        if save_dir is not None:
+                os.makedirs(save_dir,exist_ok=True)
+                outpath = os.path.join(save_dir,f"{dihedral}_hellingers.pdf")
+                fig.savefig(f"{outpath}",dpi=dpi)
+        
+        return fig, axd
+
     def plot_phi_psi_heatmap(self, metric : str ="hellingers",
                                    figsize=(40,20), 
                                    annotate=True,
@@ -468,14 +604,24 @@ class SamplingQuality:
 
         Returns
         -------
-        Tuple[pd.DataFrame,pd.DataFrame]
+        Tuple[pd.DataFrame, pd.DataFrame]
             all-to-all trajectory comparisons for the hellingers distances in 'self.trj_pdfs'
         """
         phi_pdfs = self.trj_pdfs[0]
         psi_pdfs = self.trj_pdfs[1]
-        phi_combinations = np.transpose(np.array(tuple(itertools.combinations(phi_pdfs,2))), axes=[1,0,2,3])
-        psi_combinations = np.transpose(np.array(tuple(itertools.combinations(psi_pdfs,2))), axes=[1,0,2,3])
-        if metric == "hellingers": 
+        
+        if phi_pdfs.shape[0] == 1 or psi_pdfs.shape[0] == 1:
+            # if only 1 simulated traj and 1 ref traj all-to-all is just a 1:1 comparison.
+            phi_combinations = np.transpose(np.array(tuple(itertools.combinations(phi_pdfs,1))), axes=[1,0,2,3])
+            psi_combinations = np.transpose(np.array(tuple(itertools.combinations(psi_pdfs,1))), axes=[1,0,2,3])
+        else:
+            # returned array is (n_combinations, 2, num_resi, num_bins)
+            # where 2 corresponds to (phi, psi) dimensions respectively
+            # transposed for my sanity for indexing
+            phi_combinations = np.transpose(np.array(tuple(itertools.combinations(phi_pdfs,2))), axes=[1,0,2,3])
+            psi_combinations = np.transpose(np.array(tuple(itertools.combinations(psi_pdfs,2))), axes=[1,0,2,3])
+        
+        if metric == "hellingers":
             phi_metric = hellinger_distance(phi_combinations[0],phi_combinations[1])
             psi_metric = hellinger_distance(psi_combinations[0],psi_combinations[1])
         elif metric == "relative entropy":
@@ -505,91 +651,6 @@ class SamplingQuality:
         psi_hellingers = hellinger_distance(psi_cartesian_prod[0],psi_cartesian_prod[1])
         return pd.DataFrame(phi_hellingers), pd.DataFrame(psi_hellingers)
 
-    def plot_phi_psi_stripplot(self, metric : str ="hellingers",
-                                    figsize : tuple =(20,30), 
-                                    jitter : float = 0.4,
-                                    cmap=None,
-                                    vmin : float =0.0,
-                                    vmax : float =1.0,
-                                    filename : str="sampling_quality.png",
-                                    save_dir : str =None,
-                                    fontsize : int = 16,
-                                    **kwargs,   
-                            ):
-        if metric == "hellingers":
-            ax_label = "Hellinger's Distance"
-            phi_metric, psi_metric = self.compute_dihedral_hellingers()
-            phi_df, psi_df = pd.DataFrame(phi_metric), pd.DataFrame(psi_metric)
-            all_phi_df, all_psi_df = self.__get_all_to_all_trj_comparisons()
-        elif metric == "relative entropy":
-            ax_label = "Relative Entropy"
-            phi_metric, psi_metric = self.compute_dihedral_rel_entropy()
-            phi_df, psi_df = pd.DataFrame(phi_metric), pd.DataFrame(psi_metric)
-        else:
-            raise NotImplementedError(f"The metric: {metric} is not implemented.")
-
-        x_ticks = np.arange(0,phi_df.shape[1])
-        x_ticklabels = np.arange(1,phi_df.shape[1]+1)
-        y_ticks = np.arange(.2,1.2,0.2)
-        y_ticklabels = np.round(np.arange(.2,1.2,0.2),1)
-
-        # ref not being juplotted right now
-        trj_frac_helicity, ref_traj_helicity = self.__compute_frac_helicity()
-        helicity_df = pd.DataFrame(trj_frac_helicity)
-
-        fig, axes = plt.subplots(5,1,facecolor="w",figsize=figsize)
-        sns.stripplot(data=phi_df,jitter=jitter,ax=axes[0])
-        axes[0].set_title("Phi Dihedrals",fontsize=fontsize)
-        axes[0].set_xlabel("Residue",fontsize=fontsize)
-        axes[0].set_ylabel(f"{ax_label}",fontsize=fontsize)
-        axes[0].set_xticks(x_ticks,fontsize=fontsize)
-        axes[0].set_xticklabels(x_ticklabels,fontsize=fontsize)
-        axes[0].set_yticks(y_ticks,fontsize=fontsize)
-        axes[0].set_yticklabels(y_ticklabels,fontsize=fontsize)
-
-        sns.stripplot(data=psi_df,jitter=jitter,ax=axes[1])
-        axes[1].set_title("Psi Dihedrals",fontsize=fontsize)
-        axes[1].set_xlabel("Residue",fontsize=fontsize)
-        axes[1].set_ylabel(f"{ax_label}",fontsize=fontsize)
-        axes[1].set_xticks(x_ticks,fontsize=fontsize)
-        axes[1].set_xticklabels(x_ticklabels,fontsize=fontsize)
-        axes[1].set_yticks(y_ticks,fontsize=fontsize)
-        axes[1].set_yticklabels(y_ticklabels,fontsize=fontsize)
-
-        sns.stripplot(data=all_phi_df,jitter=jitter,ax=axes[2])        
-        axes[2].set_title("All-to-All",fontsize=fontsize)
-        axes[2].set_ylabel(f"{ax_label}",fontsize=fontsize)
-        axes[2].set_xlabel("Residue",fontsize=fontsize)
-        axes[2].set_xticks(x_ticks,fontsize=fontsize)
-        axes[2].set_xticklabels(x_ticklabels,fontsize=fontsize)
-        axes[2].set_yticks(y_ticks,fontsize=fontsize)
-        axes[2].set_yticklabels(y_ticklabels,fontsize=fontsize)
-
-        sns.stripplot(data=all_psi_df,jitter=jitter,ax=axes[3])        
-        axes[3].set_title("All-to-All",fontsize=fontsize)
-        axes[3].set_xlabel("Residue",fontsize=fontsize)
-        axes[3].set_ylabel(f"{ax_label}",fontsize=fontsize)
-        axes[3].set_xticks(x_ticks,fontsize=fontsize)
-        axes[3].set_xticklabels(x_ticklabels,fontsize=fontsize)
-        axes[3].set_yticks(y_ticks,fontsize=fontsize)
-        axes[3].set_yticklabels(y_ticklabels,fontsize=fontsize)
-
-        sns.stripplot(data=helicity_df,jitter=jitter,ax=axes[4])
-        axes[4].set_xlabel("Residue",fontsize=fontsize)
-        axes[4].set_ylabel(f"Fractional Helicity",fontsize=fontsize)
-        axes[4].set_xticks(x_ticks,fontsize=fontsize)
-        axes[4].set_xticklabels(x_ticklabels,fontsize=fontsize)
-        axes[4].set_yticks(y_ticks,fontsize=fontsize)
-        axes[4].set_yticklabels(y_ticklabels,fontsize=fontsize)
-
-        plt.tight_layout()
-        if save_dir is not None:
-            os.makedirs(save_dir,exist_ok=True)
-            outpath = os.path.join(save_dir,filename)
-            fig.savefig(f"{outpath}",dpi=300)
-        
-        return (fig, axes)
-
     @property
     def trj_pdfs(self):
         """property for getting the pdfs computed from the phi/psi angles respectively
@@ -598,6 +659,7 @@ class SamplingQuality:
         -------
         np.ndarray
             pdfs computed from the phi and psi angles with the specified bins.
+            returns (2, num_traj, n_res, n_bins)
         """
         bins = self.get_degree_bins()
         pol_phi_pdf = self.compute_pdf(self.phi_angles,bins=bins)
@@ -607,11 +669,11 @@ class SamplingQuality:
     @property
     def polymer_pdfs(self):
         """property for getting the pdfs computed from the phi/psi angles respectively
-
         Returns
         -------
         np.ndarray
             pdfs computed from the phi and psi angles with the specified bins.
+            returns (2, num_traj, n_res, n_bins) array
         """
         bins = self.get_degree_bins()
         trj_phi_pdf = self.compute_pdf(self.polymer_phi_angles, bins=bins)
