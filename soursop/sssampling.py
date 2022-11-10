@@ -177,7 +177,7 @@ class SamplingQuality:
 
         super(SamplingQuality, self).__init__()
         self.traj_list = traj_list
-        self.self.reference_list = reference_list
+        self.reference_list = reference_list
         self.top = top_file
         self.polymer_top = polymer_top
         self.proteinID = proteinID
@@ -192,7 +192,7 @@ class SamplingQuality:
         # Should probably add option to pass trajectories directly, and then also check for that optionality here 
         # best way to do this? idk alex halppp
         self.trajs = parallel_load_trjs(self.traj_list, top=self.top, n_procs=self.n_cpus,**kwargs)
-        self.polymer_trajs = parallel_load_trjs(self.self.reference_list, top=self.polymer_top, n_procs=self.n_cpus, **kwargs)
+        self.polymer_trajs = parallel_load_trjs(self.reference_list, top=self.polymer_top, n_procs=self.n_cpus, **kwargs)
         
         if truncate:
             lengths = []
@@ -616,17 +616,27 @@ class SamplingQuality:
             psi_combinations = np.transpose(np.array(tuple(itertools.combinations(psi_pdfs,1))), axes=[1,0,2,3])
         else:
             # returned array is (n_combinations, 2, num_resi, num_bins)
-            # where 2 corresponds to (phi, psi) dimensions respectively
-            # transposed for my sanity for indexing
+            # 2 because it's a pairwise head-to-head comparison of trajectories.
+            # transposed for my sanity for indexing leaving final shape as:
+            # (2, n_combinations, num_resi, num_bins)
             phi_combinations = np.transpose(np.array(tuple(itertools.combinations(phi_pdfs,2))), axes=[1,0,2,3])
             psi_combinations = np.transpose(np.array(tuple(itertools.combinations(psi_pdfs,2))), axes=[1,0,2,3])
         
         if metric == "hellingers":
-            phi_metric = hellinger_distance(phi_combinations[0],phi_combinations[1])
-            psi_metric = hellinger_distance(psi_combinations[0],psi_combinations[1])
+            # check if it's going to be a 1:1 comparison
+            if phi_combinations.shape[0] == 1 and psi_combinations.shape[0] == 1:
+                phi_metric = hellinger_distance(phi_combinations[0], phi_combinations[0])
+                psi_metric = hellinger_distance(psi_combinations[0], psi_combinations[0])
+            else:
+                phi_metric = hellinger_distance(phi_combinations[0],phi_combinations[1])
+                psi_metric = hellinger_distance(psi_combinations[0],psi_combinations[1])
         elif metric == "relative entropy":
-            phi_metric = rel_entropy(phi_combinations[0],phi_combinations[1])
-            psi_metric = rel_entropy(psi_combinations[0],psi_combinations[1])
+            if phi_combinations.shape[0] == 1 and psi_combinations.shape[0] == 1:
+                phi_metric = rel_entropy(phi_combinations[0], phi_combinations[0])
+                psi_metric = rel_entropy(psi_combinations[0], psi_combinations[0])
+            else:
+                phi_metric = rel_entropy(phi_combinations[0],phi_combinations[1])
+                psi_metric = rel_entropy(psi_combinations[0],psi_combinations[1])
         else: 
             raise NotImplementedError(f"The metric: {metric} is not implemented.")
             
