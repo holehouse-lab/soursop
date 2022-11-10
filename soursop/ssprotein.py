@@ -3022,7 +3022,7 @@ class SSProtein:
                 local_atom_names = []
 
                 for atom_idx in res_atoms:
-                    local_atom_names.append(str(self.traj.topology.atom(atom_idx)))
+                    local_atom_names.append(self.traj.topology.atom(atom_idx))
                 all_atom_names.append(local_atom_names)
 
             self.__all_angles[angle_name] = [all_atom_names, angles]
