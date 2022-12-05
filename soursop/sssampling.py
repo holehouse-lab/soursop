@@ -1,31 +1,34 @@
-# _____  ____  _    _ _____   _____  ____  _____
+#  _____  ____  _    _ _____   _____  ____  _____
 # / ____|/ __ \| |  | |  __ \ / ____|/ __ \|  __ \
-# | (___ | |  | | |  | | |__) | (___ | |  | | |__) |
+# | (___ | |  | | |  | | |__) | (___ | |  | | |__)|
 # \___ \| |  | | |  | |  _  / \___ \| |  | |  ___/
 # ____) | |__| | |__| | | \ \ ____) | |__| | |
-# |_____/ \____/ \____/|_|  \_\_____/ \____/|_|
-
+#|_____/ \____/ \____/|_|  \_\_____/ \____/|_|
 # Alex Holehouse (Pappu Lab and Holehouse Lab) and Jared Lalmansing (Pappu lab)
 # Simulation analysis package
 # Copyright 2014 - 2022
 ##
-from typing import List, Union, Tuple
-import pathlib
-import os
 import fnmatch
 import itertools
+import os
+import pathlib
 from glob import glob
-import seaborn as sns
+from typing import List, Tuple, Union
+
 import matplotlib.pyplot as plt
-import pandas as pd
-from natsort import natsorted
 import numpy as np
+import pandas as pd
+import seaborn as sns
+from matplotlib import transforms
+from natsort import natsorted
 from scipy.special import rel_entr
 from xhistogram.core import histogram
-from matplotlib import transforms
+
 from soursop import ssutils
+
 from .ssexceptions import SSException
-from .sstrajectory import parallel_load_trjs, SSTrajectory
+from .sstrajectory import SSTrajectory, parallel_load_trjs
+
 
 def hellinger_distance(p: np.ndarray, q: np.ndarray) -> np.ndarray:
     """
@@ -49,17 +52,24 @@ def hellinger_distance(p: np.ndarray, q: np.ndarray) -> np.ndarray:
     np.ndarray
         The hellingers distance for each residue in the sequence
     """
+    if not isinstance(p, np.ndarray):
+        p = np.array(p)
+    if not isinstance(q, np.ndarray):
+        q = np.array(q)
+
     if p.ndim == 3 and q.ndim == 3:
         hellingers = np.sqrt(np.sum((np.sqrt(p) - np.sqrt(q)) ** 2, axis=2)) / np.sqrt(2)
     elif p.ndim == 2 and q.ndim == 2:
         hellingers = np.sqrt(np.sum((np.sqrt(p) - np.sqrt(q)) ** 2, axis=1)) / np.sqrt(2)
     else:
         hellingers = np.sqrt(np.sum((np.sqrt(p) - np.sqrt(q)) ** 2)) / np.sqrt(2)
+
     return hellingers
 
 
 def rel_entropy(p: np.ndarray, q: np.ndarray) -> np.ndarray:
     """Computes the relative entropy between two probability distributions p and q.
+
     Parameters
     ----------
     p : np.ndarray
@@ -75,6 +85,11 @@ def rel_entropy(p: np.ndarray, q: np.ndarray) -> np.ndarray:
     np.ndarray
         The relative entropy for each residue in the sequence
     """
+    if not isinstance(p, np.ndarray):
+        p = np.array(p)
+    if not isinstance(q, np.ndarray):
+        q = np.array(q)
+
     if p.ndim == 3 and q.ndim == 3:
         relative_entropy = np.sum(rel_entr(p, q), axis=2)
     elif p.ndim == 2 and q.ndim == 2:
@@ -96,10 +111,12 @@ def glob_traj_paths(root_dir: Union[str, pathlib.Path],
     root_dir : Union[str, pathlib.path]
         Filepath or list of file paths
     mode : str, optional
-        if "mega", the globbing will iterate over directories labeled both "coil_start" and "helical_start", by default None
+        if "mega", the globbing will iterate over directories labeled 
+        both "coil_start" and "helical_start", by default None
     num_reps : int, optional
-        if mode == 'mega' then this flag controls the number of replicates in each directory.
-        Iterates over ["coil_start","helical_start"] gathering trajectories from child directories [1,num_reps+1], by default None
+        if mode == 'mega' then this flag controls the number of replicates
+        in each directory. Iterates over ["coil_start","helical_start"]
+        gathering trajectories from child directories [1,num_reps+1], by default None
     traj_name : str, optional
         trajectory filename, by default "__traj.xtc"
     top_name : str, optional
@@ -133,17 +150,18 @@ def glob_traj_paths(root_dir: Union[str, pathlib.Path],
 class SamplingQuality:
     """Compare the sampling quality for a trajectory relative to some arbitrary referene model, usually a polymer limiting model."""
 
-    def __init__(self, traj_list: List[str],
+    def __init__(self, 
+                 traj_list: List[str],
                  reference_list: List[str],
                  top_file: str,
-                 polymer_top: str,
+                 ref_top: str,
                  method: str,
                  bwidth: float = np.deg2rad(15),
-                 protein_id: int = 0,
+                 proteinID: int = 0,
                  n_cpus: int = None,
                  truncate: bool = False,
                  **kwargs: dict,
-                 ):
+                ):
         """_summary_
 
         Parameters
@@ -155,7 +173,7 @@ class SamplingQuality:
             This is usually a limiting polymer model.
         top_file : str
             path to the simulated trajectories topology file.
-        reference_top : str
+        ref_top : str
             path to the reference topology - usually the same topology file
             if using a polymer model, but can differ if reference is e.g., a mutant.
         method : str
@@ -165,7 +183,7 @@ class SamplingQuality:
         bwidth : float, optional
             bin width parameter for segmenting histogrammed data into buckets,
             by default 15 degrees.
-        protein_id : int, optional
+        proteinID : int, optional
             The ID of the protein where the ID is the proteins position
             in the ``self.proteinTrajectoryList`` list, by default 0.
         n_cpus : int, optional
@@ -174,7 +192,9 @@ class SamplingQuality:
         truncate : bool, optional
             if True, will slice all the trajectories such that
             they're all of the same minimum length.
-
+        kwargs : dict, optional
+            if provided, key-value pairs will be passed to SSTrajectory for file
+            loading. For example, can be useful for passing a stride. 
         Raises
         ------
         NotImplementedError
@@ -187,8 +207,8 @@ class SamplingQuality:
         self.traj_list = traj_list
         self.reference_list = reference_list
         self.top = top_file
-        self.polymer_top = polymer_top
-        self.protein_id = protein_id
+        self.ref_top = ref_top
+        self.proteinID = proteinID
         self.method = method
         self.bwidth = bwidth
         self.n_cpus = n_cpus
@@ -197,30 +217,48 @@ class SamplingQuality:
         if not self.n_cpus:
             self.n_cpus = os.cpu_count()
 
-        if len(self.traj_list) == 0 or len(self.reference_list) == 0 \
+        # check to ensure trajectory lists are the same length and non-zero
+        if len(self.traj_list) == 0 or len(self.reference_list) == 0\
             or len(self.traj_list) != len(self.reference_list):
             raise SSException(
-                f"Input trajectory and reference lists must\
-                be non-empty and equal in length.\
-                Received len(traj_list)={len(self.traj_list)},\
-                len(reference_list)={len(self.reference_list)}")
+                    f"Input trajectory and reference lists must\
+                    be non-empty and equal in length.\
+                    Received len(traj_list)={len(self.traj_list)},\
+                    len(reference_list)={len(self.reference_list)}"
+                )
 
-        # Should probably add option to pass trajectories directly,
-        # and then also check for that optionality here
-        # best way to do this? idk alex halppp
-        self.trajs = parallel_load_trjs(self.traj_list, top=self.top, n_procs=self.n_cpus, **kwargs)
-        self.polymer_trajs = parallel_load_trjs(
-            self.reference_list, top=self.polymer_top, n_procs=self.n_cpus, **kwargs)
+        # weird thing I have to do to prevent issues
+        # with multiprocessing parallel loading when there is only 1 trajectory to load
+        # trajs/ref_trajs must be a list so they're iterables for __truncate_trajectories
+        if len(self.traj_list) == 1:
+            self.trajs = []
+            self.trajs.append(SSTrajectory(self.traj_list,
+                                            pdb_filename=self.top,
+                                            **kwargs))
+            self.ref_trajs = []
+            self.ref_trajs.append(SSTrajectory(self.reference_list,
+                                              pdb_filename=self.ref_top,
+                                              **kwargs))
+        else:
+            # if many trajectories, load in parallel
+            self.trajs = parallel_load_trjs(self.traj_list,
+                                            top=self.top,
+                                            n_procs=self.n_cpus,
+                                            **kwargs)
+            self.ref_trajs = parallel_load_trjs(self.reference_list, 
+                                                    top=self.ref_top,
+                                                    n_procs=self.n_cpus,
+                                                    **kwargs)
 
         if truncate:
             lengths = []
-            for trj, pol_trj in zip(self.trajs, self.polymer_trajs):
-                lengths.append([trj.n_frames, pol_trj.n_frames])
+            for trj, ref_trj in zip(self.trajs, self.ref_trajs):
+                lengths.append([trj.n_frames, ref_trj.n_frames])
 
             # shift frames for np.array indexing purposes
             self.min_length = np.min(lengths)
 
-            self.trajs, self.polymer_trajs = self.__truncate_trajectories()
+            self.trajs, self.ref_trajs = self.__truncate_trajectories()
             print(
                 f"Successfully truncated.\n\
                 The shortest trajectory is: {self.min_length} frames.\
@@ -235,9 +273,13 @@ class SamplingQuality:
             if self.bwidth > 2*np.pi or not self.bwidth > 0:
                 raise SSException(
                     f'The bwidth parameter must be between 2*pi and greater than 0.\
-                        Received {self.bwidth}')
+                        Received {self.bwidth}'
+                )
 
-            self.psi_angles, self.polymer_psi_angles, self.phi_angles, self.polymer_phi_angles = self.__compute_dihedrals(protein_id=self.protein_id)
+            (self.psi_angles,
+            self.ref_psi_angles,
+            self.phi_angles,
+            self.ref_phi_angles) = self.__compute_dihedrals(proteinID=self.proteinID)
 
     def __truncate_trajectories(self) -> Tuple[List[SSTrajectory], List[SSTrajectory]]:
         """Internal function used to truncate the lengths of trajectories
@@ -249,27 +291,28 @@ class SamplingQuality:
         Tuple[List[SSTrajectory], List[SSTrajectory]]
             A tuple containing two lists of SSTrajectory objects.\
                 The first index corresponds to the empirical trajectories.\
-                The second corresonds to the reference model - e.g., the polymer limiting model.
+                The second corresonds to the reference model - e.g.,
+                the polymer limiting model.
         """
         temp_trajs = []
-        temp_pol_trjs = []
-        for trj, pol_trj in zip(self.trajs, self.polymer_trajs):
+        temp_ref_trjs = []
+        for trj, ref_trj in zip(self.trajs, self.ref_trajs):
             temp_trajs.append(
-                SSTrajectory(TRJ=trj.proteinTrajectoryList[self.protein_id].traj[0:self.min_length])
+                SSTrajectory(TRJ=trj.proteinTrajectoryList[self.proteinID].traj[0:self.min_length])
             )
-            temp_pol_trjs.append(
-                SSTrajectory(TRJ=pol_trj.proteinTrajectoryList[self.protein_id].traj[0:self.min_length])
+            temp_ref_trjs.append(
+                SSTrajectory(TRJ=ref_trj.proteinTrajectoryList[self.proteinID].traj[0:self.min_length])
             )
 
-        return (temp_trajs, temp_pol_trjs)
+        return (temp_trajs, temp_ref_trjs)
 
-    def __compute_dihedrals(self, protein_id: int = 0) -> np.ndarray:
+    def __compute_dihedrals(self, proteinID: int = 0) -> np.ndarray:
         """internal function to computes the phi/psi backbone dihedrals
-        at a given index (proteinID) in the proteinTrajectoryList of an SSTrajectory.
+        at a given index proteinID in the proteinTrajectoryList of an SSTrajectory.
 
         Parameters
         ----------
-        protein_id : int, optional
+        proteinID : int, optional
             The ID of the protein where the ID is the proteins position
             in the ``self.proteinTrajectoryList`` list, by default 0.
 
@@ -280,23 +323,23 @@ class SamplingQuality:
         """
         psi_angles = []
         phi_angles = []
-        polymer_psi_angles = []
-        polymer_phi_angles = []
+        ref_psi_angles = []
+        ref_phi_angles = []
 
-        for trj, pol_trj in zip(self.trajs, self.polymer_trajs):
-            psi_angles.append(trj.proteinTrajectoryList[protein_id].get_angles("psi")[1])
-            phi_angles.append(trj.proteinTrajectoryList[protein_id].get_angles("phi")[1])
-            polymer_psi_angles.append(pol_trj.proteinTrajectoryList[protein_id].get_angles("psi")[1])
-            polymer_phi_angles.append(pol_trj.proteinTrajectoryList[protein_id].get_angles("phi")[1])
+        for trj, ref_trj in zip(self.trajs, self.ref_trajs):
+            psi_angles.append(trj.proteinTrajectoryList[proteinID].get_angles("psi")[1])
+            phi_angles.append(trj.proteinTrajectoryList[proteinID].get_angles("phi")[1])
+            ref_psi_angles.append(ref_trj.proteinTrajectoryList[proteinID].get_angles("psi")[1])
+            ref_phi_angles.append(ref_trj.proteinTrajectoryList[proteinID].get_angles("phi")[1])
 
-        return np.array((psi_angles, polymer_psi_angles, phi_angles, polymer_phi_angles))
+        return np.array((psi_angles, ref_psi_angles, phi_angles, ref_phi_angles))
 
-    def __compute_frac_helicity(self, protein_id: int = 0) -> np.ndarray:
+    def __compute_frac_helicity(self, proteinID: int = 0) -> np.ndarray:
         """internal function to computes the per residue fractional helicity at a given index (proteinID) in the proteinTrajectoryList of an SSTrajectory.
 
         Parameters
         ----------
-        protein_id : int, optional
+        proteinID : int, optional
             The ID of the protein where the ID is the proteins position
             in the ``self.proteinTrajectoryList`` list, by default 0.
 
@@ -308,9 +351,9 @@ class SamplingQuality:
         trj_helicity = []
         reference_helicity = []
 
-        for trj, ref_traj in zip(self.trajs, self.polymer_trajs):
-            trj_helicity.append(trj.proteinTrajectoryList[protein_id].get_secondary_structure_DSSP()[1])
-            reference_helicity.append(ref_traj.proteinTrajectoryList[protein_id].get_secondary_structure_DSSP()[1])
+        for trj, ref_traj in zip(self.trajs, self.ref_trajs):
+            trj_helicity.append(trj.proteinTrajectoryList[proteinID].get_secondary_structure_DSSP()[1])
+            reference_helicity.append(ref_traj.proteinTrajectoryList[proteinID].get_secondary_structure_DSSP()[1])
 
         return np.array((trj_helicity, reference_helicity))
 
@@ -324,13 +367,13 @@ class SamplingQuality:
         """
         bins = self.get_degree_bins()
         phi_trj_pdfs = self.compute_pdf(self.phi_angles, bins=bins)
-        phi_pol_trj_pdfs = self.compute_pdf(self.polymer_phi_angles, bins=bins)
+        phi_ref_trj_pdfs = self.compute_pdf(self.ref_phi_angles, bins=bins)
 
         psi_trj_pdfs = self.compute_pdf(self.psi_angles, bins=bins)
-        psi_pol_trj_pdfs = self.compute_pdf(self.polymer_psi_angles, bins=bins)
+        psi_ref_trj_pdfs = self.compute_pdf(self.ref_psi_angles, bins=bins)
 
-        phi_hellingers = hellinger_distance(phi_trj_pdfs, phi_pol_trj_pdfs)
-        psi_hellingers = hellinger_distance(psi_trj_pdfs, psi_pol_trj_pdfs)
+        phi_hellingers = hellinger_distance(phi_trj_pdfs, phi_ref_trj_pdfs)
+        psi_hellingers = hellinger_distance(psi_trj_pdfs, psi_ref_trj_pdfs)
 
         return np.array((phi_hellingers, psi_hellingers))
 
@@ -345,13 +388,13 @@ class SamplingQuality:
         bins = self.get_degree_bins()
 
         phi_trj_pdfs = self.compute_pdf(self.phi_angles, bins=bins)
-        phi_pol_trj_pdfs = self.compute_pdf(self.polymer_phi_angles, bins=bins)
+        phi_ref_trj_pdfs = self.compute_pdf(self.ref_phi_angles, bins=bins)
 
         psi_trj_pdfs = self.compute_pdf(self.psi_angles, bins=bins)
-        psi_pol_trj_pdfs = self.compute_pdf(self.polymer_psi_angles, bins=bins)
+        psi_ref_trj_pdfs = self.compute_pdf(self.ref_psi_angles, bins=bins)
 
-        phi_rel_entr = rel_entropy(phi_trj_pdfs, phi_pol_trj_pdfs)
-        psi_rel_entr = rel_entropy(psi_trj_pdfs, psi_pol_trj_pdfs)
+        phi_rel_entr = rel_entropy(phi_trj_pdfs, phi_ref_trj_pdfs)
+        psi_rel_entr = rel_entropy(psi_trj_pdfs, psi_ref_trj_pdfs)
 
         return np.array((phi_rel_entr, psi_rel_entr))
 
@@ -369,22 +412,93 @@ class SamplingQuality:
         Returns
         -------
         np.ndarray
-            Returns a set of histograms of the probabilities densities for each residue in the amino acid sequence.
+            Returns a set of histograms of the probabilities 
+            densities for each residue in the amino acid sequence.
             Shape (n_res, len(bins) - 1)
         """
         # Lambda function is used to ignore the bin edges returned by np.histogram at index 1
         # xhistogram is ~2x faster, but introduces depedency - keeping lambda function for legacy for now
         # tbh this isn't that slow with the lambda function after all
+        
+        # if (traj x n_res x frames), histogram axis (2) associated all the frames 
         if arr.ndim == 3:
             # pdf = np.apply_along_axis(lambda col: np.histogram(col, bins=bins, density=True)[0], axis=2, arr=arr)*np.round(np.rad2deg(self.bwidth))
 
             # KEY POINT: multiplying by bin width to convert probability *density* to probabilty *mass*
             # implementation details may have to change here if supporting other methods.
             pdf = histogram(arr, bins=bins, axis=2, density=True)[0]*np.round(np.rad2deg(self.bwidth))
+        # else (n_res x n_frames), histogram axis (1) associated with frames 
         else:
             # pdf = np.apply_along_axis(lambda col: np.histogram(col, bins=bins, density=True)[0], axis=1, arr=arr)*np.round(np.rad2deg(self.bwidth))
             pdf = histogram(arr, bins=bins, axis=1, density=True)[0]*np.round(np.rad2deg(self.bwidth))
+        
         return pdf
+
+    def get_all_to_all_trj_comparisons(self, metric: str = "hellingers") -> Tuple[pd.DataFrame, pd.DataFrame]:
+        """function to aggregate an all-to-all comparison of pdfs
+
+        Returns
+        -------
+        Tuple[pd.DataFrame, pd.DataFrame]
+            all-to-all trajectory comparisons for the hellingers distances in 'self.trj_pdfs'
+        """
+        phi_pdfs = self.trj_pdfs[0]
+        psi_pdfs = self.trj_pdfs[1]
+
+        if phi_pdfs.shape[0] == 1 or psi_pdfs.shape[0] == 1:
+            # if only 1 simulated traj and 1 ref traj all-to-all is just a 1:1 comparison.
+            phi_combinations = np.transpose(np.array(tuple(itertools.combinations(phi_pdfs, 1))), axes=[1, 0, 2, 3])
+            psi_combinations = np.transpose(np.array(tuple(itertools.combinations(psi_pdfs, 1))), axes=[1, 0, 2, 3])
+        else:
+            # returned array is (n_combinations, 2, num_resi, num_bins)
+            # 2 because it's a pairwise head-to-head comparison of trajectories.
+            # transposed for my sanity for indexing leaving final shape as:
+            # (2, n_combinations, num_resi, num_bins)
+            phi_combinations = np.transpose(np.array(tuple(itertools.combinations(phi_pdfs, 2))), 
+                                            axes=[1, 0, 2, 3])
+            psi_combinations = np.transpose(np.array(tuple(itertools.combinations(psi_pdfs, 2))),
+                                            axes=[1, 0, 2, 3])
+
+        if metric == "hellingers":
+            # check if it's going to be a 1:1 comparison
+            # note: i.e., the indexing changes in second variable
+            if phi_combinations.shape[0] == 1 and psi_combinations.shape[0] == 1:
+                phi_metric = hellinger_distance(phi_combinations[0], phi_combinations[0])
+                psi_metric = hellinger_distance(psi_combinations[0], psi_combinations[0])
+            else:
+                phi_metric = hellinger_distance(phi_combinations[0], phi_combinations[1])
+                psi_metric = hellinger_distance(psi_combinations[0], psi_combinations[1])
+        elif metric == "relative entropy":
+            if phi_combinations.shape[0] == 1 and psi_combinations.shape[0] == 1:
+                phi_metric = rel_entropy(phi_combinations[0], phi_combinations[0])
+                psi_metric = rel_entropy(psi_combinations[0], psi_combinations[0])
+            else:
+                phi_metric = rel_entropy(phi_combinations[0], phi_combinations[1])
+                psi_metric = rel_entropy(psi_combinations[0], psi_combinations[1])
+        else:
+            raise NotImplementedError(f"The metric: {metric} is not implemented.")
+
+        return pd.DataFrame(phi_metric), pd.DataFrame(psi_metric)
+
+    def __get_all_to_all_ev_comparison(self) -> Tuple[pd.DataFrame, pd.DataFrame]:
+        """internal function to aggregate an all-to-all comparison of pdfs
+            **Not currently used**
+        Returns
+        -------
+        Tuple[pd.DataFrame,pd.DataFrame]
+            _description_
+        """
+        phi_pdfs = self.trj_pdfs[0]
+        phi_ev_pdfs = self.ref_pdfs[0]
+        psi_pdfs = self.trj_pdfs[1]
+        psi_ev_pdfs = self.ref_pdfs[1]
+        # if using this should revisit and do combinations like above
+        phi_cartesian_prod = np.transpose(np.array(tuple(itertools.product(phi_pdfs, phi_ev_pdfs))), axes=[1, 0, 2, 3])
+        psi_cartesian_prod = np.transpose(np.array(tuple(itertools.product(psi_pdfs, psi_ev_pdfs))), axes=[1, 0, 2, 3])
+        phi_hellingers = hellinger_distance(phi_cartesian_prod[0], phi_cartesian_prod[1])
+        psi_hellingers = hellinger_distance(psi_cartesian_prod[0], psi_cartesian_prod[1])
+        
+        return pd.DataFrame(phi_hellingers), pd.DataFrame(psi_hellingers)
 
     def get_radian_bins(self) -> np.ndarray:
         """Returns the edges of the bins in radians
@@ -411,9 +525,16 @@ class SamplingQuality:
         bins = np.arange(-180, 180+bwidth, bwidth)
         return bins
 
-    def quality_plot(self, dihedral: str = "phi", increment: int = 5, figsize: Tuple[int, int] = (7, 5),
-                     dpi: int = 400, panel_labels: bool = False, fontsize: int = 10, save_dir: str = None, figname: str = "phi_hellingers.pdf"):
-        """plotting functionality for quick visual inspection of sampling quality
+    def quality_plot(self, 
+                    dihedral : str = "phi", 
+                    increment : int = 5,
+                    figsize : Tuple[int, int] = (7, 5),
+                    dpi : int = 400,
+                    panel_labels : bool = False, 
+                    fontsize : int = 10,
+                    save_dir : str = None,
+                    figname : str = "phi_hellingers.pdf"):
+        """convenience plotting functionality for quick visual inspection of sampling quality
 
         Parameters
         ----------
@@ -547,7 +668,8 @@ class SamplingQuality:
 
         return fig, axd
 
-    def plot_phi_psi_heatmap(self, metric: str = "hellingers",
+    def plot_phi_psi_heatmap(self, 
+                             metric: str = "hellingers",
                              figsize=(40, 20),
                              annotate=True,
                              cmap=None,
@@ -627,67 +749,6 @@ class SamplingQuality:
             outpath = os.path.join(save_dir, filename)
             fig.savefig(f"{outpath}", dpi=300)
 
-    def get_all_to_all_trj_comparisons(self, metric: str = "hellingers") -> Tuple[pd.DataFrame, pd.DataFrame]:
-        """function to aggregate an all-to-all comparison of pdfs
-
-        Returns
-        -------
-        Tuple[pd.DataFrame, pd.DataFrame]
-            all-to-all trajectory comparisons for the hellingers distances in 'self.trj_pdfs'
-        """
-        phi_pdfs = self.trj_pdfs[0]
-        psi_pdfs = self.trj_pdfs[1]
-
-        if phi_pdfs.shape[0] == 1 or psi_pdfs.shape[0] == 1:
-            # if only 1 simulated traj and 1 ref traj all-to-all is just a 1:1 comparison.
-            phi_combinations = np.transpose(np.array(tuple(itertools.combinations(phi_pdfs, 1))), axes=[1, 0, 2, 3])
-            psi_combinations = np.transpose(np.array(tuple(itertools.combinations(psi_pdfs, 1))), axes=[1, 0, 2, 3])
-        else:
-            # returned array is (n_combinations, 2, num_resi, num_bins)
-            # 2 because it's a pairwise head-to-head comparison of trajectories.
-            # transposed for my sanity for indexing leaving final shape as:
-            # (2, n_combinations, num_resi, num_bins)
-            phi_combinations = np.transpose(np.array(tuple(itertools.combinations(phi_pdfs, 2))), axes=[1, 0, 2, 3])
-            psi_combinations = np.transpose(np.array(tuple(itertools.combinations(psi_pdfs, 2))), axes=[1, 0, 2, 3])
-
-        if metric == "hellingers":
-            # check if it's going to be a 1:1 comparison
-            if phi_combinations.shape[0] == 1 and psi_combinations.shape[0] == 1:
-                phi_metric = hellinger_distance(phi_combinations[0], phi_combinations[0])
-                psi_metric = hellinger_distance(psi_combinations[0], psi_combinations[0])
-            else:
-                phi_metric = hellinger_distance(phi_combinations[0], phi_combinations[1])
-                psi_metric = hellinger_distance(psi_combinations[0], psi_combinations[1])
-        elif metric == "relative entropy":
-            if phi_combinations.shape[0] == 1 and psi_combinations.shape[0] == 1:
-                phi_metric = rel_entropy(phi_combinations[0], phi_combinations[0])
-                psi_metric = rel_entropy(psi_combinations[0], psi_combinations[0])
-            else:
-                phi_metric = rel_entropy(phi_combinations[0], phi_combinations[1])
-                psi_metric = rel_entropy(psi_combinations[0], psi_combinations[1])
-        else:
-            raise NotImplementedError(f"The metric: {metric} is not implemented.")
-
-        return pd.DataFrame(phi_metric), pd.DataFrame(psi_metric)
-
-    def __get_all_to_all_ev_comparison(self) -> Tuple[pd.DataFrame, pd.DataFrame]:
-        """internal function to aggregate an all-to-all comparison of pdfs
-
-        Returns
-        -------
-        Tuple[pd.DataFrame,pd.DataFrame]
-            _description_
-        """
-        phi_pdfs = self.trj_pdfs[0]
-        phi_ev_pdfs = self.polymer_pdfs[0]
-        psi_pdfs = self.trj_pdfs[1]
-        psi_ev_pdfs = self.polymer_pdfs[1]
-        # if using this should revisit and do combinations like above
-        phi_cartesian_prod = np.transpose(np.array(tuple(itertools.product(phi_pdfs, phi_ev_pdfs))), axes=[1, 0, 2, 3])
-        psi_cartesian_prod = np.transpose(np.array(tuple(itertools.product(psi_pdfs, psi_ev_pdfs))), axes=[1, 0, 2, 3])
-        phi_hellingers = hellinger_distance(phi_cartesian_prod[0], phi_cartesian_prod[1])
-        psi_hellingers = hellinger_distance(psi_cartesian_prod[0], psi_cartesian_prod[1])
-        return pd.DataFrame(phi_hellingers), pd.DataFrame(psi_hellingers)
 
     @property
     def trj_pdfs(self):
@@ -700,12 +761,12 @@ class SamplingQuality:
             returns (2, num_traj, n_res, n_bins)
         """
         bins = self.get_degree_bins()
-        pol_phi_pdf = self.compute_pdf(self.phi_angles, bins=bins)
-        pol_psi_pdf = self.compute_pdf(self.psi_angles, bins=bins)
-        return np.array((pol_phi_pdf, pol_psi_pdf))
+        ref_phi_pdf = self.compute_pdf(self.phi_angles, bins=bins)
+        ref_psi_pdf = self.compute_pdf(self.psi_angles, bins=bins)
+        return np.array((ref_phi_pdf, ref_psi_pdf))
 
     @property
-    def polymer_pdfs(self):
+    def ref_pdfs(self):
         """property for getting the pdfs computed from the phi/psi angles respectively
 
         Returns
@@ -715,8 +776,8 @@ class SamplingQuality:
             returns (2, num_traj, n_res, n_bins) array
         """
         bins = self.get_degree_bins()
-        trj_phi_pdf = self.compute_pdf(self.polymer_phi_angles, bins=bins)
-        trj_psi_pdf = self.compute_pdf(self.polymer_psi_angles, bins=bins)
+        trj_phi_pdf = self.compute_pdf(self.ref_phi_angles, bins=bins)
+        trj_psi_pdf = self.compute_pdf(self.ref_psi_angles, bins=bins)
         return np.array((trj_phi_pdf, trj_psi_pdf))
 
     @property
@@ -737,6 +798,6 @@ class SamplingQuality:
         Returns
         -------
         np.ndarray
-            The per residue fractional helicity for each trajectory in self.trajs and self.polymer_trajs.
+            The per residue fractional helicity for each trajectory in self.trajs and self.ref_trajs.
         """
         return self.__compute_frac_helicity()
