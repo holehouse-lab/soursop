@@ -4,6 +4,7 @@
 # \___ \| |  | | |  | |  _  / \___ \| |  | |  ___/
 # ____) | |__| | |__| | | \ \ ____) | |__| | |
 #|_____/ \____/ \____/|_|  \_\_____/ \____/|_|
+# Jeffrey M. Lotthammer (Holehouse Lab)
 # Alex Holehouse (Pappu Lab and Holehouse Lab) and Jared Lalmansing (Pappu lab)
 # Simulation analysis package
 # Copyright 2014 - 2022
@@ -34,7 +35,7 @@ def hellinger_distance(p: np.ndarray, q: np.ndarray) -> np.ndarray:
     """
     Computes the hellinger distance between a set probability distributions p and q.
     The hellinger distances is defined by:
-        H(P,Q) = r\frac{1}{\sqrt{2}} \times \sqrt{\sum_{i=1}^{k}(\sqrt{p_i}-\sqrt{q_i})^2}
+        H(P,Q) = r'\frac{1}{\sqrt{2}} \times \sqrt{\sum_{i=1}^{k}(\sqrt{p_i}-\sqrt{q_i})^2}'
     where k is the length of the probability vectors being compared.
 
     Parameters
@@ -148,7 +149,6 @@ def glob_traj_paths(root_dir: Union[str, pathlib.Path],
 
 
 class SamplingQuality:
-    """Compare the sampling quality for a trajectory relative to some arbitrary referene model, usually a polymer limiting model."""
 
     def __init__(self, 
                  traj_list: List[str],
@@ -162,7 +162,9 @@ class SamplingQuality:
                  truncate: bool = False,
                  **kwargs: dict,
                 ):
-        """_summary_
+        """SamplingQuality is a class to compare the sampling quality for a set of trajectories
+            relative to some referene model. This is usually a polymer limiting model, but could
+            be different proteins, mutations, or PTMs.
 
         Parameters
         ----------
@@ -272,7 +274,7 @@ class SamplingQuality:
         if str(self.method).lower() == "dihedral":
             if self.bwidth > 2*np.pi or not self.bwidth > 0:
                 raise SSException(
-                    f'The bwidth parameter must be between 2*pi and greater than 0.\
+                    f'The bwidth parameter must be between 0 and 2*pi.\
                         Received {self.bwidth}'
                 )
 
@@ -290,9 +292,9 @@ class SamplingQuality:
         -------
         Tuple[List[SSTrajectory], List[SSTrajectory]]
             A tuple containing two lists of SSTrajectory objects.\
-                The first index corresponds to the empirical trajectories.\
-                The second corresonds to the reference model - e.g.,
-                the polymer limiting model.
+            The first index corresponds to the empirical trajectories.\
+            The second corresonds to the reference model - e.g.,
+            the polymer limiting model.
         """
         temp_trajs = []
         temp_ref_trjs = []
@@ -461,7 +463,7 @@ class SamplingQuality:
 
         if metric == "hellingers":
             # check if it's going to be a 1:1 comparison
-            # note: i.e., the indexing changes in second variable
+            # note: i.e., the indexing changes in second variable if its a 1:1 comparison
             if phi_combinations.shape[0] == 1 and psi_combinations.shape[0] == 1:
                 phi_metric = hellinger_distance(phi_combinations[0], phi_combinations[0])
                 psi_metric = hellinger_distance(psi_combinations[0], psi_combinations[0])
@@ -480,37 +482,6 @@ class SamplingQuality:
 
         return pd.DataFrame(phi_metric), pd.DataFrame(psi_metric)
 
-    def __get_all_to_all_ev_comparison(self) -> Tuple[pd.DataFrame, pd.DataFrame]:
-        """internal function to aggregate an all-to-all comparison of pdfs
-            **Not currently used**
-        Returns
-        -------
-        Tuple[pd.DataFrame,pd.DataFrame]
-            _description_
-        """
-        phi_pdfs = self.trj_pdfs[0]
-        phi_ev_pdfs = self.ref_pdfs[0]
-        psi_pdfs = self.trj_pdfs[1]
-        psi_ev_pdfs = self.ref_pdfs[1]
-        # if using this should revisit and do combinations like above
-        phi_cartesian_prod = np.transpose(np.array(tuple(itertools.product(phi_pdfs, phi_ev_pdfs))), axes=[1, 0, 2, 3])
-        psi_cartesian_prod = np.transpose(np.array(tuple(itertools.product(psi_pdfs, psi_ev_pdfs))), axes=[1, 0, 2, 3])
-        phi_hellingers = hellinger_distance(phi_cartesian_prod[0], phi_cartesian_prod[1])
-        psi_hellingers = hellinger_distance(psi_cartesian_prod[0], psi_cartesian_prod[1])
-        
-        return pd.DataFrame(phi_hellingers), pd.DataFrame(psi_hellingers)
-
-    def get_radian_bins(self) -> np.ndarray:
-        """Returns the edges of the bins in radians
-
-        Returns
-        -------
-        np.ndarray
-            an array of the bin edges in radians
-        """
-        bwidth = self.bwidth
-        bins = np.arange(-np.pi, np.pi+bwidth, bwidth)
-        return bins
 
     def get_degree_bins(self) -> np.ndarray:
         """Returns the edges of the bins in degrees
