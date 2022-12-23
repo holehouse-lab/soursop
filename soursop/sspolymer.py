@@ -16,7 +16,7 @@ import numpy as np
 
 def get_overlap_concentration(rg):
     """
-    Function that takes the radius of gyration (Rg) in angstroms and returns 
+    Function that takes the radius of gyration (Rg) in Angstroms and returns 
     overlap concentration in molar units.
 
     The overlap concentration reflects the concentration at which a flexible
@@ -25,13 +25,11 @@ def get_overlap_concentration(rg):
 
     Parameters
     ----------
-
     rg : float
        Radius of gyration in Angstroms
 
     Return
-    ------
-    
+    ------    
     float 
         The overlap concentration in molar units
 
