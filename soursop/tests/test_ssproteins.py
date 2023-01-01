@@ -149,12 +149,13 @@ def test_soursop_imported():
 
 def test_DSSP(NTL9_CP):
     SS = NTL9_CP.get_secondary_structure_DSSP()
-    print(SS[0])
+    # TO DO - complete
 
 
 def test_BBSEG(NTL9_CP):
     SS = NTL9_CP.get_secondary_structure_BBSEG()
-    print(SS[0])
+    # TO DO - complete
+
 
 
 
@@ -618,7 +619,12 @@ def test_get_angle_decay_no_return_all_pairs(GS6_CP, NTL9_CP):
 # SSProtein.get_contact_map
 def test_get_contact_map_weights(GS6_CP, NTL9_CP):
     default_weight = 1.0
-    modes = 'ca,closest,closest-heavy,sidechain'.split(',')
+
+    # note that previous mdtraj versions failed on sidechain-heavy when a protein
+    # had a GLY in it, whereas in later versions this simply returns 0. We used to
+    # explicitly test for the GLY error but this is no longer relevant so have
+    # removed this test
+    modes = 'ca,closest,closest-heavy,sidechain,sidechain-heavy'.split(',')
     proteins = [GS6_CP, NTL9_CP]
     for protein in proteins:
         weights = [default_weight for frame in range(protein.n_frames)]
@@ -635,19 +641,14 @@ def test_get_contact_map_weights(GS6_CP, NTL9_CP):
             assert contact_map_order.shape[0] == protein_residues
 
 
-def test_get_contact_map_weights_sidechain_heavy(GS6_CP, NTL9_CP):
+def test_get_contact_map_weights_invalid_mode(GS6_CP, NTL9_CP):
+    # Checking that 
+    #
+    
     default_weight = 1.0
     proteins = [GS6_CP, NTL9_CP]
-    mode = 'sidechain-heavy'
-    for protein in proteins:
-        weights = [default_weight for frame in range(protein.n_frames)]
-        normalized_weights = [w/protein.n_frames for w in weights]
-
-        # both proteins have 'GLY', which will fail here as it lacks a sidechain
-        with pytest.raises(SSException):
-            protein.get_contact_map(mode=mode, weights=normalized_weights)  # the other options have been tested
-
     # this should fail with an SSException
+    
     mode = 'invalid-mode'
     for protein in proteins:
         weights = [default_weight for frame in range(protein.n_frames)]
