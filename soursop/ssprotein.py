@@ -2114,8 +2114,9 @@ class SSProtein:
         # build a substractectory based on the stride argument
         subtraj = self.__get_subtrajectory(self.traj, stride)
 
-        # ensure we only select main chain atoms (no termini) - NOTE, this is a REALLY useful design pattern -
-        # should consider re-writing the code to use this...
+        # ensure we only select main chain atoms (no termini) - NOTE, this
+        # is a REALLY useful design pattern - should consider re-writing the
+        # code to use this...
         mainchain_atoms = self.topology.select('(not resname "NME") and (not resname "ACE")')
 
         # compute the contactmap and square-form it (map per frame)
