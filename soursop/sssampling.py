@@ -23,7 +23,7 @@ import seaborn as sns
 from matplotlib import transforms
 from natsort import natsorted
 from scipy.special import rel_entr
-from xhistogram.core import histogram
+# from xhistogram.core import histogram
 
 from soursop import ssutils
 
@@ -424,15 +424,15 @@ class SamplingQuality:
         
         # if (traj x n_res x frames), histogram axis (2) associated all the frames 
         if arr.ndim == 3:
-            # pdf = np.apply_along_axis(lambda col: np.histogram(col, bins=bins, density=True)[0], axis=2, arr=arr)*np.round(np.rad2deg(self.bwidth))
+            pdf = np.apply_along_axis(lambda col: np.histogram(col, bins=bins, density=True)[0], axis=2, arr=arr)*np.round(np.rad2deg(self.bwidth))
 
             # KEY POINT: multiplying by bin width to convert probability *density* to probabilty *mass*
             # implementation details may have to change here if supporting other methods.
-            pdf = histogram(arr, bins=bins, axis=2, density=True)[0]*np.round(np.rad2deg(self.bwidth))
+            # pdf = histogram(arr, bins=bins, axis=2, density=True)[0]*np.round(np.rad2deg(self.bwidth))
         # else (n_res x n_frames), histogram axis (1) associated with frames 
         else:
-            # pdf = np.apply_along_axis(lambda col: np.histogram(col, bins=bins, density=True)[0], axis=1, arr=arr)*np.round(np.rad2deg(self.bwidth))
-            pdf = histogram(arr, bins=bins, axis=1, density=True)[0]*np.round(np.rad2deg(self.bwidth))
+            pdf = np.apply_along_axis(lambda col: np.histogram(col, bins=bins, density=True)[0], axis=1, arr=arr)*np.round(np.rad2deg(self.bwidth))
+            # pdf = histogram(arr, bins=bins, axis=1, density=True)[0]*np.round(np.rad2deg(self.bwidth))
         
         return pdf
 
