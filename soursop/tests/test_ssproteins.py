@@ -197,9 +197,40 @@ def test_get_distance_map(GS6_CO):
 def test_get_hydrodynamic_radius(GS6_CO):
 
     CP = GS6_CO.proteinTrajectoryList[0]
-    rh = CP.get_hydrodynamic_radius()
-    assert (11.840569781179006 - rh[0]) < 0.001
 
+    # check nygaard mode implicit
+    rh = CP.get_hydrodynamic_radius()
+    assert abs(11.840569781179006 - rh[0]) < 0.001
+    assert abs(np.mean(rh) - 11.3777) < 0.001
+
+    # check nygaard mode explicit
+    rh = CP.get_hydrodynamic_radius(mode='nygaard')
+    assert abs(11.840569781179006 - rh[0]) < 0.001
+
+    # check kirkwood-riseman mode explicit (implicit CA)
+    rh = CP.get_hydrodynamic_radius(mode='kr')
+    assert abs((5.9223 - rh[0])) < 0.001
+    assert abs(np.mean(rh) - 5.884) < 0.001
+
+    # check kirkwood-riseman mode explicit (explicit CA)
+    rh = CP.get_hydrodynamic_radius(mode='kr', distance_mode='CA')
+    assert abs((5.9223 - rh[0])) < 0.001
+    assert abs(np.mean(rh) - 5.884) < 0.001
+
+    # check kirkwood-riseman mode explicit with COM mode
+    rh = CP.get_hydrodynamic_radius(mode='kr', distance_mode='COM')
+    assert abs((5.8634 - rh[0])) < 0.001
+    assert abs(np.mean(rh) - 5.8536) < 0.001
+
+    # check it correctly raises an SSException if an invalid mode is passed
+    with pytest.raises(SSException):
+        rh = CP.get_hydrodynamic_radius(mode='nygaard_bad')
+    with pytest.raises(SSException):        
+        rh = CP.get_hydrodynamic_radius(mode='nygaard_bad', distance_mode='CA_bad')
+        
+
+    
+    
 def test_get_molecular_volume(NTL9_CO):
 
     CP = NTL9_CO.proteinTrajectoryList[0]
