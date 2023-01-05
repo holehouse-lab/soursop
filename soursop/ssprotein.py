@@ -1272,7 +1272,7 @@ class SSProtein:
 
     # ........................................................................
     #
-    def get_polymer_scaled_distance_map(self, nu=None, A0=None, min_separation=10, mode='fractional-change', stride=1, weights=False, verbose=True):
+    def get_polymer_scaled_distance_map(self, nu=None, A0=None, min_separation=10, mode='fractional-change', stride=1, weights=False, etol=0.0000001, verbose=True):
         """
         Function that allows for a global assesment of how well all `i-j`
         distances conform to standard polymer scaling behaviour (i.e.
@@ -1355,6 +1355,10 @@ class SSProtein:
             replica exchange data that is re-combined using T-WHAM. Can be
             a list of any slicable element vector. Default = None.
 
+        etol : {0.0000001} float
+            Defines the error tollerance for the weight sums - i.e. if
+            abs(np.sum(weights) - 1) > etol an exception is raised.
+
         verbose : bool
             Flag that by default is True determines if the function prints
             status updates. This is relevant because this function can be
@@ -1395,7 +1399,7 @@ class SSProtein:
 
             # remind that this is the old get_scaling_exponent_v2()
             # ALSO note this uses COM which is also how the distance map is computed
-            SE = self.get_scaling_exponent(verbose=False, weights = weights, stride = stride)
+            SE = self.get_scaling_exponent(verbose=False, weights = weights, stride = stride, etol=etol)
             nu = SE[0]
             A0 = SE[1]
             REDCHI = SE[7]
