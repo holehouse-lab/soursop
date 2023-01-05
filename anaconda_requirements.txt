@@ -11,3 +11,4 @@ ruamel_yaml
 threadpoolctl
 pandas
 scipy
+matplotlib
