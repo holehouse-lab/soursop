@@ -29,7 +29,7 @@ def test_pre_profiles_ctl9(CTL9_CP):
 
         # get previously-calculated profile
         file_path = os.path.join(test_data_dir, f'pre_data/PRE_{P}_unweighted.csv')        
-        pre_test_data = np.loadtxt(file_path, delimiter=', ')
+        pre_test_data = np.loadtxt(file_path)
 
         # ensure the largest differences is less than 0.02. There is some numerical inprecision
         # and some small changes in how the calculations are done between 2019 and the current
