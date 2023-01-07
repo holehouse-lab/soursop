@@ -2940,9 +2940,7 @@ class SSProtein:
 
             # finally, take per-frame inverse of the inverse distance
             # to get Rh
-            Rh = []
-            for f in all_rij:
-                Rh.append(1/np.mean(f))
+            Rh = np.reciprocal(np.mean(all_rij, axis=1).astype(float))
 
             return Rh
 
