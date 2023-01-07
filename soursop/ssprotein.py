@@ -2114,8 +2114,9 @@ class SSProtein:
         # build a substractectory based on the stride argument
         subtraj = self.__get_subtrajectory(self.traj, stride)
 
-        # ensure we only select main chain atoms (no termini) - NOTE, this is a REALLY useful design pattern -
-        # should consider re-writing the code to use this...
+        # ensure we only select main chain atoms (no termini) - NOTE, this
+        # is a REALLY useful design pattern - should consider re-writing the
+        # code to use this...
         mainchain_atoms = self.topology.select('(not resname "NME") and (not resname "ACE")')
 
         # compute the contactmap and square-form it (map per frame)
@@ -2810,20 +2811,34 @@ class SSProtein:
     # ........................................................................
     #
     #
-    def get_hydrodynamic_radius(self, R1=None, R2=None, alpha1=0.216, alpha2=4.06, alpha3=0.821):
-        """Returns the apparent hydrodynamic radius as calculated based on the
-        approximation derived by Nygaard et al. [1]. Returns a hydrodynamic
-        radius in Angstroms.
+    def get_hydrodynamic_radius(self, R1=None, R2=None, mode='nygaard', alpha1=0.216, alpha2=4.06, alpha3=0.821, distance_mode='CA'):
+        """Returns the apparent hydrodynamic radius as calculated based on 
+        either the approximation derived by Nygaard et al. [1], or the 
+        Kirkwood-Riseman equation [2]. Which mode is used depends on the
+        'mode' keyword.
 
-        Parameters (alpha1/2/3 should not be altered to recapitulate behaviour 
-        defined by Nygaard et al.
+        The Kirkwood-Riseman equation may be more accurate when computing
+        the Rh for comparison with NMR-derived Rh values, as reported in
+        [3]. 
 
-        NOTE that this approximation holds for fully flexible disordered 
-        proteins,  but will likely become increasingly unreasonable in the 
-        context of  larger and larger folded domains.
+        For 'nygaard' mode, the arguments (alpha1/2/3) are used, and should 
+        not be altered to recapitulate behaviour defined by Nygaard et al.
+        Default values here are alpha1=0.216, alpha2=4.06 and alpha3=0.821.
+        Note that `distance_mode` parameter is ignored, as this is only used 
+        with the Kirkwood-Riseman implementation.
 
-        Radius of gyration is returned in Angstroms.
+        For 'kr' (Kirkwood-Riseman mode), the Kirkwood-Riseman equation uses
+        the alpha carbon positions if `distance_mode` is set to `CA`, or the
+        center of mass dpositions if `distance_mode` is set to `COM`. If either
+        of these are not provided as options for `distance_mode` the function
+        will fail. Default is `CA`. Note that the alpha1/2/3 arguments are
+        ignored, as these are only used with the Nygaard mode. 
+       
+        NOTE that in both cases, these approximations hold for fully flexible 
+        disordered proteins, but will likely become increasingly unreasonable 
+        in the context of  larger and larger folded domains.
 
+        The hydrodyamic radii are returned in Angstroms. 
 
         Parameters
         ---------------
@@ -2835,6 +2850,14 @@ class SSProtein:
             Index value for last residue in the region of interest. If not
             provided (None) then last residue is used. Default = None
 
+        mode : str
+            Selector that lets you choose the mode being used. The default
+            is an empirical conversion from Rg proposed by Nygaard et al 
+            (mode='nygaard') but the alternative and possibly more accurate
+            approach when comparing against Rh values derived from pulse-field
+            gradient NMR experiments isthe Kirkwood-Riseman (mode = 'kr') 
+            model. Must be one of these two selectors
+
         alpha1 : float
            First parameter in equation (7) from Nygaard et al. Default = 0.216
 
@@ -2843,7 +2866,6 @@ class SSProtein:
 
         alpha3 : float
            Third parameter in equation (7) from Nygaard et al. Default = 0.821
-
 
         Returns
         -----------
@@ -2856,18 +2878,69 @@ class SSProtein:
         [1] Nygaard M, Kragelund BB, Papaleo E, Lindorff-Larsen K. An Efficient
         Method for Estimating the Hydrodynamic Radius of Disordered Protein
         Conformations. Biophys J. 2017;113: 550–557.
+
+        [2] Kirkwood, J. G., & Riseman, J. (1948). The Intrinsic Viscosities 
+        and Diffusion Constants of Flexible Macromolecules in Solution. 
+        The Journal of Chemical Physics, 16(6), 565–573.
+
+        [3] Pesce, F., Newcombe, E. A., Seiffert, P., Tranchant, E. E., Olsen, 
+        J. G., Grace, C. R., Kragelund, B. B., & Lindorff-Larsen, K. (2022). 
+        Assessment of models for calculating the hydrodynamic radius of 
+        intrinsically disordered proteins. Biophysical Journal. 
+        https://doi.org/10.1016/j.bpj.2022.12.013
+
         """
 
-        # first compute the rg
-        rg = self.get_radius_of_gyration(R1, R2)
+        # check a valid mode was passed and FREAK OUT if not!
+        ssutils.validate_keyword_option(mode, ['nygaard', 'kr'], 'mode')
 
-        # precompute
-        N_033 = np.power(self.n_residues, 0.33)
-        N_060 = np.power(self.n_residues, 0.60)
 
-        Rg_over_Rh = ((alpha1*(rg - alpha2*N_033)) / (N_060 - N_033)) + alpha3
+        # if we're using the nygaard mode
+        if mode == 'nygaard':
+            
+            # first compute the rg
+            rg = self.get_radius_of_gyration(R1, R2)
 
-        return (1/Rg_over_Rh)*rg
+            # precompute
+            N_033 = np.power(self.n_residues, 0.33)
+            N_060 = np.power(self.n_residues, 0.60)
+
+            Rg_over_Rh = ((alpha1*(rg - alpha2*N_033)) / (N_060 - N_033)) + alpha3
+
+            return (1/Rg_over_Rh)*rg
+
+        # if we're using the Kirkwood-Riseman mode
+        elif mode == 'kr':
+            all_rij = []
+
+            # build empty lists associated with each frame
+            for _ in range(self.n_frames):
+                all_rij.append([])
+
+            # now use our efficient implementation for calculating non-redundant
+            # and non-overlaping inter-residue distances for each residue over
+            # every frame
+            for idx in self.resid_with_CA:
+                rij = self.calculate_all_CA_distances(idx, mode=distance_mode)  
+
+                # this breaks rij down into each frame
+                for idx, f in enumerate(rij):
+
+                    # extend the contribugion for each residue's set of non-redundant
+                    # inverse distances 
+                    all_rij[idx].extend((1/f).tolist())
+    
+
+            # finally, take per-frame inverse of the inverse distance
+            # to get Rh
+            Rh = []
+            for f in all_rij:
+                Rh.append(1/np.mean(f))
+
+            return Rh
+        
+
+            
 
     # ........................................................................
     #
