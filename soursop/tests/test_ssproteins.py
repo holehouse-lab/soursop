@@ -228,7 +228,6 @@ def test_get_hydrodynamic_radius(GS6_CO):
     with pytest.raises(SSException):        
         rh = CP.get_hydrodynamic_radius(mode='nygaard_bad', distance_mode='CA_bad')
     
-    
 def test_get_molecular_volume(NTL9_CO):
 
     CP = NTL9_CO.proteinTrajectoryList[0]
