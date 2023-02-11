@@ -3116,7 +3116,8 @@ class SSProtein:
     #
     #
     def get_internal_scaling(self, R1=None, R2=None, mode='COM', mean_vals=False, stride=1, weights=False, etol=0.0000001, verbose=True):
-        """Calculates the raw internal scaling info for the protein in the
+        """
+        Calculates the raw internal scaling info for the protein in the
         simulation. R1 and R2 define a sub-region to operate over if sub-
         regional analysis is required. When residues are not provided the full
         protein's internal scaling (EXCLUDING the caps, if present) is
@@ -3219,8 +3220,46 @@ class SSProtein:
 
         Returns
         ----------
+        Tuple 
+        
+            1. Element 1 is a list of seequence separation values starting at 
+               1 and monotonically incrementing by 1 until we're at length of
+               sequence - 1.
 
-        TODO
+            2. Element 2 depends on if mean_vals is set to true or not. If it's
+               true then element 2 is a single value that reports the average 
+               inter-residue distance between ALL pairs of residues in all frames
+               that are at some sequence separation i.e plotting element 1 and 
+               element 2 gives you an internal scaling profile.
+
+               If mean_vals is False (default) then element 2 is a list of 
+               arrays where each array is EVERY individual inter-residue 
+               distance at the corresponding sequence separation. This means you
+               can plot the distribution on the internal scaling profile should
+               you so choose, rather than being limited to just the mean. 
+        Returns
+        ----------
+        Tuple 
+
+            The function returns a tuple with elements. Each sub-element is 
+            the same length are match 1-1 with one another.
+        
+            1. Element 1 is a list of seequence separation values starting at 
+               1 and monotonically incrementing by 1 until we're at length of
+               sequence - 1.
+
+            2. Element 2 depends on if mean_vals is set to true or not. If it's
+               true then element 2 is a single value that reports the average 
+               inter-residue distance between ALL pairs of residues in all frames
+               that are at some sequence separation i.e plotting element 1 and 
+               element 2 gives you an internal scaling profile.
+
+               If mean_vals is False (default) then element 2 is a list of 
+               arrays where each array is EVERY individual inter-residue 
+               distance at the corresponding sequence separation. This means you
+               can plot the distribution on the internal scaling profile should
+               you so choose, rather than being limited to just the mean.
+       
 
         References
         ---------------
@@ -3406,7 +3445,20 @@ class SSProtein:
         Returns
         ----------
 
-        TODO
+        Returns
+        ----------
+        Tuple 
+
+            The function returns a tuple with elements. Each sub-element is 
+            the same length are match 1-1 with one another.
+        
+            1. Element 1 is a list of seequence separation values starting at 
+               1 and monotonically incrementing by 1 until we're at length of
+               sequence - 1.
+
+            2. Element 2 is a list of root mean-squared distance for each 
+               set of inter-residue distance that matches the sequence 
+               separation in element 1.
         """
 
         # compute the non RMS internal scaling behaviour
@@ -3760,7 +3812,17 @@ class SSProtein:
 
         Returns
         -----------
-        TO DO
+        np.ndarray or tuple:
+
+            The return type depends on what options are passed.
+
+            * **If no mode is passed or mode ='residue' is passed**, the function defaults to using the 'residue' mode with a stride of 20. This returns a np.ndarray of shape (frames, nres) where frames is the number of individual frames over which the per-residue SASA was calculated, and nres is the number of residues INCLUDING caps if present.
+            * **If mode = 'atom'** This returns a np.ndarray of shape  (frames, natoms) where frames is the number of individual frames over which the per-residue SASA was The function defaults to using the 'atom' mode with the requested stride (default  =20). 
+            * **If mode ='sidechain' is passed**, this returns a np.ndarray of shape  (frames, nres) where frames is the number of individual frames over which the per-residue SASA was calculated and nres is the number of residues where the sidechain SASA was calculated. Sidechain selection here is done using mdtraj 'sidechain' topology selection language with the exception that backbone hydrogen atoms are included with the sidechain (H, HA, HA2, HA3) so we excluded these.
+            * **If mode ='backbone' is passed** this returns a np.ndarray of shape (frames, nres) where frames is the number of individual frames over which the per-residue SASA was calculated and nres is the number of residues where the The function defaults to using the 'sidechain' mode with the requested stride (default  =20). Backbone selection here is done using mdtraj 'backbone' topology selection language with the exception that backbone hydrogen atoms are excluded from the backbone (H, HA, HA2, HA3) so we include these.
+            * **If mode ='all' is passed**, the function returns a 3x tuple where the first element is the 'residues' return array, the second is the 'sidechain' return array and the third is the 'backbone' return array
+        
+
         """
 
         ## >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
@@ -3778,6 +3840,7 @@ class SSProtein:
 
                 # get the atomic indices
                 if passed_mode == 'sidechain':
+                    
                     # for some reason 'sidechain' selection includes the backbone hydrogen atoms??!?!
                     relevant_atom_idx = self.topology.select('resid %i and %s and (not name "H" "HA" "HA2" "HA3")' % (i,passed_mode))
 
@@ -3801,6 +3864,9 @@ class SSProtein:
             return np.array(residue_SASA).transpose()
             ## >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 
+        ##
+        ## START OF ACTUAL FUNCTION
+        ##
 
         # validate input mode
         ssutils.validate_keyword_option(mode, ['residue', 'atom','backbone','sidechain','all'], 'mode')
@@ -3815,20 +3881,16 @@ class SSProtein:
         # downsample based on the stride
         target = self.__get_subtrajectory(self.traj, stride)
 
-        # 100* to convert from nm^2 to A^2
+        # 100* to convert from nm^2 to A^2, and *0.1 for probe radius to convert from A to nm
         if mode == 'residue':
-
             return_data = 100*md.shrake_rupley(target, mode='residue', probe_radius=probe_radius*0.1)
 
         if mode == 'atom':
             return_data = 100*md.shrake_rupley(target, mode='atom', probe_radius=probe_radius*0.1)
 
-
         if mode == 'sidechain' or mode == 'backbone' or mode == 'all':
 
-            print("WARNING: Not tested on multiprotein systems")
-
-            # run calc
+            # run calculation for on the whole trajectory
             basis =  md.shrake_rupley(target, mode='atom', probe_radius=probe_radius*0.1, get_mapping=True)
 
             # extract sidechains
@@ -3846,7 +3908,7 @@ class SSProtein:
                 return_data = SC_SASA
 
             if mode == 'backbone':
-                return_data = SC_SASA
+                return_data = BB_SASA
 
             if mode == 'all':
                 return_data =  (ALL_SASA, SC_SASA, BB_SASA)
@@ -4788,9 +4850,18 @@ class SSProtein:
         along the chain as a function of sequence separation. This decay can
         be used to estimate the persisence length.
 
-        TO DO - finish off function signature
-
-        No checking of atom1 and atom2...
+        Conceptually, the way to think about this is that if every amino
+        acid has a C->N vector WITHIN itself, we can ask how that C->N
+        vector decays as you move further apart in sequence separation.
+        For residue i and i+1 these vectors are quite well-correlated 
+        because, they're next to each other, but as i and i+x get 
+        further away these two vectors become decorrelated. This gives
+        a measure of the intramolecular correlation, which effectively
+        reports on how stiff the chain is. 
+        
+        Note that atom1 and atom2 must be found within the same residue and 
+        must be present for all residues, so the C->N bond is really the
+        only reasonable option.
 
         Parameters
         ----------
@@ -4805,15 +4876,32 @@ class SSProtein:
 
         return_all_pairs: bool {False}
             Whether or not to return a dictionary with all inter-residue
-            distances
+            distances or not. If True, the second element in the return
+            tuple is a dictionary of res1-res2 pairs that reports on the
+            average decay for that specific pair. This can be useful for
+            assessing if there are specific regions of the chain that are
+            more or less stiff.
 
         Returns
         -------
-        array_like, or 2-tuple
-            If `array_like`, the matrix returned is comprised of only the
-            angle decay. If a 2-tuple, both the angle decay matrix (index 0)
-            and the dictionary of all possible pairs and their associated
-            correlation coefficients is returned.
+        list or tuple
+        
+            The return type depends on if return_all_pairs is set to 
+            True or not. 
+        
+            If return_all_pairs is False (default), then the return type
+            is a numpy array of shape (nres,3), where the first column is 
+            the inter-residue separation, the second column is the average
+            correlation and the third column is the standard devaition of
+            the distribution of correlations obtained from all inter-residue
+            correlations associated with that specific sequence separation.
+
+            If return_all_pairs is set to True then, the 2-position tuple
+            is returned where element 1 is the same matrix described above,
+            and the second element is a dictionary of res1-res2 pairs that 
+            reports on the average decay for that specific pair. This can 
+            be useful for assessing if there are specific regions of the 
+            chain that are more or less stiff.
 
         """
 
@@ -4827,10 +4915,12 @@ class SSProtein:
             # this extracts the C->N vector for each frame for each residue
             value = np.squeeze(self.traj.atom_slice(self.__residue_atom_lookup(i, atom1)).xyz) - np.squeeze(self.traj.atom_slice(self.__residue_atom_lookup(i, atom2)).xyz)
 
-            # CN_vectors becomes a list where each element is [3 x nframes] array where 3 is the x/y/z vector coordinates
+            # CN_vectors becomes a list where each element is [3 x nframes] array where 3 is the x/y/z
+            # vector coordinates. 
             CN_vectors.append(value)
 
-            # CN_lengths extracts the ||v|| length of each vector (should be basically the same)
+            # CN_lengths extracts the ||v|| length of each vector (should be basically the same). We need
+            # this for the final linalg operation later
             CN_lengths.append(np.linalg.norm(value,axis=1))
 
         # calculate the number of residues for which we have C->N vectors
@@ -4842,7 +4932,7 @@ class SSProtein:
         for i in range(1, npos):
             all_vals[i] = []
 
-        # precompute
+        # precompute || u || * || v || wich 
         length_multiplier = {}
         for i1 in range(0, npos-1):
             length_multiplier[i1] = {}
@@ -4854,19 +4944,25 @@ class SSProtein:
             for j1 in range(i1+1, npos):
 
                 # for each frame calculate (u . v) / (||u|| * ||v||)
-                # where u and v are vectors and "." is the dot product between each pair. We're only calculating PAIR-WISE dot product
-                # of each [x,y,z] with [x,y,z] vector, so doing np.sum(Matrix*matrix) is SO SO SO much faster than anything else. We
-                # also take the average to avoid storing a ton of numbers and generating these giant vectors
+                # where u and v are vectors and "." is the dot product between each pair. We're only
+                # calculating PAIR-WISE dot product of each [x,y,z] with [x,y,z] vector, so doing
+                # np.sum(Matrix*matrix) is SO SO SO much faster than anything else. We also take the
+                # average to avoid storing a ton of numbers and generating these giant vectors
+                # 
 
                 all_vals[j1-i1].append(np.mean(np.sum(CN_vectors[i1]*CN_vectors[j1],axis=1)/length_multiplier[i1][j1]))
 
         return_matrix = []
-        return_matrix.append([0,1.0,0.0])
+        return_matrix.append([0, 1.0, 0.0])
         for k in all_vals:
             return_matrix.append([k, np.mean(all_vals[k]), np.std(all_vals[k])])
 
+        # convert to a matrix at the end
+        return_matrix = np.array(return_matrix)
+
+        
         # if we each possible inter-residue autocorrelation, this generates a dictionary
-        # where
+        # where each unique res1-res2 pair value is represented
         if return_all_pairs:
 
             # minus 1 because return matrix includes the obligate self correlation which
@@ -4891,7 +4987,7 @@ class SSProtein:
 
             return (return_matrix, all_pairs_dict)
         else:
-            return return_matrix
+            return np.array(return_matrix)
 
 
 
