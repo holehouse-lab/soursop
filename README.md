@@ -3,11 +3,37 @@ SOURSOP
 [![Build Status](https://github.com/jaredl7/soursop/actions/workflows/soursop-ci.yml/badge.svg?branch=master)](https://github.com/jaredl7/soursop/actions)
 [![codecov](https://codecov.io/gh/jaredl7/soursop/branch/master/graph/badge.svg?token=RHGII0235L)](https://codecov.io/gh/jaredl7/soursop)
 [![Documentation Status](https://readthedocs.org/projects/soursop/badge/?version=latest)](https://soursop.readthedocs.io/en/latest/?badge=latest)
-#### Current Release Candidate: 0.1.9.x (small increments are patches)
+## ABOUT
+SOURSOP is a Python-based simulation analysis package for working with intrinsically disordered and unfolded proteins. It is built on top of [mdtraj](https://mdtraj.org/), and was developed by Jared Lalmansingh and Alex Holehouse. 
 
-Analysis package for all-atom simulations of disordered and unfolded proteins.
+The current stable release candidate on PyPI is 0.2.3 (Feb 2023).
 
-SOURSOP was fully developed in the Pappu Lab (http://pappulab.wustl.edu) but is maintained by the Holehouse lab (https://holehouselab.com).
+## DOCUMENTATION
+All documentation, including installation information [can be found here](https://soursop.readthedocs.io/). 
+
+## ERRORS, FEATURES, REQUESTS
+If you find a bug, typo, or error [please raise an issue or GitHub](https://github.com/holehouse-lab/soursop/issues).
+
+If you wish to add a new feature, please see our Development information in the docs (especially for adding plugins).
+
+## MISCELLANEOUS
+* As of right now, the continuous integration fails because of a specific mismatch in how an edge-case error is handled between different versions of mdtraj. All other tests are passing and SOURSOP is ready for production.
+
+## PREPRINT
+To read about SOURSOP please see our preprint:
+
+**SOURSOP: A Python package for the analysis of simulations of intrinsically disordered proteins**
+
+Jared Lalmansingh, Alex Keeley, Kiersten Ruff, Rohit Pappu, Alex Holehouse
+
+
+#### Copyright
+Copyright (c) 2015-2023 under the GNU LESSER GENERAL PUBLIC LICENSE 
+
+# Changelog
+#### Update February 2023
+* Added plugins example
+* Added additional tests and finalized documentation
 
 #### Update July 2022
 For version 0.2.1 we introduce potentially breaking changes into how COM distances are reported. 
@@ -33,12 +59,6 @@ Release 0.1.2 includes updated support to ensure CAMPARITraj will continue to wo
 
 #### Update May 2019
 This is the *development* repository of CAMPARITraj and SHOULD NOT be used for production. Seriously, it is being modified constantly and with no building requirements during code pushes. If you want a building copy PLEASE contact Alex directly! [last touched June 24th 2019].
-
-#### Copyright
-Copyright (c) 2015-2021, Alex Holehouse, Jared Lalmansingh, and Rohit Pappu. This is a MolSSI-sponsored project.
-
-#### Authors
-Jared Lalmansingh, Alex Keeley, Kiersten Ruff, Rohit Pappu, Alex Holehouse
 
 #### Acknowledgements
 Project based on the

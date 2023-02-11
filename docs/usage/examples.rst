@@ -1,14 +1,6 @@
 Examples
 =========================================================
 
-Example 1
-***************
-
-```some code example here```
-
-
-Example 2
-***************
-
-```Another code example ```
+Example of SOURSOP analyses `can be seen here
+<https://github.com/holehouse-lab/supportingdata/tree/master/2023/lalmansingh_2023>`_ directory.
 
