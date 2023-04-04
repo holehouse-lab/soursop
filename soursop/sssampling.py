@@ -23,7 +23,7 @@ import seaborn as sns
 from matplotlib import transforms
 from natsort import natsorted
 from scipy.special import rel_entr
-# from xhistogram.core import histogram
+import re
 
 from soursop import ssutils
 
@@ -33,41 +33,34 @@ from .sstrajectory import SSTrajectory, parallel_load_trjs
 
 def hellinger_distance(p: np.ndarray, q: np.ndarray) -> np.ndarray:
     """
-    Computes the hellinger distance between a set probability distributions p and q.
-    The hellinger distances is defined by:
+    Computes the Hellinger distance between a set of probability distributions p and q.
+    The hellinger distances is defined as:
         H(P,Q) = r'\frac{1}{\sqrt{2}} \times \sqrt{\sum_{i=1}^{k}(\sqrt{p_i}-\sqrt{q_i})^2}'
     where k is the length of the probability vectors being compared.
-
+    
     Parameters
     ----------
     p : np.ndarray
-        a probability density function, or series of probabiliy density functions,
-        to compute the hellingers distance on. p and q must be the same shape
-
+        A probability distribution or set of probability distributions to compare.
     q : np.ndarray
-        a probability density function, or series of probabiliy density functions,
-        to compute the hellingers distance on. p and q must be the same shape
+        A probability distribution or set of probability distributions to compare.
 
     Returns
     -------
     np.ndarray
-        The hellingers distance for each residue in the sequence
+        The Hellinger distance(s) between p and q.
     """
-    if not isinstance(p, np.ndarray):
-        p = np.array(p)
-    if not isinstance(q, np.ndarray):
-        q = np.array(q)
+    # Ensure that p and q are NumPy arrays
+    p = np.asarray(p)
+    q = np.asarray(q)
 
-    if p.ndim == 3 and q.ndim == 3:
-        hellingers = np.sqrt(np.sum((np.sqrt(p) - np.sqrt(q)) ** 2, axis=2)) / np.sqrt(2)
-    elif p.ndim == 2 and q.ndim == 2:
-        hellingers = np.sqrt(np.sum((np.sqrt(p) - np.sqrt(q)) ** 2, axis=1)) / np.sqrt(2)
-    else:
-        hellingers = np.sqrt(np.sum((np.sqrt(p) - np.sqrt(q)) ** 2)) / np.sqrt(2)
-
-    return hellingers
+    # Compute the Hellinger distance
+    numerator = np.sum(np.square(np.sqrt(p) - np.sqrt(q)), axis=-1)
+    denominator = np.sqrt(2)
+    return np.sqrt(numerator) / denominator
 
 
+# TODO refactor/check this, broadcasting optiization?
 def rel_entropy(p: np.ndarray, q: np.ndarray) -> np.ndarray:
     """Computes the relative entropy between two probability distributions p and q.
 
@@ -86,10 +79,8 @@ def rel_entropy(p: np.ndarray, q: np.ndarray) -> np.ndarray:
     np.ndarray
         The relative entropy for each residue in the sequence
     """
-    if not isinstance(p, np.ndarray):
-        p = np.array(p)
-    if not isinstance(q, np.ndarray):
-        q = np.array(q)
+    p = np.asarray(p)
+    q = np.asarray(q)
 
     if p.ndim == 3 and q.ndim == 3:
         relative_entropy = np.sum(rel_entr(p, q), axis=2)
@@ -100,52 +91,57 @@ def rel_entropy(p: np.ndarray, q: np.ndarray) -> np.ndarray:
     return relative_entropy
 
 
-def glob_traj_paths(root_dir: Union[str, pathlib.Path],
-                    num_reps=None, mode=None, traj_name="__traj.xtc",
-                    top_name="__START.pdb", exclude_dirs=None
-                    ):
+def find_trajectory_files(root_dir: Union[str,pathlib.Path], 
+                          num_replicates : int,
+                          exclude_dirs : Union[None, List] = ["eq", "FULL"],
+                          traj_name : str ="__traj.xtc",
+                          top_name : str ="__START.pdb"):
     """
-    This function assembles the list of trajectory and topology paths for a set of simulations.
+    This function assembles the list of trajectory and topology paths 
+    for a set of simulations in a given directory tree.
 
     Parameters
     ----------
     root_dir : Union[str, pathlib.path]
         Filepath or list of file paths
-    mode : str, optional
-        if "mega", the globbing will iterate over directories labeled 
-        both "coil_start" and "helical_start", by default None
     num_reps : int, optional
-        if mode == 'mega' then this flag controls the number of replicates
-        in each directory. Iterates over ["coil_start","helical_start"]
-        gathering trajectories from child directories [1,num_reps+1], by default None
+        Number of replicas to gather trajectories from child directories [1,num_reps+1], by default None
+    exclude_dirs : Union[None,list], optional
+        List of directory names you want to exclude, by default ["eq", "FULL"]
+        Set to None to include "eq" and "FULL" or specify list.
     traj_name : str, optional
         trajectory filename, by default "__traj.xtc"
     top_name : str, optional
         topology filename, by default "__START.pdb"
     """
-    top_paths, traj_paths = [], []
-    if str(mode).lower() == "mega":
-        cwd = pathlib.Path(f"{root_dir}").absolute().resolve()
-        for directory in ["coil_start", "helical_start"]:
-            basepath = os.path.join(cwd, directory)
-            for rep in range(1, num_reps+1):
-                traj_paths.extend(glob(f"{basepath}/{rep}/{traj_name}"))
-                top_paths.extend(glob(f"{basepath}/{rep}/{top_name}"))
-    else:
-        if not exclude_dirs:
-            exclude_dirs = ["eq", "FULL"]
-        else:
-            np.unique(exclude_dirs.extend(["eq", "FULL"]))
-
-        for root, _, files in os.walk(root_dir):
-            if os.path.basename(root) in exclude_dirs:
-                continue
-            for filename in fnmatch.filter(files, traj_name):
-                traj_paths.append(pathlib.Path(os.path.join(root, filename)).absolute().resolve().as_posix())
-            for filename in fnmatch.filter(files, top_name):
-                top_paths.append(pathlib.Path(os.path.join(root, filename)).absolute().resolve().as_posix())
-
-    return natsorted(top_paths), natsorted(traj_paths)
+    if exclude_dirs is None:
+        exclude_dirs = []
+        
+    traj_files = []
+    start_files = []
+    dir_dict = {}
+    for dirpath, dirnames, filenames in os.walk(os.path.abspath(root_dir)):
+        if any(d in exclude_dirs for d in dirnames):
+            # exclude directories in exclude_dirs
+            dirnames[:] = [d for d in dirnames if d not in exclude_dirs]
+        if dirpath.endswith(tuple(str(i) for i in range(1, num_replicates + 1))):
+            # extract the parent directory name
+            parent_dirname = os.path.basename(os.path.dirname(dirpath))
+            traj_file = os.path.join(dirpath, f'{traj_name}')
+            start_file = os.path.join(dirpath, f'{top_name}')
+            if os.path.isfile(traj_file) and os.path.isfile(start_file):
+                if parent_dirname not in dir_dict:
+                    # create a new list for the current parent directory name
+                    dir_dict[parent_dirname] = []
+                dir_dict[parent_dirname].append((traj_file, start_file))
+    
+    for parent_dirname in natsorted(dir_dict.keys()):
+        # sort the list of files for the current parent directory name
+        sorted_files = natsorted(dir_dict[parent_dirname])
+        for traj_file, start_file in sorted_files:
+            traj_files.append(traj_file)
+            start_files.append(start_file)
+    return traj_files, start_files
 
 
 class SamplingQuality:
