@@ -16,8 +16,8 @@ ssdata contains all specific data used, and is disinct from configs, which are
 package specific global configurations, while ssdata contains information that
 is unambigious as well-defined.
 """
-
-
+import numpy as np
+import soursop
 
 THREE_TO_ONE = {'ALA':'A', 
                 'CYS':'C',
@@ -104,3 +104,8 @@ DEFAULT_SIDECHAIN_VECTOR_ATOMS = {'ALA': 'CB',
 
 # list of valid residue names as supported by SOURSOP. These are the resnames compared againt when assessing for if a molecule is a protein or not. 
 ALL_VALID_RESIDUE_NAMES = ['ALA','CYS','ASP','ASH','GLU','GLH','PHE','GLY','HIE','HIS','HID','HIP','ILE','LEU', 'LYS','LYD','MET','ASN','PRO','GLN','ARG','SER','THR','VAL','TRP','TYR','AIB', 'ABA','NVA','NLE', 'ORN', 'DAB','PTR','TPO','SEP', 'KAC', 'KM1', 'KM2' 'KM3', 'ACE','NME', 'FOR', 'NH2']
+
+
+psi_ev_angles = np.load(soursop.get_data("psi_excluded_volume_tripeptides.pickle"),allow_pickle=True)
+
+phi_ev_angles = np.load(soursop.get_data("psi_excluded_volume_tripeptides.pickle"),allow_pickle=True)
