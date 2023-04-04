@@ -3,7 +3,7 @@ pytest
 pytest-cov
 pytest-forked
 pytest-xdist
-mdtraj==1.9.5
+mdtraj==1.9.7
 numpy
 cx_Freeze
 PyYAML
@@ -11,3 +11,4 @@ ruamel_yaml
 threadpoolctl
 pandas
 scipy
+matplotlib

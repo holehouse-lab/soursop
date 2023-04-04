@@ -8,11 +8,22 @@ from soursop import ssprotein
 
 
 GS6_FILES=['gs6.pdb','gs6.xtc']
+CTL9_FILES=['ctl9.pdb','ctl9.xtc']
 NTL9_FILES=['ntl9.pdb','ntl9.xtc']
 GROMACS_2_CHAINS=['gromacs2chains/top.pdb','gromacs2chains/traj.xtc']
 
 
 test_data_dir = soursop.get_data('test_data')
+
+
+@pytest.fixture(scope='session', autouse=True)
+def CTL9_CP(request):
+    topology_path = os.path.join(test_data_dir, CTL9_FILES[0])
+    trajectory_path = os.path.join(test_data_dir, CTL9_FILES[1])
+    
+    CTL9_CP = sstrajectory.SSTrajectory(trajectory_path, topology_path).proteinTrajectoryList[0]
+    
+    return CTL9_CP
 
 
 @pytest.fixture(scope='session', autouse=True)
@@ -54,7 +65,7 @@ def GMX_2CHAINS(request):
     return GMX_2CHAINS
 
 
-# This is implemented for use in unittests for `ctanalyzer`.
+# This is implemented for use in unittests for `ssanalyzer`.
 # Adapted from:
 # https://stackoverflow.com/questions/33508060/create-and-import-helper-functions-in-tests-without-creating-packages-in-test-di
 class ProteinHelper:

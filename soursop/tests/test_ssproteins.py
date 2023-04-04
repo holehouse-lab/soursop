@@ -149,12 +149,13 @@ def test_soursop_imported():
 
 def test_DSSP(NTL9_CP):
     SS = NTL9_CP.get_secondary_structure_DSSP()
-    print(SS[0])
+    # TO DO - complete
 
 
 def test_BBSEG(NTL9_CP):
     SS = NTL9_CP.get_secondary_structure_BBSEG()
-    print(SS[0])
+    # TO DO - complete
+
 
 
 
@@ -196,8 +197,36 @@ def test_get_distance_map(GS6_CO):
 def test_get_hydrodynamic_radius(GS6_CO):
 
     CP = GS6_CO.proteinTrajectoryList[0]
+
+    # check nygaard mode implicit
     rh = CP.get_hydrodynamic_radius()
-    assert (11.840569781179006 - rh[0]) < 0.001
+    assert abs(11.840569781179006 - rh[0]) < 0.001
+    assert abs(np.mean(rh) - 11.3777) < 0.001
+
+    # check nygaard mode explicit
+    rh = CP.get_hydrodynamic_radius(mode='nygaard')
+    assert abs(11.840569781179006 - rh[0]) < 0.001
+
+    # check kirkwood-riseman mode explicit (implicit CA)
+    rh = CP.get_hydrodynamic_radius(mode='kr')
+    assert abs((5.9223 - rh[0])) < 0.001
+    assert abs(np.mean(rh) - 5.884) < 0.001
+
+    # check kirkwood-riseman mode explicit (explicit CA)
+    rh = CP.get_hydrodynamic_radius(mode='kr', distance_mode='CA')
+    assert abs((5.9223 - rh[0])) < 0.001
+    assert abs(np.mean(rh) - 5.884) < 0.001
+
+    # check kirkwood-riseman mode explicit with COM mode
+    rh = CP.get_hydrodynamic_radius(mode='kr', distance_mode='COM')
+    assert abs((5.8634 - rh[0])) < 0.001
+    assert abs(np.mean(rh) - 5.8536) < 0.001
+
+    # check it correctly raises an SSException if an invalid mode is passed
+    with pytest.raises(SSException):
+        rh = CP.get_hydrodynamic_radius(mode='nygaard_bad')
+    with pytest.raises(SSException):
+        rh = CP.get_hydrodynamic_radius(mode='nygaard_bad', distance_mode='CA_bad')
 
 def test_get_molecular_volume(NTL9_CO):
 
@@ -614,17 +643,56 @@ def test_get_angle_decay_no_return_all_pairs(GS6_CP, NTL9_CP):
 
         assert len(return_matrix) == protein.n_residues - num_caps
 
+def test_get_angle_decay_consistent_value(GS6_CP, NTL9_CP):
+    """
+    Test that ensures the average returned in the return matrix
+    matches the average that can be manually calculated from the
+    individual pairs
+
+    """
+    proteins = [GS6_CP, NTL9_CP]
+    for protein in proteins:
+
+        # do this because we only caculate vector
+        # between res with CA, the indices here are position within the n-to-c
+        # vector that always starts at 1
+        # separation not index position, so we are always separation of 1-x
+        min_res = 1
+        max_res = protein.n_residues - (protein.n_residues - len(protein.resid_with_CA))
+
+        (return_matrix, pair_dict) = protein.get_angle_decay(return_all_pairs=True)
+
+        for window in range(1,8):
+
+            if window + min_res >= max_res+1:
+                continue
+            
+            all_pairs = []
+            for i in range(min_res, (max_res+1)-window):
+                j = i+window
+                n = f"{i}-{j}"
+                all_pairs.append(pair_dict[n])
+            
+            assert (np.mean(all_pairs) - return_matrix[window][1]) == 0
+        
 
 # SSProtein.get_contact_map
 def test_get_contact_map_weights(GS6_CP, NTL9_CP):
     default_weight = 1.0
-    modes = 'ca,closest,closest-heavy,sidechain'.split(',')
+
+    # It appears that sidechain-heavy raises an error for GLY has returned in mdtraj 1.9.5+.
+    # A dynamic check is made for a failing test when that mode is encountered.
+    modes = 'ca,closest,closest-heavy,sidechain,sidechain-heavy'.split(',')
     proteins = [GS6_CP, NTL9_CP]
     for protein in proteins:
         weights = [default_weight for frame in range(protein.n_frames)]
         normalized_weights = [w/protein.n_frames for w in weights]
         for mode in modes:
-            results = protein.get_contact_map(mode=mode, weights=normalized_weights)  # the other options have been test
+            if mode == 'sidechain-heavy':
+                with pytest.raises(SSException):
+                    results = protein.get_contact_map(mode=mode, weights=normalized_weights)  # the other options have been tested
+                continue
+            results = protein.get_contact_map(mode=mode, weights=normalized_weights)  # the other options have been tested
             contact_map, contact_map_order = results
 
             protein_residues = len(protein.resid_with_CA)
@@ -635,19 +703,14 @@ def test_get_contact_map_weights(GS6_CP, NTL9_CP):
             assert contact_map_order.shape[0] == protein_residues
 
 
-def test_get_contact_map_weights_sidechain_heavy(GS6_CP, NTL9_CP):
+def test_get_contact_map_weights_invalid_mode(GS6_CP, NTL9_CP):
+    # Checking that
+    #
+
     default_weight = 1.0
     proteins = [GS6_CP, NTL9_CP]
-    mode = 'sidechain-heavy'
-    for protein in proteins:
-        weights = [default_weight for frame in range(protein.n_frames)]
-        normalized_weights = [w/protein.n_frames for w in weights]
-
-        # both proteins have 'GLY', which will fail here as it lacks a sidechain
-        with pytest.raises(SSException):
-            protein.get_contact_map(mode=mode, weights=normalized_weights)  # the other options have been tested
-
     # this should fail with an SSException
+
     mode = 'invalid-mode'
     for protein in proteins:
         weights = [default_weight for frame in range(protein.n_frames)]
@@ -831,6 +894,53 @@ def test_get_regional_SASA(GS6_CP, NTL9_CP, cta_protein_helper):
         assert rsasa != None
 
 
+def test_get_all_SASA(GS6_CP, NTL9_CP):
+
+    proteins = [GS6_CP, NTL9_CP]
+
+    # check default
+    assert np.isclose(np.min(GS6_CP.get_all_SASA(stride=1)), 56.75124)
+    assert np.isclose(np.max(GS6_CP.get_all_SASA(stride=1)), 144.38452)
+    assert np.isclose(np.mean(GS6_CP.get_all_SASA(stride=1)), 108.992676)
+    
+    # check residue mode
+    assert np.isclose(np.min(GS6_CP.get_all_SASA(stride=1, mode='residue')), 56.75124)
+    assert np.isclose(np.max(GS6_CP.get_all_SASA(stride=1, mode='residue')), 144.38452)
+    assert np.isclose(np.mean(GS6_CP.get_all_SASA(stride=1, mode='residue')), 108.992676)
+
+    # check variable stride works
+    assert np.isclose(np.mean(GS6_CP.get_all_SASA(stride=3, mode='residue')), 108.51016)
+
+    # check shapes are ok
+    assert GS6_CP.get_all_SASA(stride=1, mode='residue').shape == (5,8)
+    assert GS6_CP.get_all_SASA(stride=1, mode='atom').shape == (5,66)
+
+    # check atom values work
+    assert np.min(GS6_CP.get_all_SASA(stride=1, mode='atom')) == 0.0
+    assert np.isclose(np.max(GS6_CP.get_all_SASA(stride=1, mode='atom')), 38.101517) 
+    assert np.isclose(np.mean(GS6_CP.get_all_SASA(stride=1, mode='atom')), 13.211235)
+
+    # check backbone values work
+    assert np.isclose(np.sum(GS6_CP.get_all_SASA(stride=1, mode='backbone')), 1894.9926)
+    assert np.isclose(np.sum(GS6_CP.get_all_SASA(stride=1, mode='sidechain')), 1309.465)
+    assert np.isclose(np.min(GS6_CP.get_all_SASA(stride=1, mode='backbone')), 27.768456)
+    assert np.isclose(np.min(GS6_CP.get_all_SASA(stride=1, mode='sidechain')), 0.0)
+
+    # check dimesions
+    GS6_CP.get_all_SASA(stride=1, mode='backbone').shape == (5,6)
+    GS6_CP.get_all_SASA(stride=1, mode='sidechain').shape == (5,6)
+    GS6_CP.get_all_SASA(stride=1, mode='backbone').shape == (5,6)
+    GS6_CP.get_all_SASA(stride=1, mode='sidechain').shape == (5,6)
+
+    # check that 'all' works
+    assert len(GS6_CP.get_all_SASA(stride=1, mode='all')) == 3
+
+    # assert all works as expected
+    assert np.sum(GS6_CP.get_all_SASA(stride=1, mode='all')[0] == GS6_CP.get_all_SASA(stride=1)) == 40
+    assert np.sum(GS6_CP.get_all_SASA(stride=1, mode='all')[1] == GS6_CP.get_all_SASA(stride=1, mode='sidechain')) == 30
+    assert np.sum(GS6_CP.get_all_SASA(stride=1, mode='all')[2] == GS6_CP.get_all_SASA(stride=1, mode='backbone')) == 30
+        
+
 def test_get_site_accessibility_resid(GS6_CP, NTL9_CP, cta_protein_helper):
     num_copies = 5
     proteins = [GS6_CP, NTL9_CP]
@@ -887,13 +997,13 @@ def test_get_inter_residue_COM_vector(GS6_CP, NTL9_CP):
 
     """
 
-    
-    com_distances = GS6_CP.get_inter_residue_COM_distance(0,5) 
+
+    com_distances = GS6_CP.get_inter_residue_COM_distance(0,5)
     com_distances_manually = np.sqrt(np.sum(np.square(GS6_CP.get_inter_residue_COM_vector(0,5)),1))
     assert np.sum(com_distances - com_distances_manually) < 0.001
 
 
-    com_distances = NTL9_CP.get_inter_residue_COM_distance(0,25) 
+    com_distances = NTL9_CP.get_inter_residue_COM_distance(0,25)
     com_distances_manually = np.sqrt(np.sum(np.square(NTL9_CP.get_inter_residue_COM_vector(0, 25)),1))
     assert np.sum(com_distances - com_distances_manually) < 0.001
 
@@ -901,18 +1011,17 @@ def test_get_inter_residue_COM_vector(GS6_CP, NTL9_CP):
 
 def test_get_center_of_mass(GS6_CP, NTL9_CP):
 
-    
+
     molecular_com = GS6_CP.get_center_of_mass()
     assert(len(molecular_com)) == GS6_CP.n_frames
-    
+
     # compute COM of residues 0 and 1
     R0_com = GS6_CP.get_center_of_mass(0,0)
     R5_com = GS6_CP.get_center_of_mass(5,5)
 
     com_distances_from_center_of_mass = np.sqrt(np.sum(np.square(R0_com - R5_com),1))
     com_distances_manually = np.sqrt(np.sum(np.square(GS6_CP.get_inter_residue_COM_vector(0,5)),1))
-    com_distances = GS6_CP.get_inter_residue_COM_distance(0,5) 
+    com_distances = GS6_CP.get_inter_residue_COM_distance(0,5)
 
     assert np.sum(com_distances_manually - com_distances_from_center_of_mass) == 0
     assert np.sum(com_distances - com_distances_from_center_of_mass) == 0
-    
