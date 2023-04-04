@@ -4,7 +4,7 @@ Unit and regression test for the soursop package.
 
 # Import package, test suite, and other packages as needed
 import numpy as np
-from soursop.sssampling import hellinger_distance, glob_traj_paths, SamplingQuality
+from soursop.sssampling import hellinger_distance, find_trajectory_files, SamplingQuality
 
 def test_hellingers_distance():
     p = np.array([1,0])
@@ -25,8 +25,8 @@ def test_hellingers_distance():
     assert np.all(hellinger_distance(p,q) == np.array([0.,1.]))
 
 def test_sampling_quality():
-    wt_top_paths, wt_traj_paths = glob_traj_paths("data/test_data/sampling_quality/WT")
-    ev_top_paths, ev_traj_paths = glob_traj_paths("data/test_data/sampling_quality/EV")
+    wt_traj_paths, wt_top_paths  = find_trajectory_files("data/test_data/sampling_quality/WT",3)
+    ev_traj_paths, ev_top_paths = find_trajectory_files("data/test_data/sampling_quality/EV",3)
 
     alanine_qual = SamplingQuality(wt_traj_paths,
                     ev_traj_paths, 

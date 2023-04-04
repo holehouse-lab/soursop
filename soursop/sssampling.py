@@ -768,3 +768,16 @@ class SamplingQuality:
             The per residue fractional helicity for each trajectory in self.trajs and self.ref_trajs.
         """
         return self.__compute_frac_helicity()
+
+
+# Interface to separate computation of dihedrals from SamplingQuality class
+# will serve to return precomputed excluded volume dihedral angle distributions
+# if no EV trajectories are provided.
+
+# class DihedralInterface():
+#     """docstring for DihedralInterface."""
+#     def __init__(self, arg):
+#         super(DihedralInterface, self).__init__()
+#     arg
+
+    
