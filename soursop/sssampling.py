@@ -212,18 +212,26 @@ class SamplingQuality:
         self.n_cpus = n_cpus
         self.truncate = truncate
 
+        self.bins = self.get_degree_bins()
+        self.__precomputed = {}
+
+        
+        if str(self.method).lower() == "rmsd" or str(self.method).lower() == "p_vects":
+            raise NotImplementedError("This functionality has not been implemented yet")
+
+        ssutils.validate_keyword_option(method, ['dihedral', 'rmsd', 'p_vects'], 'method')
+
         if not self.n_cpus:
             self.n_cpus = os.cpu_count()
 
         # check to ensure trajectory lists are the same length and non-zero
-        if len(self.traj_list) == 0 or len(self.reference_list) == 0\
-            or len(self.traj_list) != len(self.reference_list):
+        # not checking ref list anymore because we will support empty reference
+        # via leveraging precomputed tripeptide reference distributions 
+        if len(self.traj_list) == 0:
             raise SSException(
-                    f"Input trajectory and reference lists must\
-                    be non-empty and equal in length.\
-                    Received len(traj_list)={len(self.traj_list)},\
-                    len(reference_list)={len(self.reference_list)}"
-                )
+                    f"Input trajectory list must be non-empty.\
+                    Received len(traj_list)={len(self.traj_list)}"        
+            )
 
         # weird thing I have to do to prevent issues
         # with multiprocessing parallel loading when there is only 1 trajectory to load
@@ -257,16 +265,14 @@ class SamplingQuality:
             self.min_length = np.min(lengths)
 
             self.trajs, self.ref_trajs = self.__truncate_trajectories()
+            
             print(
                 f"Successfully truncated.\n\
                 The shortest trajectory is: {self.min_length} frames.\
                 All trajectories truncated to {self.min_length}"
                 )
 
-        if str(self.method).lower() == "rmsd" or str(self.method).lower() == "p_vects":
-            raise NotImplementedError("This functionality has not been implemented yet")
 
-        ssutils.validate_keyword_option(method, ['dihedral', 'rmsd', 'p_vects'], 'method')
         if str(self.method).lower() == "dihedral":
             if self.bwidth > 2*np.pi or not self.bwidth > 0:
                 raise SSException(
@@ -363,12 +369,11 @@ class SamplingQuality:
         np.ndarray
             The hellinger distances between the probability density distributions for the phi and psi angles for a set of trajectories.
         """
-        bins = self.get_degree_bins()
-        phi_trj_pdfs = self.compute_pdf(self.phi_angles, bins=bins)
-        phi_ref_trj_pdfs = self.compute_pdf(self.ref_phi_angles, bins=bins)
+        phi_trj_pdfs = self.compute_pdf(self.phi_angles, bins=self.bins)
+        phi_ref_trj_pdfs = self.compute_pdf(self.ref_phi_angles, bins=self.bins)
 
-        psi_trj_pdfs = self.compute_pdf(self.psi_angles, bins=bins)
-        psi_ref_trj_pdfs = self.compute_pdf(self.ref_psi_angles, bins=bins)
+        psi_trj_pdfs = self.compute_pdf(self.psi_angles, bins=self.bins)
+        psi_ref_trj_pdfs = self.compute_pdf(self.ref_psi_angles, bins=self.bins)
 
         phi_hellingers = hellinger_distance(phi_trj_pdfs, phi_ref_trj_pdfs)
         psi_hellingers = hellinger_distance(psi_trj_pdfs, psi_ref_trj_pdfs)
@@ -383,13 +388,12 @@ class SamplingQuality:
         np.ndarray
             The relative entropy between the probability density distributions for the phi and psi angles for a set of trajectories.
         """
-        bins = self.get_degree_bins()
 
-        phi_trj_pdfs = self.compute_pdf(self.phi_angles, bins=bins)
-        phi_ref_trj_pdfs = self.compute_pdf(self.ref_phi_angles, bins=bins)
+        phi_trj_pdfs = self.compute_pdf(self.phi_angles, bins=self.bins)
+        phi_ref_trj_pdfs = self.compute_pdf(self.ref_phi_angles, bins=self.bins)
 
-        psi_trj_pdfs = self.compute_pdf(self.psi_angles, bins=bins)
-        psi_ref_trj_pdfs = self.compute_pdf(self.ref_psi_angles, bins=bins)
+        psi_trj_pdfs = self.compute_pdf(self.psi_angles, bins=self.bins)
+        psi_ref_trj_pdfs = self.compute_pdf(self.ref_psi_angles, bins=self.bins)
 
         phi_rel_entr = rel_entropy(phi_trj_pdfs, phi_ref_trj_pdfs)
         psi_rel_entr = rel_entropy(psi_trj_pdfs, psi_ref_trj_pdfs)
@@ -718,7 +722,7 @@ class SamplingQuality:
 
 
     @property
-    def trj_pdfs(self):
+    def trj_pdfs(self,recompute=False):
         """property for getting the pdfs computed from the phi/psi angles respectively
 
         Returns
@@ -727,13 +731,19 @@ class SamplingQuality:
             pdfs computed from the phi and psi angles with the specified bins.
             returns (2, num_traj, n_res, n_bins)
         """
-        bins = self.get_degree_bins()
-        ref_phi_pdf = self.compute_pdf(self.phi_angles, bins=bins)
-        ref_psi_pdf = self.compute_pdf(self.psi_angles, bins=bins)
-        return np.array((ref_phi_pdf, ref_psi_pdf))
+        selectors = ["trj_phi_pdfs","trj_psi_pdfs"]
+        
+        for selector in selectors:
+            if selector not in self.__precomputed or recompute is True:
+                if selector == "trj_phi_pdfs":
+                    self.__precomputed[selector] = self.compute_pdf(self.phi_angles, bins=self.bins)
+                elif selector == "trj_psi_pdfs":
+                    self.__precomputed[selector] = self.compute_pdf(self.psi_angles, bins=self.bins)
+
+        return np.array((self.__precomputed[selectors[0]], self.__precomputed[selectors[1]]))        
 
     @property
-    def ref_pdfs(self):
+    def ref_pdfs(self,recompute=False):
         """property for getting the pdfs computed from the phi/psi angles respectively
 
         Returns
@@ -742,13 +752,19 @@ class SamplingQuality:
             pdfs computed from the phi and psi angles with the specified bins.
             returns (2, num_traj, n_res, n_bins) array
         """
-        bins = self.get_degree_bins()
-        trj_phi_pdf = self.compute_pdf(self.ref_phi_angles, bins=bins)
-        trj_psi_pdf = self.compute_pdf(self.ref_psi_angles, bins=bins)
-        return np.array((trj_phi_pdf, trj_psi_pdf))
+        selectors = ["ref_phi_pdfs","ref_psi_pdfs"]
+        
+        for selector in selectors:
+            if selector not in self.__precomputed or recompute is True:
+                if selector == "ref_phi_pdfs":
+                    self.__precomputed[selector] = self.compute_pdf(self.ref_phi_angles, bins=self.bins)
+                elif selector == "ref_psi_pdfs":
+                    self.__precomputed[selector] = self.compute_pdf(self.ref_psi_angles, bins=self.bins)
+
+        return np.array((self.__precomputed[selectors[0]], self.__precomputed[selectors[1]]))
 
     @property
-    def hellingers_distances(self):
+    def hellingers_distances(self,recompute=False):
         """property for getting the hellingers distances computed from the phi/psi angles respectively
 
         Returns
@@ -756,10 +772,15 @@ class SamplingQuality:
         np.ndarray
             hellingers distance computed from the phi and psi angles with the specified bins.
         """
-        return self.compute_dihedral_hellingers()
+        selector = 'hellingers'
+        
+        if selector not in self.__precomputed or recompute is True:
+            self.__precomputed[selector] = self.compute_dihedral_hellingers()
+
+        return self.__precomputed[selector]
 
     @property
-    def fractional_helicity(self):
+    def fractional_helicity(self,recompute=False):
         """property for getting the per residue fractional helicity for all trajectories
 
         Returns
@@ -767,17 +788,22 @@ class SamplingQuality:
         np.ndarray
             The per residue fractional helicity for each trajectory in self.trajs and self.ref_trajs.
         """
-        return self.__compute_frac_helicity()
+        selector = 'fractional_helicity'
+        
+        if selector not in self.__precomputed or recompute is True:
+            self.__precomputed[selector] = self.__compute_frac_helicity()
+
+        return self.__precomputed[selector]
 
 
 # Interface to separate computation of dihedrals from SamplingQuality class
 # will serve to return precomputed excluded volume dihedral angle distributions
 # if no EV trajectories are provided.
 
-# class DihedralInterface():
-#     """docstring for DihedralInterface."""
-#     def __init__(self, arg):
-#         super(DihedralInterface, self).__init__()
-#     arg
+class DihedralInterface():
+    """docstring for DihedralInterface."""
+    def __init__(self, arg):
+        super(DihedralInterface, self).__init__()
+        pass
 
     
