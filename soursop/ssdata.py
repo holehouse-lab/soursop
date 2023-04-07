@@ -106,6 +106,33 @@ DEFAULT_SIDECHAIN_VECTOR_ATOMS = {'ALA': 'CB',
 ALL_VALID_RESIDUE_NAMES = ['ALA','CYS','ASP','ASH','GLU','GLH','PHE','GLY','HIE','HIS','HID','HIP','ILE','LEU', 'LYS','LYD','MET','ASN','PRO','GLN','ARG','SER','THR','VAL','TRP','TYR','AIB', 'ABA','NVA','NLE', 'ORN', 'DAB','PTR','TPO','SEP', 'KAC', 'KM1', 'KM2' 'KM3', 'ACE','NME', 'FOR', 'NH2']
 
 
-psi_ev_angles = np.load(soursop.get_data("psi_excluded_volume_tripeptides.pickle"),allow_pickle=True)
+EV_RESIDUE_MAPPER = {
+                    # proline is special
+                    'PRO':'PRO',
+                    # approximately alanine - not really
+                    'GLY':'ALA',
+                    'ALA':'ALA', 
+                    'CYS':'ALA',
+                    'ASN':'ALA',
+                    'GLN':'ALA',
+                    'SER':'ALA',
+                    'THR':'ALA',
 
-phi_ev_angles = np.load(soursop.get_data("psi_excluded_volume_tripeptides.pickle"),allow_pickle=True)
+                    # approximately leucine - not really
+                    'LEU':'LEU',
+                    'MET':'LEU',
+                    'ASP':'LEU',
+                    'GLU':'LEU',
+                    'ARG':'LEU',
+                    'VAL':'LEU',
+                    'TRP':'LEU',
+                    'TYR':'LEU',
+                    'PHE':'LEU',
+                    'HIS':'LEU', 
+                    'ILE':'LEU',
+                    'LYS':'LEU',
+                    }
+
+PSI_EV_ANGLES_DICT = np.load(soursop.get_data("psi_excluded_volume_tripeptides.pickle"),allow_pickle=True)
+
+PHI_EV_ANGLES_DICT = np.load(soursop.get_data("psi_excluded_volume_tripeptides.pickle"),allow_pickle=True)

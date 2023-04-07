@@ -9,11 +9,9 @@
 # Simulation analysis package
 # Copyright 2014 - 2022
 ##
-import fnmatch
 import itertools
 import os
 import pathlib
-from glob import glob
 from typing import List, Tuple, Union
 
 import matplotlib.pyplot as plt
@@ -23,13 +21,12 @@ import seaborn as sns
 from matplotlib import transforms
 from natsort import natsorted
 from scipy.special import rel_entr
-import re
 
 from soursop import ssutils
 
 from .ssexceptions import SSException
 from .sstrajectory import SSTrajectory, parallel_load_trjs
-
+from soursop.ssdata import PSI_EV_ANGLES_DICT, PHI_EV_ANGLES_DICT, THREE_TO_ONE, EV_RESIDUE_MAPPER
 
 def hellinger_distance(p: np.ndarray, q: np.ndarray) -> np.ndarray:
     """
@@ -38,6 +35,8 @@ def hellinger_distance(p: np.ndarray, q: np.ndarray) -> np.ndarray:
         H(P,Q) = r'\frac{1}{\sqrt{2}} \times \sqrt{\sum_{i=1}^{k}(\sqrt{p_i}-\sqrt{q_i})^2}'
     where k is the length of the probability vectors being compared.
     
+    For sets of distributions, the datapoints should be in the last axis.
+
     Parameters
     ----------
     p : np.ndarray
@@ -60,9 +59,9 @@ def hellinger_distance(p: np.ndarray, q: np.ndarray) -> np.ndarray:
     return np.sqrt(numerator) / denominator
 
 
-# TODO refactor/check this, broadcasting optiization?
 def rel_entropy(p: np.ndarray, q: np.ndarray) -> np.ndarray:
     """Computes the relative entropy between two probability distributions p and q.
+    For sets of distributions, the datapoints should be in the last axis.
 
     Parameters
     ----------
@@ -82,12 +81,8 @@ def rel_entropy(p: np.ndarray, q: np.ndarray) -> np.ndarray:
     p = np.asarray(p)
     q = np.asarray(q)
 
-    if p.ndim == 3 and q.ndim == 3:
-        relative_entropy = np.sum(rel_entr(p, q), axis=2)
-    elif p.ndim == 2 and q.ndim == 2:
-        relative_entropy = np.sum(rel_entr(p, q), axis=1)
-    else:
-        relative_entropy = np.sum(rel_entr(p, q))
+    relative_entropy = np.sum(rel_entr(p, q), axis=-1)
+
     return relative_entropy
 
 
@@ -148,10 +143,10 @@ class SamplingQuality:
 
     def __init__(self, 
                  traj_list: List[str],
-                 reference_list: List[str],
-                 top_file: str,
-                 ref_top: str,
-                 method: str,
+                 reference_list: Union[List[str], None] = None,
+                 top_file: str = "__START.pdb",
+                 ref_top: Union[str, None] = None,
+                 method: str = "dihedral",
                  bwidth: float = np.deg2rad(15),
                  proteinID: int = 0,
                  n_cpus: int = None,
@@ -166,12 +161,12 @@ class SamplingQuality:
         ----------
         traj_list : List[str]
             a list of the trajectory paths associated with the simulated trajectories.
-        reference_list : List[str]
+        reference_list : Union[List[str], None]
             a list of the trajectory paths associated with the reference model.
             This is usually a limiting polymer model.
         top_file : str
             path to the simulated trajectories topology file.
-        ref_top : str
+        ref_top : Union[str, None]
             path to the reference topology - usually the same topology file
             if using a polymer model, but can differ if reference is e.g., a mutant.
         method : str
@@ -215,11 +210,17 @@ class SamplingQuality:
         self.bins = self.get_degree_bins()
         self.__precomputed = {}
 
-        
+        ssutils.validate_keyword_option(method, ['dihedral', 'rmsd', 'p_vects'], 'method')
+
         if str(self.method).lower() == "rmsd" or str(self.method).lower() == "p_vects":
             raise NotImplementedError("This functionality has not been implemented yet")
 
-        ssutils.validate_keyword_option(method, ['dihedral', 'rmsd', 'p_vects'], 'method')
+        if str(self.method).lower() == "dihedral":
+            if self.bwidth > 2*np.pi or not self.bwidth > 0:
+                raise SSException(
+                    f'The bwidth parameter must be between 0 and 2*pi.\
+                        Received {self.bwidth}'
+                )
 
         if not self.n_cpus:
             self.n_cpus = os.cpu_count()
@@ -256,34 +257,13 @@ class SamplingQuality:
                                                     n_procs=self.n_cpus,
                                                     **kwargs)
 
-        if truncate:
-            lengths = []
-            for trj, ref_trj in zip(self.trajs, self.ref_trajs):
-                lengths.append([trj.n_frames, ref_trj.n_frames])
-
-            # shift frames for np.array indexing purposes
-            self.min_length = np.min(lengths)
-
+        if self.truncate:
             self.trajs, self.ref_trajs = self.__truncate_trajectories()
-            
-            print(
-                f"Successfully truncated.\n\
-                The shortest trajectory is: {self.min_length} frames.\
-                All trajectories truncated to {self.min_length}"
-                )
 
-
-        if str(self.method).lower() == "dihedral":
-            if self.bwidth > 2*np.pi or not self.bwidth > 0:
-                raise SSException(
-                    f'The bwidth parameter must be between 0 and 2*pi.\
-                        Received {self.bwidth}'
-                )
-
-            (self.psi_angles,
-            self.ref_psi_angles,
-            self.phi_angles,
-            self.ref_phi_angles) = self.__compute_dihedrals(proteinID=self.proteinID)
+        (self.psi_angles,
+        self.ref_psi_angles,
+        self.phi_angles,
+        self.ref_phi_angles) = self.__compute_dihedrals(proteinID=self.proteinID)
 
     def __truncate_trajectories(self) -> Tuple[List[SSTrajectory], List[SSTrajectory]]:
         """Internal function used to truncate the lengths of trajectories
@@ -298,6 +278,13 @@ class SamplingQuality:
             The second corresonds to the reference model - e.g.,
             the polymer limiting model.
         """
+        lengths = []
+        for trj, ref_trj in zip(self.trajs, self.ref_trajs):
+            lengths.append([trj.n_frames, ref_trj.n_frames])
+
+        # shift frames for np.array indexing purposes
+        self.min_length = np.min(lengths)
+        
         temp_trajs = []
         temp_ref_trjs = []
         for trj, ref_trj in zip(self.trajs, self.ref_trajs):
@@ -308,17 +295,21 @@ class SamplingQuality:
                 SSTrajectory(TRJ=ref_trj.proteinTrajectoryList[self.proteinID].traj[0:self.min_length])
             )
 
+        print(f"Successfully truncated.\n\
+                The shortest trajectory is: {self.min_length} frames.\
+                All trajectories truncated to {self.min_length}")
+
         return (temp_trajs, temp_ref_trjs)
 
     def __compute_dihedrals(self, proteinID: int = 0) -> np.ndarray:
         """internal function to computes the phi/psi backbone dihedrals
-        at a given index proteinID in the proteinTrajectoryList of an SSTrajectory.
+        at a given index proteinID in the ``SSTrajectory.proteinTrajectoryList`` of an SSTrajectory.
 
         Parameters
         ----------
         proteinID : int, optional
             The ID of the protein where the ID is the proteins position
-            in the ``self.proteinTrajectoryList`` list, by default 0.
+            in the ``SSTrajectory.proteinTrajectoryList`` list, by default 0.
 
         Returns
         -------
@@ -338,8 +329,10 @@ class SamplingQuality:
 
         return np.array((psi_angles, ref_psi_angles, phi_angles, ref_phi_angles))
 
-    def __compute_frac_helicity(self, proteinID: int = 0) -> np.ndarray:
-        """internal function to computes the per residue fractional helicity at a given index (proteinID) in the proteinTrajectoryList of an SSTrajectory.
+    def compute_frac_helicity(self, proteinID : int = 0, recompute : bool = False) -> np.ndarray:
+        """Function that computes the per residue fractional helicity at a given index (proteinID)
+          in the proteinTrajectoryList of an SSTrajectory for all SSTrajectory objects provided
+          in the ``self.trajs`` list.
 
         Parameters
         ----------
@@ -352,12 +345,23 @@ class SamplingQuality:
         np.ndarray
             Returns the fractional helicity for the simulated trajectory and the reference model.
         """
-        trj_helicity = []
-        reference_helicity = []
+        trj_helicity, reference_helicity = [], []
 
-        for trj, ref_traj in zip(self.trajs, self.ref_trajs):
-            trj_helicity.append(trj.proteinTrajectoryList[proteinID].get_secondary_structure_DSSP()[1])
-            reference_helicity.append(ref_traj.proteinTrajectoryList[proteinID].get_secondary_structure_DSSP()[1])
+        selectors = ("trj_helicity", "ref_helicity")
+        
+        if any(selector not in self.__precomputed for selector in selectors) or recompute is True:
+            for trj, ref_trj in zip(self.trajs, self.ref_trajs):
+                trj_helicity.append(trj.proteinTrajectoryList[proteinID].get_secondary_structure_DSSP()[1])
+                reference_helicity.append(ref_trj.proteinTrajectoryList[proteinID].get_secondary_structure_DSSP()[1])
+
+            helicity_map = {
+                "trj_helicity": np.array(trj_helicity),
+                "ref_helicity": np.array(reference_helicity)
+            }
+
+        for selector in selectors:
+            self.__precomputed[selector] = helicity_map.get(selector, None)
+
 
         return np.array((trj_helicity, reference_helicity))
 
@@ -800,10 +804,55 @@ class SamplingQuality:
 # will serve to return precomputed excluded volume dihedral angle distributions
 # if no EV trajectories are provided.
 
-class DihedralInterface():
-    """docstring for DihedralInterface."""
+class PrecomputedDihedralInterface():
+    """docstring for PrecomputedDihedralInterface."""
     def __init__(self, arg):
-        super(DihedralInterface, self).__init__()
+        super(PrecomputedDihedralInterface, self).__init__()
         pass
+    
+    def gather_phi_reference_dihedrals(self, sequence : str) -> np.ndarray:
+        """Gather the reference phi dihedral angles for a given sequence.
 
+        Parameters
+        ----------
+        sequence : str
+            The amino acid sequence of the current trajectory.
+
+        Returns
+        -------
+        np.ndarray
+            The reference phi dihedral angles for the given sequence.
+        """
+        phi_angles = []
+        for i, residue in enumerate(sequence):
+            phi_preceeding_context = sequence[i-1]
+            three_letter_residue = THREE_TO_ONE[phi_preceeding_context]
+            approximate_residue = EV_RESIDUE_MAPPER[three_letter_residue]
+            phi_angles.append(
+                PHI_EV_ANGLES_DICT[residue][approximate_residue]
+            )
+        return np.array(phi_angles)
+    
+    def gather_psi_reference_dihedrals(self, sequence : str) -> np.ndarray:
+        """Gather the reference psi dihedral angles for a given sequence.
+
+        Parameters
+        ----------
+        sequence : str
+            The amino acid sequence of the current trajectory.
+
+        Returns
+        -------
+        np.ndarray
+            The reference psi dihedral angles for the given sequence.
+        """
+        psi_angles = []
+        for i, residue in enumerate(sequence):
+            psi_subsequent_context = sequence[i+1]
+            three_letter_residue = THREE_TO_ONE[psi_subsequent_context]
+            approximate_residue = EV_RESIDUE_MAPPER[three_letter_residue]
+            psi_angles.append(
+                PSI_EV_ANGLES_DICT[residue][approximate_residue]
+            )
+        return np.array(psi_angles)
     
