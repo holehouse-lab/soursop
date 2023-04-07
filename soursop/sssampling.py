@@ -329,10 +329,10 @@ class SamplingQuality:
 
         return np.array((psi_angles, ref_psi_angles, phi_angles, ref_phi_angles))
 
-    def compute_frac_helicity(self, proteinID : int = 0, recompute : bool = False) -> np.ndarray:
+    def compute_frac_helicity(self, proteinID: int = 0, recompute: bool = False) -> np.ndarray:
         """Function that computes the per residue fractional helicity at a given index (proteinID)
-          in the proteinTrajectoryList of an SSTrajectory for all SSTrajectory objects provided
-          in the ``self.trajs`` list.
+        in the proteinTrajectoryList of an SSTrajectory for all SSTrajectory objects provided
+        in the ``self.trajs`` list.
 
         Parameters
         ----------
@@ -345,25 +345,16 @@ class SamplingQuality:
         np.ndarray
             Returns the fractional helicity for the simulated trajectory and the reference model.
         """
-        trj_helicity, reference_helicity = [], []
-
         selectors = ("trj_helicity", "ref_helicity")
+        if not recompute and all(selector in self.__precomputed for selector in selectors):
+            return self.__precomputed["trj_helicity"], self.__precomputed["ref_helicity"]
         
-        if any(selector not in self.__precomputed for selector in selectors) or recompute is True:
-            for trj, ref_trj in zip(self.trajs, self.ref_trajs):
-                trj_helicity.append(trj.proteinTrajectoryList[proteinID].get_secondary_structure_DSSP()[1])
-                reference_helicity.append(ref_trj.proteinTrajectoryList[proteinID].get_secondary_structure_DSSP()[1])
+        trj_helicity = [trj.proteinTrajectoryList[proteinID].get_secondary_structure_DSSP()[1] for trj in self.trajs]
+        reference_helicity = [ref_trj.proteinTrajectoryList[proteinID].get_secondary_structure_DSSP()[1] for ref_trj in self.ref_trajs]
+        self.__precomputed["trj_helicity"] = np.array(trj_helicity)
+        self.__precomputed["ref_helicity"] = np.array(reference_helicity)
 
-            helicity_map = {
-                "trj_helicity": np.array(trj_helicity),
-                "ref_helicity": np.array(reference_helicity)
-            }
-
-        for selector in selectors:
-            self.__precomputed[selector] = helicity_map.get(selector, None)
-
-
-        return np.array((trj_helicity, reference_helicity))
+        return self.__precomputed["trj_helicity"], self.__precomputed["ref_helicity"]
 
     def compute_dihedral_hellingers(self) -> np.ndarray:
         """Compute the hellingers distance for both the phi and psi angles between a set of trajectories.
@@ -442,6 +433,11 @@ class SamplingQuality:
 
     def get_all_to_all_trj_comparisons(self, metric: str = "hellingers") -> Tuple[pd.DataFrame, pd.DataFrame]:
         """function to aggregate an all-to-all comparison of pdfs
+
+        Parameters
+        ----------
+        metric : str, optional
+            The metric to use for the comparison, by default "hellingers"
 
         Returns
         -------
@@ -784,20 +780,23 @@ class SamplingQuality:
         return self.__precomputed[selector]
 
     @property
-    def fractional_helicity(self,recompute=False):
-        """property for getting the per residue fractional helicity for all trajectories
+    def fractional_helicity(self, recompute=False):
+        """
+        Property for getting the per residue fractional helicity for all trajectories.
 
-        Returns
+        Returns:
         -------
         np.ndarray
             The per residue fractional helicity for each trajectory in self.trajs and self.ref_trajs.
         """
-        selector = 'fractional_helicity'
+        selectors = ("trj_helicity", "ref_helicity")
+        if not recompute and all(selector in self.__precomputed for selector in selectors):
+            return self.__precomputed["trj_helicity"], self.__precomputed["ref_helicity"]
         
-        if selector not in self.__precomputed or recompute is True:
-            self.__precomputed[selector] = self.__compute_frac_helicity()
+        trj_helicity, ref_helicity = self.compute_frac_helicity()
 
-        return self.__precomputed[selector]
+        return trj_helicity, ref_helicity
+
 
 
 # Interface to separate computation of dihedrals from SamplingQuality class
