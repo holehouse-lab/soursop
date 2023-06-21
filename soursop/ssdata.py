@@ -135,4 +135,4 @@ EV_RESIDUE_MAPPER = {
 
 PSI_EV_ANGLES_DICT = np.load(soursop.get_data("psi_excluded_volume_tripeptides.pickle"),allow_pickle=True)
 
-PHI_EV_ANGLES_DICT = np.load(soursop.get_data("psi_excluded_volume_tripeptides.pickle"),allow_pickle=True)
+PHI_EV_ANGLES_DICT = np.load(soursop.get_data("phi_excluded_volume_tripeptides.pickle"),allow_pickle=True)
