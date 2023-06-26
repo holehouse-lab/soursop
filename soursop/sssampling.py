@@ -265,8 +265,6 @@ class SamplingQuality:
             self.ref_psi_angles = precomputed_interface.ref_psi_angles
             self.ref_phi_angles = precomputed_interface.ref_phi_angles
         
-        self.compute_dihedral_hellingers()
-        self.get_all_to_all_2d_trj_comparison()
             
     def __validate_arguments(self):
         ssutils.validate_keyword_option(self.method, ['2D angle distributions', '1D angle distributions'], 'method')
