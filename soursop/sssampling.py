@@ -30,6 +30,14 @@ from .sstrajectory import SSTrajectory, parallel_load_trjs
 from soursop.ssdata import PSI_EV_ANGLES_DICT, PHI_EV_ANGLES_DICT, ONE_TO_THREE, EV_RESIDUE_MAPPER
 
 
+def compute_joint_hellinger_distance(p, q):
+    # Compute the Bhattacharyya coefficient
+    b_coefficient = np.sum(np.sqrt(p * q))
+
+    # Compute the Hellinger's distance - note this doesn't need the normalization by sqrt(2)
+    distance = np.sqrt(1 - b_coefficient)
+
+    return distance
 
 def hellinger_distance(p: np.ndarray, q: np.ndarray) -> np.ndarray:
     """
@@ -86,44 +94,6 @@ def rel_entropy(p: np.ndarray, q: np.ndarray) -> np.ndarray:
     relative_entropy = np.sum(rel_entr(p, q), axis=-1)
 
     return relative_entropy
-
-def compute_series_of_histograms_along_axis(data : np.ndarray, num_bins : int, axis : int = 0):
-    """
-    Compute a series of 2D histograms along an axis of a 3D array.
-
-    Parameters:
-    data (ndarray): 3D array to compute histograms over
-    num_bins (int): number of bins for the histograms
-    axis (int): axis to compute histograms along (default=0)
-
-    Returns:
-    histograms (ndarray): series of 2D histograms along the given axis
-    """
-
-    # Get the shape of the input array
-    shape = data.shape
-
-    # Create an empty array to hold the histograms
-    histograms = np.empty((shape[axis], num_bins, num_bins))
-
-    # Loop over the specified axis and compute a histogram for each slice
-    for i in range(shape[axis]):
-        # Get the indices for the current slice along the specified axis
-        indices = [slice(None)] * len(shape)
-        indices[axis] = i
-        
-        # Slice the input data array to get the current slice
-        slice_data = data[tuple(indices)][..., :2]
-        
-        # Compute a 2D histogram for the current slice
-        x = slice_data[:, 0]
-        y = slice_data[:, 1]
-        hist, _, _ = np.histogram2d(x, y, bins=num_bins)
-        
-        # Add the current histogram to the output array
-        histograms[i] = hist
-
-    return histograms
 
 def find_trajectory_files(root_dir: Union[str,pathlib.Path], 
                           num_replicates : int,
@@ -185,7 +155,7 @@ class SamplingQuality:
                  reference_list: Union[List[str], None] = None,
                  top_file: str = "__START.pdb",
                  ref_top: Union[str, None] = None,
-                 method: str = "dihedral",
+                 method: str = "2D angle distributions",
                  bwidth: float = np.deg2rad(15),
                  proteinID: int = 0,
                  n_cpus: int = None,
@@ -289,25 +259,23 @@ class SamplingQuality:
             precomputed_interface = PrecomputedDihedralInterface(sequence,
                                                                  bins=self.bins,
                                                                  num_trajs=len(self.trajs),
-                                                                 nsamples=500000,
-                                                                #  nsamples=len(self.trajs[0])
+                                                                 nsamples=len(self.trajs[0])
                                                                  )
             
             self.ref_psi_angles = precomputed_interface.ref_psi_angles
             self.ref_phi_angles = precomputed_interface.ref_phi_angles
+        
+        self.compute_dihedral_hellingers()
+        self.get_all_to_all_2d_trj_comparison()
             
     def __validate_arguments(self):
-        ssutils.validate_keyword_option(self.method, ['dihedral', 'rmsd', 'p_vects'], 'method')
+        ssutils.validate_keyword_option(self.method, ['2D angle distributions', '1D angle distributions'], 'method')
 
-        if str(self.method).lower() == "rmsd" or str(self.method).lower() == "p_vects":
-            raise NotImplementedError("This functionality has not been implemented yet")
-
-        if str(self.method).lower() == "dihedral":
-            if self.bwidth > 2*np.pi or not self.bwidth > 0:
-                raise SSException(
-                    f'The bwidth parameter must be between 0 and 2*pi.\
-                        Received {self.bwidth}'
-                )
+        if self.bwidth > 2*np.pi or not self.bwidth > 0:
+            raise SSException(
+                f'The bwidth parameter must be between 0 and 2*pi.\
+                    Received {self.bwidth}'
+            )
 
         if not self.n_cpus:
             self.n_cpus = os.cpu_count()
@@ -322,9 +290,8 @@ class SamplingQuality:
         # weird thing I have to do to prevent issues with multiprocessing 
         # parallel loading when there is only 1 trajectory to load
         # trajs/ref_trajs must be a list so they're iterables for __truncate_trajectories
-        print(self.traj_list)
+    
         if len(self.traj_list) == 1:
-            print("arrived here")
             self.trajs = []
             self.trajs.append(SSTrajectory(self.traj_list,
                                             pdb_filename=self.top,
@@ -435,7 +402,6 @@ class SamplingQuality:
             # return the angles for simulated trajectories only
             return np.array((psi_angles, phi_angles))
 
-        
     def compute_frac_helicity(self, proteinID: int = 0, recompute: bool = False) -> np.ndarray:
         """Function that computes the per residue fractional helicity at a given index (proteinID)
         in the proteinTrajectoryList of an SSTrajectory for all SSTrajectory objects provided
@@ -479,16 +445,85 @@ class SamplingQuality:
         np.ndarray
             The hellinger distances between the probability density distributions for the phi and psi angles for a set of trajectories.
         """
-        phi_trj_pdfs = self.compute_pdf(self.phi_angles, bins=self.bins)
-        phi_ref_trj_pdfs = self.compute_pdf(self.ref_phi_angles, bins=self.bins)
+        if self.method == "2D angle distributions":
+            data = np.array([self.phi_angles, self.psi_angles])
+            ref_data = np.array([self.ref_phi_angles, self.ref_psi_angles])
+            
+            pdfs = self.compute_series_of_histograms_along_axis(data, bins=self.bins, axis=2)
+            ref_pdfs = self.compute_series_of_histograms_along_axis(ref_data, bins=self.bins, axis=2)
 
-        psi_trj_pdfs = self.compute_pdf(self.psi_angles, bins=self.bins)
-        psi_ref_trj_pdfs = self.compute_pdf(self.ref_psi_angles, bins=self.bins)
+            joint_hellingers  = self.__compute_2d_dihedral_hellingers(pdfs,ref_pdfs)
 
-        phi_hellingers = hellinger_distance(phi_trj_pdfs, phi_ref_trj_pdfs)
-        psi_hellingers = hellinger_distance(psi_trj_pdfs, psi_ref_trj_pdfs)
+            return np.array(joint_hellingers)
 
-        return np.array((phi_hellingers, psi_hellingers))
+        elif self.method == "1D angle distributions":
+            phi_trj_pdfs = self.compute_pdf(self.phi_angles, bins=self.bins)
+            phi_ref_trj_pdfs = self.compute_pdf(self.ref_phi_angles, bins=self.bins)
+
+            psi_trj_pdfs = self.compute_pdf(self.psi_angles, bins=self.bins)
+            psi_ref_trj_pdfs = self.compute_pdf(self.ref_psi_angles, bins=self.bins)
+
+            phi_hellingers = hellinger_distance(phi_trj_pdfs, phi_ref_trj_pdfs)
+            psi_hellingers = hellinger_distance(psi_trj_pdfs, psi_ref_trj_pdfs)
+            
+            return np.array((phi_hellingers, psi_hellingers))
+        
+        else:
+            raise NotImplementedError(
+                                      f"{self.method} is not defined!\
+                                      Please use either 1D angle distributions\
+                                      or 2D angle distributions"
+                                    )
+        
+    def __compute_2d_dihedral_hellingers(self, trj_pdfs, ref_pdfs):
+        """
+        Helpter function to Compute the Hellinger's distances for 
+        2D dihedral angle probability density functions (PDFs).
+
+        Parameters
+        ----------
+        trj_pdfs : ndarray
+            Array of PDFs representing dihedral angle distributions for trajectory replicates.
+        ref_pdfs : ndarray
+            Array of PDFs representing reference dihedral angle distributions.
+
+        Returns
+        -------
+        ndarray
+            Array of Hellinger's distances for each trajectory replicate and dihedral angle.
+
+        Notes
+        -----
+        - The input arrays trj_pdfs and ref_pdfs should have the same shape.
+        - Each array has dimensions (num_replicates, num_angles, num_bins_phi, num_bins_psi),
+        where num_replicates is the number of trajectory replicates,
+        num_angles is the number of dihedral angles, and
+        num_bins_phi and num_bins_psi are the number of bins in the phi and psi dimensions, respectively.
+        - The function computes Hellinger's distances between the corresponding PDFs of each replicate and angle.
+        - The Hellinger's distance measures the similarity between two probability distributions.
+        - The computed distances are returned as an ndarray of shape (num_replicates, num_angles).
+        """
+
+        # Get the number of trajectory replicates
+        num_replicates = trj_pdfs.shape[0]
+
+        # Compute Hellinger's distances for each replicate
+        hellinger_distances = []
+        for replicate_idx in range(num_replicates):
+            pdf1 = trj_pdfs[replicate_idx]
+            pdf2 = ref_pdfs[replicate_idx]
+            
+            replicate_distances = []
+            for angle_idx in range(pdf1.shape[0]):
+                pdf1_angle = pdf1[angle_idx]
+                pdf2_angle = pdf2[angle_idx]
+                
+                distance = compute_joint_hellinger_distance(pdf1_angle, pdf2_angle)
+                replicate_distances.append(distance)
+            
+            hellinger_distances.append(replicate_distances)
+            
+        return hellinger_distances
 
     def compute_dihedral_rel_entropy(self) -> np.ndarray:
         """Compute the relative entropy for both the phi and psi angles between a set of trajectories.
@@ -509,6 +544,64 @@ class SamplingQuality:
         psi_rel_entr = rel_entropy(psi_trj_pdfs, psi_ref_trj_pdfs)
 
         return np.array((phi_rel_entr, psi_rel_entr))
+
+    def compute_series_of_histograms_along_axis(self, data: np.ndarray, bins: np.ndarray, axis: int = 0):
+        """
+        Compute a series of 2D histograms along an axis of a 4D array and convert them into probability density functions (PDFs).
+
+        Parameters
+        ----------
+        data : ndarray
+            4D array containing the joint phi/psi angle data.
+        bins : ndarray
+            1D array defining the bin edges for the histograms.
+        axis : int, optional
+            Axis along which to compute the histograms (default=0).
+
+        Returns
+        -------
+        pdfs : ndarray
+            Series of 2D probability density functions (PDFs) along the given axis.
+
+        Notes
+        -----
+        - The input data array should have dimensions (2, n_trajs, n_residues, n_samples).
+        - The bins array should contain the bin edges for the histograms.
+        - The resulting PDFs will have dimensions (n_trajs, n_residues, num_bins_phi, num_bins_psi),
+        where num_bins_phi and num_bins_psi are the number of bins in the phi and psi dimensions, respectively.
+        - The PDFs are computed by normalizing the histogram values and multiplying them by the corresponding bin widths.
+        """
+        # Get the shape of the input array
+        shape = data.shape
+
+        # Initialize an empty list to store the PDFs for each trajectory
+        pdfs = []
+
+        # Loop over the trajectories
+        for traj_idx in range(shape[1]):
+            traj_histograms = []
+
+            # Loop over the residue indices
+            for residue_idx in range(shape[2]):
+                # Get the joint phi/psi angles for the current trajectory and residue
+                angles = data[:, traj_idx, residue_idx, :]
+
+                # Compute the 2D histogram for the joint phi/psi angles
+                hist, x_edges, y_edges = np.histogram2d(angles[0], angles[1], bins=bins, density=True)
+
+                # Compute the bin widths along each dimension
+                bin_width_phi = x_edges[1] - x_edges[0]
+                bin_width_psi = y_edges[1] - y_edges[0]
+
+                # Multiply the histogram values by the bin widths to obtain the PDF
+                pdf = hist * (bin_width_phi * bin_width_psi)
+
+                traj_histograms.append(pdf)
+
+            pdfs.append(traj_histograms)
+
+        
+        return np.array(pdfs)
 
     def compute_pdf(self, arr: np.ndarray, bins: np.ndarray) -> np.ndarray:
         """
@@ -545,6 +638,63 @@ class SamplingQuality:
             # pdf = histogram(arr, bins=bins, axis=1, density=True)[0]*np.round(np.rad2deg(self.bwidth))
         
         return pdf
+
+    def get_all_to_all_2d_trj_comparison(self, metric: str = "hellingers",recompute=False) -> Tuple[pd.DataFrame]:
+        # if self.method == "2D angle distributions":
+        data = np.array([self.phi_angles, self.psi_angles])
+
+        # shape = replicas, angles, phi_bins, psi_bins
+        pdfs = self.compute_series_of_histograms_along_axis(data, bins=self.bins, axis=2)
+        
+        if pdfs.shape[0] == 1:
+            # if only 1 simulated traj, an all-to-all is just a self:self comparison.
+            # after transpose: [combinations, replicates, angles, phi_bins, psi_bins]
+            pdf_combinations = np.transpose(np.array(tuple(itertools.combinations(pdfs,1))),axes=[1,0,2,3,4])
+        else:
+            # original shape is: [n_combinations, 2, angle, phi_bins, psi_bins]
+            # 2 because it's a pairwise head-to-head comparison of trajectories.
+            # transposed for my sanity for indexing leaving final shape as:
+            # (2, n_combinations, num_resi, phi_bins, psi_bins)
+            pdf_combinations = np.transpose(np.array(tuple(itertools.combinations(pdfs,2))),axes=[1,0,2,3,4])
+        
+        if metric == "hellingers":
+            # check if it's going to be a 1:1 comparison
+            # note: i.e., the indexing changes in second variable if its a 1:1 comparison
+            if pdf_combinations.shape[0] == 1:
+                dist_metric = []
+
+                for replicate in range(pdf_combinations[0].shape[0]):
+                    all_residue_replicate_distances = []
+                    for angle in range(pdf_combinations[0][replicate].shape[0]):
+                        curr_residue_distance = compute_joint_hellinger_distance(
+                                                                pdf_combinations[0][replicate][angle],
+                                                                pdf_combinations[0][replicate][angle],
+                                                            )
+                        
+                        all_residue_replicate_distances.append(curr_residue_distance)
+
+                    dist_metric.append(all_residue_replicate_distances)
+
+                dist_metric = np.array(dist_metric)                
+
+            else:
+                dist_metric = []
+
+                for replicate in range(pdf_combinations[0].shape[0]):
+                    all_residue_replicate_distances = []
+                    for angle in range(pdf_combinations[0][replicate].shape[0]):
+                        curr_residue_distance = compute_joint_hellinger_distance(
+                                                                pdf_combinations[0][replicate][angle],
+                                                                pdf_combinations[1][replicate][angle],
+                                                            )
+                        
+                        all_residue_replicate_distances.append(curr_residue_distance)
+
+                    dist_metric.append(all_residue_replicate_distances)
+
+                dist_metric = np.array(dist_metric)
+        
+        return dist_metric
 
     def get_all_to_all_trj_comparisons(self, metric: str = "hellingers",recompute=False) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """function to aggregate an all-to-all comparison of pdfs
@@ -596,7 +746,6 @@ class SamplingQuality:
 
         return pd.DataFrame(phi_metric), pd.DataFrame(psi_metric)
 
-
     def get_degree_bins(self) -> np.ndarray:
         """Returns the edges of the bins in degrees
 
@@ -611,20 +760,20 @@ class SamplingQuality:
         return bins
 
     def quality_plot(self, 
-                    dihedral : str = "phi", 
                     increment : int = 5,
                     figsize : Tuple[int, int] = (7, 5),
                     dpi : int = 400,
                     panel_labels : bool = False, 
                     fontsize : int = 10,
                     save_dir : str = None,
-                    figname : str = "phi_hellingers.pdf"):
+                    dihedral : Union[None, str] = "2D", 
+                    figname : str = "hellingers.pdf"):
         """convenience plotting functionality for quick visual inspection of sampling quality
 
         Parameters
         ----------
         dihedral : str, optional
-            the torsional angle to assess the quality of. Current options are phi and psi, by default "phi"
+            the torsional angle to assess the quality of. Current options are 2D, phi, and psi, by default "2D"
         increment : int, optional
              x axis stride, by default 5
         figsize : Tuple[int,int], optional
@@ -661,19 +810,35 @@ class SamplingQuality:
             gridspec_kw={'height_ratios': [2, 2]}
         )
         
-        if dihedral == "phi":
-            metric = self.compute_dihedral_hellingers()[0]
-            # metric = self.hellingers_distances[0]
-            # self.compute_dihedral_hellingers()
-        elif dihedral == "psi":
-            metric = self.compute_dihedral_hellingers()[1]
-            # metric = self.hellingers_distances[1]
-        else:
-            raise NotImplementedError
+        selector = {"2D": self.compute_dihedral_hellingers(),
+                    "phi": self.compute_dihedral_hellingers()[0], 
+                    "psi": self.compute_dihedral_hellingers()[1]}
 
-        phi_all_to_all, psi_all_to_all = self.get_all_to_all_trj_comparisons()
+        all_to_all_selector = {"2D": self.get_all_to_all_2d_trj_comparison(), 
+                             "phi" : self.get_all_to_all_trj_comparisons()[0], 
+                             "psi" : self.get_all_to_all_trj_comparisons()[1]}
 
-        trj_helicity, ref_helicity = self.fractional_helicity
+        metric = selector[dihedral]
+        all_to_all = all_to_all_selector[dihedral]
+
+        trj_helicity, ref_helicity = self.fractional_helicity()
+
+        # if self.method == "2D angle distributions" and dihedral == "2D":
+        #     metric = selector["2D"]
+        #     joint_all_to_all = self.get_all_to_all_2d_trj_comparison()
+        # elif self.method == "1D angle distributions" and dihedral == "phi":
+        #     metric = selector["phi"]
+        #     phi_all_to_all, psi_all_to_all = self.get_all_to_all_trj_comparisons()
+        # elif self.method == "1D angle distributions" and dihedral == "psi":
+        #     metric = selector["psi"]
+        #     phi_all_to_all, psi_all_to_all = self.get_all_to_all_trj_comparisons()
+        # else:
+        #     raise NotImplementedError(f"{self.method} cannot be used with {dihedral}." +
+        #                               f"Currently supported options are:\
+        #                               1D angle distributions and phi/psi or 2D angle distributions and 2D")
+        
+        
+        
 
         n_res = metric.shape[-1]
         idx = np.arange(1, n_res+1)
@@ -682,13 +847,13 @@ class SamplingQuality:
 
         for ax in axd:
             if ax == "A":
-                axd[ax].set_yticks([0, 1], fontsize=fontsize)
+                axd[ax].set_yticks([0, 1],)
                 axd[ax].set_yticklabels([0, 1], fontsize=fontsize)
                 axd[ax].set_ylim([0, 1])
                 axd[ax].set_ylabel("Hellinger's Distance", fontsize=fontsize)
                 axd[ax].set_title("Comparison to the Excluded Volume Limit", fontsize=fontsize)
 
-                axd[ax].set_xticks(xticks, fontsize=fontsize)
+                axd[ax].set_xticks(xticks,)
                 axd[ax].set_xticklabels(xticklabels, fontsize=fontsize)
                 axd[ax].set_xlim([0, idx[-1]+1])
 
@@ -699,27 +864,27 @@ class SamplingQuality:
                 axd[ax].plot(idx, np.mean(metric, axis=0), 'sk-', ms=2, alpha=1, mew=0, linewidth=0.5)
 
             elif ax == "B":
-                axd[ax].set_yticks([0, 1], fontsize=fontsize)
+                axd[ax].set_yticks([0, 1])
                 axd[ax].set_yticklabels([0, 1], fontsize=fontsize)
                 axd[ax].set_ylim([0, 1])
                 axd[ax].set_ylabel("Hellinger's Distance", fontsize=fontsize)
 
                 axd[ax].set_title("All-to-All Trajectory Comparison", fontsize=fontsize)
 
-                axd[ax].set_xticks(xticks, fontsize=fontsize)
+                axd[ax].set_xticks(xticks)
                 axd[ax].set_xticklabels(xticklabels, fontsize=fontsize)
                 axd[ax].set_xlim([0, idx[-1]+1])
 
-                axd[ax].plot(idx, phi_all_to_all.transpose(), '.r', ms=4, alpha=0.3, mew=0)
+                axd[ax].plot(idx, all_to_all.transpose(), '.r', ms=4, alpha=0.3, mew=0)                
 
                 # plot mean
-                axd[ax].plot(idx, np.mean(phi_all_to_all, axis=0), 'sk-', ms=2, alpha=1, mew=0, linewidth=0.5)
+                axd[ax].plot(idx, np.mean(all_to_all, axis=0), 'sk-', ms=2, alpha=1, mew=0, linewidth=0.5)
 
             elif ax == "C":
-                axd[ax].spines.right.set_visible(False)
-                axd[ax].spines.top.set_visible(False)
-                axd[ax].set_yticks([0, 1], fontsize=fontsize)
-                axd[ax].set_yticklabels([0, 1], fontsize=fontsize)
+                # axd[ax].spines.right.set_visible(False)
+                # axd[ax].spines.top.set_visible(False)
+                axd[ax].set_yticks([0, 1])
+                axd[ax].set_yticklabels([0, 1])
                 axd[ax].set_ylim([0, 1])
                 axd[ax].set_ylabel("Hellinger's Distance\nmax - min", fontsize=fontsize)
                 axd[ax].set_xlabel("Residue", fontsize=fontsize)
@@ -728,13 +893,13 @@ class SamplingQuality:
                 axd[ax].bar(idx, max_minus_min, width=0.8, color='k')
 
             elif ax == "D":
-                axd[ax].set_yticks([0, 1], fontsize=fontsize)
+                axd[ax].set_yticks([0, 1])
                 axd[ax].set_yticklabels([0, 1], fontsize=fontsize)
                 axd[ax].set_ylim([0, 1])
                 axd[ax].set_ylabel("Fractional Helicity", fontsize=fontsize)
                 axd[ax].set_xlabel("Residue", fontsize=fontsize)
 
-                axd[ax].set_xticks(xticks, fontsize=fontsize)
+                axd[ax].set_xticks(xticks,)
                 axd[ax].set_xticklabels(xticklabels, fontsize=fontsize)
                 axd[ax].set_xlim([0, idx[-1]+1])
 
@@ -752,94 +917,11 @@ class SamplingQuality:
         plt.tight_layout()
         if save_dir is not None:
             os.makedirs(save_dir, exist_ok=True)
-            outpath = os.path.join(save_dir, f"{figname}.pdf")
+            outpath = os.path.join(save_dir, f"{dihedral}_{figname}.pdf")
             fig.savefig(f"{outpath}", dpi=dpi)
 
         return fig, axd
 
-    def plot_phi_psi_heatmap(self, 
-                             metric: str = "hellingers",
-                             figsize=(40, 20),
-                             annotate=True,
-                             cmap=None,
-                             vmin=0.0,
-                             vmax=1.0,
-                             filename: str = "sampling_quality.png",
-                             save_dir=None,
-                             **kwargs,
-                             ):
-        """Plot heatmaps for phi and psi metrics.\
-        Optional keyword arguments are passed to 'plt.subplots'
-
-        Parameters
-        ----------
-        metric : str, optional
-            The distance metric to use - either "hellingers" or "relative entropy", by default "hellingers"
-            Note: relative entropy is a divergence, and not a true distance metric.
-        figsize : tuple, optional
-            dimensions of the figure to be rendered, by default (40,20)
-        annotate : bool, optional
-            Whether to display the data values from the metric in the plot, by default True
-        cmap : str, optional
-            The matplotlib colormap to be used for plotting the figure, by default None
-        vmin : float, optional
-            Minimum anchor point for colorbar, by default 0.0
-        vmax : float, optional
-            Maximum anchor point for colorbar, by default 1.0
-        filename : str, optional
-            filename, by default "sampling_quality.png"
-        save_dir : _type_, optional
-            directory path to save file, by default None
-
-        Raises
-        ------
-        NotImplementedError
-            _description_
-        """
-        if metric == "hellingers":
-            phi_metric, psi_metric = self.compute_dihedral_hellingers()
-        elif metric == "relative entropy":
-            phi_metric, psi_metric = self.compute_dihedral_rel_entropy()
-        else:
-            raise NotImplementedError(f"The metric: {metric} is not implemented.")
-
-        if cmap is None:
-            cmap = sns.color_palette("light:b", as_cmap=True)
-
-        fig, (ax1, ax2, axcb) = plt.subplots(1, 3, figsize=figsize,
-                                             gridspec_kw={'width_ratios': [1, 1, 0.05]}, **kwargs)
-
-        ax1.get_shared_y_axes().join(ax2)
-        g1 = sns.heatmap(phi_metric, annot=annotate, annot_kws={
-                         "fontsize": 24, "color": "k"}, vmin=vmin, vmax=vmax, cmap=cmap, cbar=False, ax=ax1)
-        g1.set_title(f'Phi {metric}', fontsize=36)
-        g1.set_ylabel('Trajectory Index', fontsize=36)
-        g1.set_xlabel('Residue Index', fontsize=36)
-        g1.set_xticks(np.arange(0, phi_metric[:, :].shape[1])+0.5)
-        g1.set_yticks(np.arange(0, phi_metric[:, :].shape[0])+0.5)
-
-        g1.set_xticklabels(np.arange(1, phi_metric[:, :].shape[1]+1), fontsize=36)
-        g1.set_yticklabels(np.arange(1, phi_metric[:, :].shape[0]+1), fontsize=36)
-
-        g2 = sns.heatmap(psi_metric, annot=annotate, annot_kws={
-                         "fontsize": 24, "color": "k"}, vmin=vmin, vmax=vmax, cmap=cmap, cbar_ax=axcb, ax=ax2)
-        g2.set_title(f'Psi {metric}', fontsize=36)
-        g2.set_ylabel('Trajectory Index', fontsize=36)
-        g2.set_xlabel('Residue Index', fontsize=36)
-        g2.set_xticks(np.arange(0, psi_metric[:, :].shape[1])+0.5)
-        g2.set_yticks(np.arange(0, psi_metric[:, :].shape[0])+0.5)
-
-        g2.set_xticklabels(np.arange(1, psi_metric[:, :].shape[1]+1), fontsize=36)
-        g2.set_yticklabels(np.arange(1, psi_metric[:, :].shape[0]+1), fontsize=36)
-        axcb.tick_params(labelsize=36)
-        plt.tight_layout()
-        if save_dir is not None:
-            os.makedirs(save_dir, exist_ok=True)
-            outpath = os.path.join(save_dir, filename)
-            fig.savefig(f"{outpath}", dpi=300)
-
-
-    
     def trj_pdfs(self,recompute=False):
         """property for getting the pdfs computed from the phi/psi angles respectively
 
@@ -860,7 +942,6 @@ class SamplingQuality:
 
         return np.array((self.__precomputed[selectors[0]], self.__precomputed[selectors[1]]))        
 
-    
     def ref_pdfs(self,recompute=False):
         """property for getting the pdfs computed from the phi/psi angles respectively
 
@@ -931,7 +1012,7 @@ class PrecomputedDihedralInterface():
         self.bins = bins
 
         self.tmp_phi_angles = self.gather_phi_reference_dihedrals(self.sequence)
-        self.tmp_psi_angles = self.gather_psi_reference_dihedrals(sequence)
+        self.tmp_psi_angles = self.gather_psi_reference_dihedrals(self.sequence)
     
         # ensure len ref angles is equal to number of angles found in traj arrays.
         
@@ -952,8 +1033,7 @@ class PrecomputedDihedralInterface():
         dihedral_hist = []
 
         for dihedral in range(dist_selector[angle].shape[0]): 
-            print(dist_selector[angle])
-            print(dist_selector[angle].shape)
+
             dihedral_angles = dist_selector[angle][dihedral,:]
     
             # GOAL: Generate samples that adhere to the underlying distribution
