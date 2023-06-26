@@ -499,6 +499,7 @@ class SamplingQuality:
         num_bins_phi and num_bins_psi are the number of bins in the phi and psi dimensions, respectively.
         - The function computes Hellinger's distances between the corresponding PDFs of each replicate and angle.
         - The Hellinger's distance measures the similarity between two probability distributions.
+        - 0 is returned if the two distributions are identical, and 1 is returned if the two distributions are completely different.
         - The computed distances are returned as an ndarray of shape (num_replicates, num_angles).
         """
 
@@ -545,7 +546,8 @@ class SamplingQuality:
 
     def compute_series_of_histograms_along_axis(self, data: np.ndarray, bins: np.ndarray, axis: int = 0):
         """
-        Compute a series of 2D histograms along an axis of a 4D array and convert them into probability density functions (PDFs).
+        Compute a series of 2D histograms along an axis of a 4D array 
+        and convert them into probability density functions (PDFs).
 
         Parameters
         ----------
@@ -664,6 +666,7 @@ class SamplingQuality:
                 for replicate in range(pdf_combinations[0].shape[0]):
                     all_residue_replicate_distances = []
                     for angle in range(pdf_combinations[0][replicate].shape[0]):
+                        # note the same index (0) for both pdfs because it's a self:self comparison
                         curr_residue_distance = compute_joint_hellinger_distance(
                                                                 pdf_combinations[0][replicate][angle],
                                                                 pdf_combinations[0][replicate][angle],
@@ -681,6 +684,7 @@ class SamplingQuality:
                 for replicate in range(pdf_combinations[0].shape[0]):
                     all_residue_replicate_distances = []
                     for angle in range(pdf_combinations[0][replicate].shape[0]):
+                        # note the different index (1) for both pdfs because it's a pairwise comparison
                         curr_residue_distance = compute_joint_hellinger_distance(
                                                                 pdf_combinations[0][replicate][angle],
                                                                 pdf_combinations[1][replicate][angle],
@@ -689,10 +693,8 @@ class SamplingQuality:
                         all_residue_replicate_distances.append(curr_residue_distance)
 
                     dist_metric.append(all_residue_replicate_distances)
-
-                dist_metric = np.array(dist_metric)
         
-        return dist_metric
+        return np.array(dist_metric)
 
     def get_all_to_all_trj_comparisons(self, metric: str = "hellingers",recompute=False) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """function to aggregate an all-to-all comparison of pdfs
@@ -920,16 +922,32 @@ class SamplingQuality:
 
         return fig, axd
 
-    def trj_pdfs(self,recompute=False):
-        """property for getting the pdfs computed from the phi/psi angles respectively
+    def trj_pdfs(self, dihedral : str = "joint", recompute : bool = False):
+        """Function to return the pdfs computed from the phi/psi angles respectively
+        
+        Parameters
+        ----------
+        dihedral : str, optional
+              method to use to return specific PDFs. Options are: "trj_phi_pdfs","trj_psi_pdfs","joint",
+              by default "joint"
+        recompute : bool, optional
+            Whether or not to recompute the PDFs, by default False
 
         Returns
         -------
         np.ndarray
-            pdfs computed from the phi and psi angles with the specified bins.
+            PDFs computed from the phi and psi angles with the specified bins.
             returns (2, num_traj, n_res, n_bins)
+        
+        Raises
+        ------
+        NotImplementedError
+            Raised if selector is not one of the implemented options.
         """
-        selectors = ["trj_phi_pdfs","trj_psi_pdfs"]
+        selectors = ["trj_phi_pdfs","trj_psi_pdfs","joint"]
+        if dihedral not in selectors:
+            raise NotImplementedError(f"Should not arrive here: {selector} is not implemented." +
+                                      "Please try one of trj_phi_pdfs,trj_psi_pdfs, joint instead.")
         
         for selector in selectors:
             if selector not in self.__precomputed or recompute is True:
@@ -937,19 +955,40 @@ class SamplingQuality:
                     self.__precomputed[selector] = self.compute_pdf(self.phi_angles, bins=self.bins)
                 elif selector == "trj_psi_pdfs":
                     self.__precomputed[selector] = self.compute_pdf(self.psi_angles, bins=self.bins)
+                elif selector == "joint":
+                    data = np.array([self.phi_angles, self.psi_angles])
+                    pdfs = self.compute_series_of_histograms_along_axis(data, bins=self.bins, axis=2)
+                    self.__precomputed[selector] = pdfs
+               
+        return self.__precomputed[dihedral]
 
-        return np.array((self.__precomputed[selectors[0]], self.__precomputed[selectors[1]]))        
-
-    def ref_pdfs(self,recompute=False):
-        """property for getting the pdfs computed from the phi/psi angles respectively
+    def ref_pdfs(self, dihedral, recompute=False):
+        """Function to return the pdfs computed from the phi/psi angles respectively
+        
+        Parameters
+        ----------
+        dihedral : str, optional
+              method to use to return specific PDFs. Options are: "trj_phi_pdfs","trj_psi_pdfs","joint",
+              by default "joint"
+        recompute : bool, optional
+            Whether or not to recompute the PDFs, by default False
 
         Returns
         -------
         np.ndarray
-            pdfs computed from the phi and psi angles with the specified bins.
-            returns (2, num_traj, n_res, n_bins) array
+            PDFs computed from the phi and psi angles with the specified bins.
+            returns (2, num_traj, n_res, n_bins)
+        
+        Raises
+        ------
+        NotImplementedError
+            Raised if selector is not one of the implemented options.
         """
-        selectors = ["ref_phi_pdfs","ref_psi_pdfs"]
+        selectors = ["ref_phi_pdfs","ref_psi_pdfs","joint"]
+        
+        if dihedral not in selectors:
+            raise NotImplementedError(f"Should not arrive here: {selector} is not implemented."+
+                                      "Please try one of trj_phi_pdfs,trj_psi_pdfs, joint instead.")
         
         for selector in selectors:
             if selector not in self.__precomputed or recompute is True:
@@ -957,9 +996,12 @@ class SamplingQuality:
                     self.__precomputed[selector] = self.compute_pdf(self.ref_phi_angles, bins=self.bins)
                 elif selector == "ref_psi_pdfs":
                     self.__precomputed[selector] = self.compute_pdf(self.ref_psi_angles, bins=self.bins)
-
-        return np.array((self.__precomputed[selectors[0]], self.__precomputed[selectors[1]]))
-
+                elif selector == "joint":
+                    data = np.array([self.ref_phi_angles, self.ref_psi_angles])
+                    pdfs = self.compute_series_of_histograms_along_axis(data, bins=self.bins, axis=2)
+                    self.__precomputed[selector] = pdfs
+               
+        return self.__precomputed[dihedral]
     
     def hellingers_distances(self,recompute=False):
         """property for getting the hellingers distances computed from the phi/psi angles respectively
@@ -1050,10 +1092,8 @@ class PrecomputedDihedralInterface():
             sampled_dihedrals = np.interp(rand_values, cdf, bin_centers)
 
             dihedral_hist.append(sampled_dihedrals)
-        
-        dihedral_hist = np.array(dihedral_hist)
 
-        return dihedral_hist
+        return np.array(dihedral_hist)
         
     def gather_phi_reference_dihedrals(self, sequence : str) -> np.ndarray:
         """Gather the reference phi dihedral angles for a given sequence.
