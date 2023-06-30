@@ -810,7 +810,10 @@ class SamplingQuality:
             facecolor="w",
             gridspec_kw={'height_ratios': [2, 2]}
         )
-        
+        if self.method = "1D angle distributions" and dihedral == "2D":
+            raise ValueError(f"Cannot plot 1D angle distributions with {dihderal}.\
+                             Please set dihedral to phi or psi")
+
         selector = {"2D": self.compute_dihedral_hellingers(),
                     "phi": self.compute_dihedral_hellingers()[0], 
                     "psi": self.compute_dihedral_hellingers()[1]}
