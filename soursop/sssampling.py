@@ -984,11 +984,11 @@ class SamplingQuality:
         NotImplementedError
             Raised if selector is not one of the implemented options.
         """
-        selectors = ["ref_phi_pdfs","ref_psi_pdfs","joint"]
+        selectors = ["ref_phi_pdfs", "ref_psi_pdfs", "joint"]
         
         if dihedral not in selectors:
             raise NotImplementedError(f"Should not arrive here: {selector} is not implemented."+
-                                      "Please try one of trj_phi_pdfs,trj_psi_pdfs, joint instead.")
+                                      "Please try one of ref_phi_pdfs, ref_psi_pdfs, joint instead.")
         
         for selector in selectors:
             if selector not in self.__precomputed or recompute is True:
