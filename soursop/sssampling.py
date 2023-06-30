@@ -849,11 +849,13 @@ class SamplingQuality:
         idx = np.arange(1, n_res+1)
         xticks = np.arange(increment, idx[-1]+1, increment)
         xticklabels = np.arange(increment, idx[-1]+1, increment)
-
+        
+        yticks = [0,0.2,0.4,0.6,0.8,1]
+        ytick_labels = [0,0.2,0.4,0.6,0.8,1]
         for ax in axd:
             if ax == "A":
-                axd[ax].set_yticks([0, 1],)
-                axd[ax].set_yticklabels([0, 1], fontsize=fontsize)
+                axd[ax].set_yticks(yticks)
+                axd[ax].set_yticklabels(ytick_labels, fontsize=fontsize)
                 axd[ax].set_ylim([0, 1])
                 axd[ax].set_ylabel("Hellinger's Distance", fontsize=fontsize)
                 axd[ax].set_title("Comparison to the Excluded Volume Limit", fontsize=fontsize)
@@ -869,8 +871,8 @@ class SamplingQuality:
                 axd[ax].plot(idx, np.mean(metric, axis=0), 'sk-', ms=2, alpha=1, mew=0, linewidth=0.5)
 
             elif ax == "B":
-                axd[ax].set_yticks([0, 1])
-                axd[ax].set_yticklabels([0, 1], fontsize=fontsize)
+                axd[ax].set_yticks(yticks)
+                axd[ax].set_yticklabels(ytick_labels, fontsize=fontsize)
                 axd[ax].set_ylim([0, 1])
                 axd[ax].set_ylabel("Hellinger's Distance", fontsize=fontsize)
 
@@ -888,8 +890,8 @@ class SamplingQuality:
             elif ax == "C":
                 # axd[ax].spines.right.set_visible(False)
                 # axd[ax].spines.top.set_visible(False)
-                axd[ax].set_yticks([0, 1])
-                axd[ax].set_yticklabels([0, 1])
+                axd[ax].set_yticks(yticks)
+                axd[ax].set_yticklabels(ytick_labels, fontsize=fontsize)
                 axd[ax].set_ylim([0, 1])
                 axd[ax].set_ylabel("Hellinger's Distance\nmax - min", fontsize=fontsize)
                 axd[ax].set_xlabel("Residue", fontsize=fontsize)
@@ -898,8 +900,8 @@ class SamplingQuality:
                 axd[ax].bar(idx, max_minus_min, width=0.8, color='k')
 
             elif ax == "D":
-                axd[ax].set_yticks([0, 1])
-                axd[ax].set_yticklabels([0, 1], fontsize=fontsize)
+                axd[ax].set_yticks(yticks)
+                axd[ax].set_yticklabels(ytick_labels, fontsize=fontsize)
                 axd[ax].set_ylim([0, 1])
                 axd[ax].set_ylabel("Fractional Helicity", fontsize=fontsize)
                 axd[ax].set_xlabel("Residue", fontsize=fontsize)
