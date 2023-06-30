@@ -709,7 +709,8 @@ class SamplingQuality:
         Tuple[pd.DataFrame, pd.DataFrame]
             all-to-all trajectory comparisons for the hellingers distances in 'self.trj_pdfs'
         """
-        phi_pdfs, psi_pdfs = self.trj_pdfs(recompute=recompute)
+        phi_pdfs = self.trj_pdfs(recompute=recompute,dihedral="phi")
+        psi_pdfs = self.trj_pdfs(recompute=recompute,dihedral="psi")
 
         if phi_pdfs.shape[0] == 1 or psi_pdfs.shape[0] == 1:
             # if only 1 simulated traj and 1 ref traj all-to-all is just a 1:1 comparison.
@@ -944,7 +945,7 @@ class SamplingQuality:
         NotImplementedError
             Raised if selector is not one of the implemented options.
         """
-        selectors = ["trj_phi_pdfs","trj_psi_pdfs","joint"]
+        selectors = ["trj_phi_pdfs", "trj_psi_pdfs", "joint"]
         if dihedral not in selectors:
             raise NotImplementedError(f"Should not arrive here: {selector} is not implemented." +
                                       "Please try one of trj_phi_pdfs,trj_psi_pdfs, joint instead.")
