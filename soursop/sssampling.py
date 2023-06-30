@@ -820,6 +820,7 @@ class SamplingQuality:
                              "psi" : self.get_all_to_all_trj_comparisons()[1]}
 
         metric = selector[dihedral]
+        print("metric shape: ",metric.shape)
         all_to_all = all_to_all_selector[dihedral]
 
         trj_helicity, ref_helicity = self.fractional_helicity()
