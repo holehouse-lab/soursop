@@ -22,7 +22,7 @@ If you wish to add a new feature, please see our Development information in the 
 ## PREPRINT
 To read about SOURSOP please see our preprint:
 
-**SOURSOP: A Python package for the analysis of simulations of intrinsically disordered proteins**
+**SOURSOP: A Python package for the analysis of simulations of intrinsically disordered proteins** (JCTC, in press)
 
 Jared Lalmansingh, Alex Keeley, Kiersten Ruff, Rohit Pappu, Alex Holehouse
 
@@ -31,6 +31,9 @@ Jared Lalmansingh, Alex Keeley, Kiersten Ruff, Rohit Pappu, Alex Holehouse
 Copyright (c) 2015-2023 under the GNU LESSER GENERAL PUBLIC LICENSE 
 
 # Changelog
+#### Update July 2023
+* Added in `explicit_residue_checking` flag into SSTrajectory constructor, which makes it possible to use a solvated `.gro` file as an input file.
+
 #### Update February 2023
 * Added plugins example
 * Added additional tests and finalized documentation
