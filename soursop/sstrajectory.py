@@ -125,7 +125,7 @@ class SSTrajectory:
             want to trick SOURSOP into analyzing polymer simulations where your 
             PDB file may have non-standard residue names (e.g., XXX).
 
-        strict_residue_checking : bool
+        explicit_residue_checking : bool
             In early versions of SOURSOP we operate under the assumption that 
             every residue in a chain will be protein if the first residue is 
             a protein. In general this is a good assumption, especially because
@@ -134,7 +134,7 @@ class SSTrajectory:
             any kind of topology file that lacks explicit chains, then any 
             non-protein residues end up being brought in and counted which if you
             have 10000s of solvent molecules makes parsing impossible. If 
-            strict_residue_checking is set to True, then each residue in each
+            explicit_residue_checking is set to True, then each residue in each
             chain is explicitly checked, meaning solvent molecules/atoms in 
             a single chain are discarded.
 
