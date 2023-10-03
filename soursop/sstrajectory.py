@@ -31,7 +31,14 @@ class SSTrajectory:
     #oxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxo
     #
     #
-    def __init__(self, trajectory_filename=None, pdb_filename=None, TRJ=None, protein_grouping=None, pdblead=False, debug=False, extra_valid_residue_names=None):
+    def __init__(self, trajectory_filename=None,
+                 pdb_filename=None,
+                 TRJ=None,
+                 protein_grouping=None,
+                 pdblead=False,
+                 debug=False,
+                 extra_valid_residue_names=None,
+                 explicit_residue_checking=False):
         
         """
         SSTrajectory is the class used to read in a work with simulation
@@ -121,6 +128,19 @@ class SSTrajectory:
             want to trick SOURSOP into analyzing polymer simulations where your 
             PDB file may have non-standard residue names (e.g., XXX).
 
+        explicit_residue_checking : bool
+            In early versions of SOURSOP we operate under the assumption that 
+            every residue in a chain will be protein if the first residue is 
+            a protein. In general this is a good assumption, especially because
+            it means we can implicitly deal with non-standard residue names that
+            are internal to a chain. However, if you're reading in a .gro file, or
+            any kind of topology file that lacks explicit chains, then any 
+            non-protein residues end up being brought in and counted which if you
+            have 10000s of solvent molecules makes parsing impossible. If 
+            explicit_residue_checking is set to True, then each residue in each
+            chain is explicitly checked, meaning solvent molecules/atoms in 
+            a single chain are discarded.
+
 
         Example
         -----------
@@ -163,11 +183,11 @@ class SSTrajectory:
         # extract a list of protein trajectories where each protein is assumed
         # to be in its own chain
         if protein_grouping == None:
-            self.proteinTrajectoryList = self.__get_proteins(self.traj, debug)        
+            self.proteinTrajectoryList = self.__get_proteins(self.traj, debug, explicit_residue_checking=explicit_residue_checking)        
         else:
             self.proteinTrajectoryList = self.__get_proteins_by_residue(self.traj, protein_grouping, debug)
 
-        self.__single_protein_traj = self.__get_all_proteins(self.traj)
+        self.__single_protein_traj = self.__get_all_proteins(self.traj, explicit_residue_checking=explicit_residue_checking)
 
 
     def  __repr__(self):
@@ -285,7 +305,7 @@ class SSTrajectory:
     #oxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxo
     #
     #
-    def __get_all_proteins(self, trajectory):
+    def __get_all_proteins(self, trajectory, explicit_residue_checking=False):
         """
         Internal function that builds a single trajectory which contains all protein
         residues. 
@@ -313,19 +333,39 @@ class SSTrajectory:
         # not it gets skipped
         for chain in topology.chains:
 
-            # if the first residue in the chain is protein
-            # note that a formic acid cap ('FOR') is not recognized as protein
-            # so we include an edgecase here for that
-            if chain.residue(0).name in self.valid_residue_names:
 
-                # intialize an empty list of atoms
+            
+            # if explicit residue checking is False we assume the first residue of the
+            # chain is representative of the whole chain. This is generally
+            # fair assumption
+            if explicit_residue_checking is False:
+                
+                if chain.residue(0).name in self.valid_residue_names:
+
+                    # intialize an empty list of atoms
+                    local_atoms = []
+
+                    # get every atom in this chain
+                    for atom in chain.atoms:
+                        protein_atoms.append(atom.index)
+
+                    protein_atoms.extend(local_atoms)
+            else:
+                
+                # initialize an empty list of atoms
                 local_atoms = []
+                
+                for res in chain.residues:
 
-                # get every atom in this chain
-                for atom in chain.atoms:
-                    protein_atoms.append(atom.index)
+                    # for each residue in that chain ask if that residue is valid
+                    if res.name in self.valid_residue_names:
+
+                        # if yes 
+                        local_atoms.extend([a.index for a in res.atoms])
 
                 protein_atoms.extend(local_atoms)
+
+            
 
         return SSProtein(trajectory.atom_slice(protein_atoms))
         
@@ -333,7 +373,7 @@ class SSTrajectory:
     #oxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxo
     #
     #
-    def __get_proteins(self, trajectory, debug):
+    def __get_proteins(self, trajectory, debug, explicit_residue_checking=False):
         """
         Internal function that takes an MDTraj trajectory and returns a list 
         of mdtraj trajectory objects corresponding to each protein in the 
@@ -368,24 +408,42 @@ class SSTrajectory:
         # not it gets skipped
         for chain in topology.chains:
 
-            # if the first residue in the chain is protein
-            # note that a formic acid cap ('FOR') is not recognized as protein
-            # so we include an edgecase here for that
-            if chain.residue(0).name in self.valid_residue_names:
 
-                # intialize an empty list of atoms
+            # if hybrid chains is False we assume the first residue of the
+            # chain is representative of the whole chain. This is generally
+            # fair assumption
+            if explicit_residue_checking is False:
+                # if the first residue in the chain is protein
+                # so we include an edgecase here for that
+                if chain.residue(0).name in self.valid_residue_names:
+                
+                    # intialize an empty list of atoms
+                    local_atoms = []
+
+                    # get every atom in this chain
+                    for atom in chain.atoms:
+                        local_atoms.append(atom.index)
+
+                    chainAtoms.append(local_atoms)
+
+                else:
+                    if debug:
+                        ssio.debug_message('Skipping residue %s from %s' %(chain.residue(0).name, chain))
+            else:
+
+                # initialize an empty list of atoms
                 local_atoms = []
+                
+                for res in chain.residues:
 
-                # get every atom in this chain
-                for atom in chain.atoms:
-                    local_atoms.append(atom.index)
+                    # for each residue in that chain ask if that residue is valid
+                    if res.name in self.valid_residue_names:
+
+                        # if yes 
+                        local_atoms.extend([a.index for a in res.atoms])
 
                 chainAtoms.append(local_atoms)
-
-            else:
-                if debug:
-                    ssio.debug_message('Skipping residue %s from %s' %(chain.residue(0).name, chain))
-
+                    
         # for each protein chain that we have atomic indices
         # for (hopefully all of them!) cycle through and create
         # sub-trajectories

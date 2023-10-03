@@ -6,7 +6,7 @@
 Welcome to the SOURSOP Documentation!
 =========================================================
 
-*Last updated: January 2023*
+*Last updated: July 2023*
 
 **SOURSOP** (**S**\imulation analysis **O**\f **U**\nfolded **R**\egion\ **S** **O**\f **P**\roteins) is a Python package for the analysis of all-atom and coarse-grained simulations of unfolded and disordered proteins. It provides a wide range of functionalities that may not be of use for folded proteins, but provide important insight into simulations of intrinsically disordered proteins. **SOURSOP** was formerly *CAMPARITraj*, which was formerly *CTraj*, and includes all the original functionality therein. 
 
@@ -31,6 +31,9 @@ This documentation is currently being generated as we finalize **SOURSOP**.
 
 Changelog
 ==========
+*Update: July. 2023*
+Added ``explicit_residue_checking`` option to SSTrajectory constructor to make parsing solvated .gro files or files where non-protein molecules are included in the same chain possible and easy.
+
 *Update: Jan. 2023*
 Finalization of code and documentation ahead of preprint deposition.
 

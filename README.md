@@ -6,7 +6,7 @@ SOURSOP
 ## ABOUT
 SOURSOP is a Python-based simulation analysis package for working with intrinsically disordered and unfolded proteins. It is built on top of [mdtraj](https://mdtraj.org/), and was developed by Jared Lalmansingh and Alex Holehouse. 
 
-The current stable release candidate on PyPI is 0.2.3 (Feb 2023).
+The current stable release candidate on PyPI is 0.2.4 (July 2023).
 
 ## DOCUMENTATION
 All documentation, including installation information [can be found here](https://soursop.readthedocs.io/). 
@@ -17,20 +17,26 @@ If you find a bug, typo, or error [please raise an issue or GitHub](https://gith
 If you wish to add a new feature, please see our Development information in the docs (especially for adding plugins).
 
 ## MISCELLANEOUS
-* As of right now, the continuous integration fails because of a specific mismatch in how an edge-case error is handled between different versions of mdtraj. All other tests are passing and SOURSOP is ready for production.
+* As of right now, the continuous integration fails because of a specific mismatch in how an edge-case error is handled between different versions of mdtraj. All other tests are passing and SOURSOP is ready for production. Do not be alarmed by the `failing` status above!
 
-## PREPRINT
-To read about SOURSOP please see our preprint:
+## PUBLICATION
+To read about SOURSOP please see our paper:
 
-**SOURSOP: A Python package for the analysis of simulations of intrinsically disordered proteins**
+Lalmansingh, J. M., Keeley, A. T., Ruff, K. M., Pappu, R. V. & Holehouse, A. S. SOURSOP: A Python Package for the Analysis of Simulations of Intrinsically Disordered Proteins. J. Chem. Theory Comput. (2023). doi:10.1021/acs.jctc.3c00190
 
-Jared Lalmansingh, Alex Keeley, Kiersten Ruff, Rohit Pappu, Alex Holehouse
+* [Journal link](https://pubs.acs.org/doi/full/10.1021/acs.jctc.3c00190)
+* [Paper PDF](https://www.dropbox.com/s/bd5szapvxpn83r6/soursop_jctc.pdf?dl=0)
+
+
 
 
 #### Copyright
 Copyright (c) 2015-2023 under the GNU LESSER GENERAL PUBLIC LICENSE 
 
 # Changelog
+#### Update July 2023
+* Added in `explicit_residue_checking` flag into SSTrajectory constructor, which makes it possible to use a solvated `.gro` file as an input file.
+
 #### Update February 2023
 * Added plugins example
 * Added additional tests and finalized documentation
