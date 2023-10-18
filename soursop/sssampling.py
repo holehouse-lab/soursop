@@ -108,8 +108,8 @@ def find_trajectory_files(root_dir: Union[str,pathlib.Path],
     ----------
     root_dir : Union[str, pathlib.path]
         Filepath or list of file paths
-    num_reps : int, optional
-        Number of replicas to gather trajectories from child directories [1,num_reps+1], by default None
+    num_replicates : int, optional
+        Number of replicas to gather trajectories from child directories [1,num_replicates+1], by default None
     exclude_dirs : Union[None,list], optional
         List of directory names you want to exclude, by default ["eq", "FULL"]
         Set to None to include "eq" and "FULL" or specify list.
@@ -128,7 +128,7 @@ def find_trajectory_files(root_dir: Union[str,pathlib.Path],
         if any(d in exclude_dirs for d in dirnames):
             # exclude directories in exclude_dirs
             dirnames[:] = [d for d in dirnames if d not in exclude_dirs]
-        if dirpath.endswith(tuple(str(i) for i in range(1, num_replicates + 1))):
+        if dirpath.endswith(tuple(str(i) for i in range(0, num_replicates + 1))):
             # extract the parent directory name
             parent_dirname = os.path.basename(os.path.dirname(dirpath))
             traj_file = os.path.join(dirpath, f'{traj_name}')
@@ -305,8 +305,6 @@ class SamplingQuality:
                 self.ref_trajs.append(SSTrajectory(self.reference_list,
                                               pdb_filename=self.ref_top,
                                               **self.kwargs))
-            else:
-                print("Shouldn't have reached here")
     
         else:
             # if many trajectories, load in parallel
@@ -336,7 +334,25 @@ class SamplingQuality:
             The second corresonds to the reference model - e.g.,
             the polymer limiting model.
         """
-        lengths = []
+        lengths = [] 
+        #TODO: Make this work with Precomputed dihedrals
+        if not self.reference_list:
+            
+            for trj in self.trajs:
+                lengths.append(trj.n_frames)
+            self.min_length = np.min(lengths)
+
+            temp_trajs = []
+            for trj in self.trajs:
+                temp_trajs.append(
+                    SSTrajectory(TRJ=trj.proteinTrajectoryList[self.proteinID].traj[0:self.min_length])
+                )
+            print(f"Successfully truncated.\n\
+                    The shortest trajectory is: {self.min_length} frames.\
+                    All trajectories truncated to {self.min_length}")
+            return (temp_trajs, None)
+            
+    
         for trj, ref_trj in zip(self.trajs, self.ref_trajs):
             lengths.append([trj.n_frames, ref_trj.n_frames])
 
@@ -811,7 +827,7 @@ class SamplingQuality:
             gridspec_kw={'height_ratios': [2, 2]}
         )
         if self.method == "1D angle distributions" and dihedral == "2D":
-            raise ValueError(f"Cannot plot 1D angle distributions with {dihedral}.\
+            raise ValueError(f"Cannot plot 1D angle distributions with dihedral = {dihedral} selector.\
                              Please set dihedral to phi or psi")
 
         selector = {"2D": self.compute_dihedral_hellingers(),
@@ -954,7 +970,7 @@ class SamplingQuality:
         selectors = ["trj_phi_pdfs", "trj_psi_pdfs", "joint"]
         if dihedral not in selectors:
             raise NotImplementedError(f"Should not arrive here: {selectors} is not implemented." +
-                                      "Please try one of trj_phi_pdfs,trj_psi_pdfs, joint instead.")
+                                      "Please try one of trj_phi_pdfs, trj_psi_pdfs, joint instead.")
         
         for selector in selectors:
             if selector not in self.__precomputed or recompute is True:
@@ -969,7 +985,7 @@ class SamplingQuality:
                
         return self.__precomputed[dihedral]
 
-    def ref_pdfs(self, dihedral, recompute=False):
+    def ref_pdfs(self, dihedral="joint", recompute=False):
         """Function to return the pdfs computed from the phi/psi angles respectively
         
         Parameters
@@ -1067,7 +1083,7 @@ class PrecomputedDihedralInterface():
         # self.ref_phi_angles = np.tile(self.gather_phi_reference_dihedrals(sequence), (self.num_trajs, 1, 1))    
         # self.ref_psi_angles = np.tile(self.gather_psi_reference_dihedrals(sequence), (self.num_trajs, 1, 1))    
 
-        # sampling introduces a small amount of error from sampling, but this error is small 
+        # sampling introduces a small amount of error from sampling, but this error is inconsequential 
         # and will asymtotically decrease with larger trajectories
         # and is easier than me refactoring...
         self.ref_phi_angles = np.tile(self.sample_angles("phi"), (self.num_trajs, 1, 1))    
