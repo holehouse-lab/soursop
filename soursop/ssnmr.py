@@ -436,7 +436,7 @@ def compute_random_coil_chemical_shifts(protein_sequence, temperature=25, pH=7.4
         tpo_ph_corr[i] = tpo_deprot_frac * tpo_ph_0[1][i] + (1 - tpo_deprot_frac) * tpo_ph_0[0][i]
         ptr_ph_corr[i] = ptr_deprot_frac * ptr_ph_0[1][i] + (1 - ptr_deprot_frac) * ptr_ph_0[0][i]
 
-    print(protein_sequence)
+
     sequences = __set_sequence(protein_sequence, key_aa1, key_aa3)
     sequence = sequences[0]
     aminos = sequences[1]
