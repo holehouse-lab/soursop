@@ -5,9 +5,9 @@
 ##   ____) | |__| | |__| | | \ \ ____) | |__| | |     
 ##  |_____/ \____/ \____/|_|  \_\_____/ \____/|_|     
 
-## Alex Holehouse (Pappu Lab and Holehouse Lab) and Jared Lalmansing (Pappu lab)
+## Alex Holehouse (Pappu Lab and Holehouse Lab) and Jared Lalmansingh (Pappu lab)
 ## Simulation analysis package
-## Copyright 2014 - 2022
+## Copyright 2014 - 2024
 ##
 
 import mdtraj as md
@@ -19,8 +19,15 @@ from .ssprotein import SSProtein
 from .ssexceptions import SSException
 from . import ssutils
 from . import ssio
+from . import sstools
 
 from copy import copy
+
+## Order of standard args:
+## 1. periodic
+## 2. stride
+## 3. weights
+#  4. verbose
 
 
 class SSTrajectory:
@@ -211,12 +218,22 @@ class SSTrajectory:
         """
         return len(self.proteinTrajectoryList)
 
+    @property
     def length(self):
         """
         :property: Returns a tuple with number of proteins and number of frames.
         """
         # Implemented a method that encapsulates the data output by the original `__len__` method.
         return (self.n_proteins, self.n_frames)
+
+    @property
+    def unitcell(self):
+        """
+        :property: Returns a list with unit cell information in Angstroms (assuming base units
+        of trajectory are in nanometers)
+        """
+        return self.traj.unitcell_lengths[0]*10
+        
 
 
     #oxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxo
@@ -1024,8 +1041,17 @@ class SSTrajectory:
 
             COM_2 = 10*md.compute_center_of_mass(full_subtraj.atom_slice(atom2))
             
-            # finally compute distances
-            distances = np.sqrt(np.square(np.transpose(COM_1)[0] - np.transpose(COM_2)[0]) + np.square(np.transpose(COM_1)[1] - np.transpose(COM_2)[1])+np.square(np.transpose(COM_1)[2] - np.transpose(COM_2)[2]))
+            # finally compute distances. Use minimum image convention if the periodic keyword is passed
+            if periodic:
+                distances = sstools.get_distance_periodic(COM_1, COM_2, self.unitcell[0], 'cube')
+                
+            else:
+
+                # revised way
+                distances = np.linalg.norm(COM_1 - COM_2, axis=1)
+
+                # old way
+                # distances = np.sqrt(np.square(np.transpose(COM_1)[0] - np.transpose(COM_2)[0]) + np.square(np.transpose(COM_1)[1] - np.transpose(COM_2)[1])+np.square(np.transpose(COM_1)[2] - np.transpose(COM_2)[2]))
 
         else:
 

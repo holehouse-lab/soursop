@@ -5,9 +5,9 @@
 ##   ____) | |__| | |__| | | \ \ ____) | |__| | |
 ##  |_____/ \____/ \____/|_|  \_\_____/ \____/|_|
 
-## Alex Holehouse (Pappu Lab and Holehouse Lab) and Jared Lalmansing (Pappu lab)
+## Alex Holehouse (Pappu Lab and Holehouse Lab) and Jared Lalmansingh (Pappu lab)
 ## Simulation analysis package
-## Copyright 2014 - 2022
+## Copyright 2014 - 2024
 ##
 
 import mdtraj as md

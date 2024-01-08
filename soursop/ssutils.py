@@ -185,7 +185,7 @@ def validate_keyword_option(keyword, allowed_vals, keyword_name, error_message=N
     if keyword not in allowed_vals:
         message = None
         if error_message is None:
-            message = 'Keyword %s passed value [%s], but this is not valid.\nMust be one of :%s'  % (keyword_name, keyword, ", ".join(allowed_vals))
+            message = f'Keyword {keyword_name} passed value [{keyword}], but this is not valid.\nMust be one of :%s'  % (", ".join(allowed_vals))
         else:
             error_type = type(error_message)
             if error_type is not str:
