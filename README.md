@@ -6,7 +6,7 @@ SOURSOP
 ## ABOUT
 SOURSOP is a Python-based simulation analysis package for working with intrinsically disordered and unfolded proteins. It is built on top of [mdtraj](https://mdtraj.org/), and was developed by Jared Lalmansingh and Alex Holehouse. 
 
-The current stable release candidate on PyPI is 0.2.4 (July 2023).
+The current stable release candidate on PyPI is 0.2.5 (Feb 2024).
 
 ## DOCUMENTATION
 All documentation, including installation information [can be found here](https://soursop.readthedocs.io/). 
@@ -27,13 +27,13 @@ Lalmansingh, J. M., Keeley, A. T., Ruff, K. M., Pappu, R. V. & Holehouse, A. S. 
 * [Journal link](https://pubs.acs.org/doi/full/10.1021/acs.jctc.3c00190)
 * [Paper PDF](https://www.dropbox.com/s/bd5szapvxpn83r6/soursop_jctc.pdf?dl=0)
 
-
-
-
 #### Copyright
-Copyright (c) 2015-2023 under the GNU LESSER GENERAL PUBLIC LICENSE 
+Copyright (c) 2015-2024 under the GNU LESSER GENERAL PUBLIC LICENSE 
 
 # Changelog
+#### Update Feb 2024 (0.2.5)
+* Removed periodic correction in SSProtein functions. We could provide periodic boundary condition checks for some but not all functions, and ensuring this flag was possible everywhere is not feasable. With this in mind, we opted to make a design decision to remove the `periodic` flag from the small number of functions that had it, such that there's no risk of a user forgetting and analyzing two distinct properties for a trajectory that requires PBC fixing where one analysis used `periodic=True` whereas another did not have this option. Now, the user must ensure their protein trajectories are corrected ahead of time. Note that we also added support for periodic=True for some of the SSTrajectory analysis functions, because in cases where multiple chains are present reconstructing a non-PBC trajectory becomes much more difficult. As such, intermolecular analysis does provide intrinsic PBC correction, whereas intramolecular analysis does not.
+
 #### Update July 2023
 * Added in `explicit_residue_checking` flag into SSTrajectory constructor, which makes it possible to use a solvated `.gro` file as an input file.
 

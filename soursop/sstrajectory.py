@@ -600,6 +600,8 @@ class SSTrajectory:
         interacting directly with the SSProtein object in the 
         ``.proteinTrajectoryList``.
 
+        WARNING: This DOES NOT perform any PBC correction.
+
         Parameters
         -------------
         None
@@ -625,6 +627,8 @@ class SSTrajectory:
         protein chain, this function offers no advantage over interacting 
         directly with the SSProtein object in the underlying 
         ``.proteinTrajectoryList`` object.
+
+        WARNING: This DOES NOT perform any PBC correction.
 
         Parameters
         -------------
@@ -667,7 +671,7 @@ class SSTrajectory:
     #oxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxo
     #
     #
-    def get_interchain_distance_map(self, proteinID1, proteinID2, mode='CA'):
+    def get_interchain_distance_map(self, proteinID1, proteinID2, mode='CA', periodic=False):
         """        
         Function which returns two matrices with the mean and standard 
         deviation distances between the residues in resID1 from 
@@ -710,6 +714,13 @@ class SSTrajectory:
         mode : str (default = 'CA')
             String, must be one of either 'CA' or 'COM', where CA means alpha
             carbon and COM means center of mass. 
+
+        periodic : bool (default = False)
+            Flag which if distances mode is passed as anything other than 'atom'
+            then this determines if the minimum image convention should be used.
+            Note that this is only available if pdb crystal dimensions are
+            provided, and in general it's better to set this to false and
+           center the molecule first. Default = False.
 
         Returns
         ---------
@@ -764,8 +775,15 @@ class SSTrajectory:
                 if P2.ncap:
                     p2_index = r2 - 1
                 
-                # compute distance... Note the COM gives values in Angstroms so no need to do a 10x correction here
-                d = np.sqrt(np.square(np.transpose(COM_1)[0] - np.transpose(COM_2)[0]) + np.square(np.transpose(COM_1)[1] - np.transpose(COM_2)[1])+np.square(np.transpose(COM_1)[2] - np.transpose(COM_2)[2]))
+                # compute distance... 
+                if periodic:
+                    d = sstools.get_distance_periodic(COM_1, COM_2, self.unitcell[0], 'cube')
+                else:
+                    d = np.linalg.norm(COM_1 - COM_2, axis=1)                    
+
+                    # old way
+                    #d = np.sqrt(np.square(np.transpose(COM_1)[0] - np.transpose(COM_2)[0]) + np.square(np.transpose(COM_1)[1] - np.transpose(COM_2)[1])+np.square(np.transpose(COM_1)[2] - np.transpose(COM_2)[2]))
+    
 
                 
                 distanceMap[p1_index, p2_index] =  np.mean(d, 0)

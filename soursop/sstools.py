@@ -166,6 +166,7 @@ def get_distance_periodic(distance1, distance2, box_size, box_shape='cube'):
         
 
 
+    # should rewrite in cython at some point... 
     distances = []
     for idx in range(len(distance1)):
         c1 = distance1[idx]

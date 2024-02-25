@@ -30,10 +30,9 @@ import scipy.cluster.hierarchy
 
 
 ## Order of standard args:
-## 1. periodic
-## 2. stride
-## 3. weights
-#  4. verbose
+## 1. stride
+## 2. weights
+#  3. verbose
 ##
 ##
 
@@ -289,6 +288,17 @@ class SSProtein:
 
             self.__residue_index_list = reslist
         return self.__residue_index_list
+
+
+    @property
+    def unitcell(self):
+        """
+        :property: Returns a list with unit cell information in Angstroms 
+        (assuming base unitsof trajectory are in nanometers)
+        
+        """
+        return self.traj.unitcell_lengths[0]*10
+    
 
 
 
@@ -1030,7 +1040,7 @@ class SSProtein:
 
     # ........................................................................
     #
-    def calculate_all_CA_distances(self, residueIndex,  mode='CA', only_C_terminal_residues=True, periodic=False, stride=1):
+    def calculate_all_CA_distances(self, residueIndex,  mode='CA', only_C_terminal_residues=True, stride=1):
         """Calculate the full set of distances between C-alpha atoms.
         Specifically, from the residueIndex, this function will calculate
         distances between that residue and all other residues that have CA-
@@ -1064,10 +1074,6 @@ class SSProtein:
             performing an ALL vs. ALL matrix as it ensures that only the
             upper triangle is calculated if we iterate over all residues,
             but may  not be deseriable in other contexts. Default = True.
-
-        periodic : bool
-            Flag which - if set to true - means we use minimum image
-            convention  for computing distances. Default = False.
 
         stride: int
             Defines the spacing between frames to compare - i.e. if comparing
@@ -1130,7 +1136,7 @@ class SSProtein:
             local_traj = self.__get_subtrajectory(self.traj, stride)
 
             # 10* for angstroms
-            return 10*md.compute_distances(local_traj, np.array(pairs), periodic=periodic)
+            return 10*md.compute_distances(local_traj, np.array(pairs), periodic=False)
 
         if mode == 'COM':
             ##
@@ -1156,7 +1162,7 @@ class SSProtein:
 
     # ........................................................................
     #
-    def get_distance_map(self, mode='CA', RMS=False, periodic=False, stride=1, weights=False, verbose=True):
+    def get_distance_map(self, mode='CA', RMS=False, stride=1, weights=False, verbose=True):
         """Function to calculate the CA defined distance map for a protein of
         interest. Note this function doesn't take any arguments and instead
         will just calculate the complete distance map.
@@ -1182,11 +1188,6 @@ class SSProtein:
             distance reported is the root mean squared (RMS) = i.e.
             SQRT(<r_ij^2>), which is the formal order parameter that should
             be used for polymeric distance properties. Default = False.
-
-        periodic : bool
-            Flag which - if set to true - means we use minimum image
-            convention for computing distances.
-            Default = False.
 
         stride : int
             Defines the spacing between frames to compare - i.e. if comparing
@@ -1235,7 +1236,7 @@ class SSProtein:
 
             # get all CA-CA distances between the residue of index resIndex and every other residue.
             # Note this gives the non-redudant upper triangle.
-            full_data = self.calculate_all_CA_distances(resIndex, mode=mode, stride=stride, periodic=periodic)
+            full_data = self.calculate_all_CA_distances(resIndex, mode=mode, stride=stride)
 
             # if we want root mean square then NOW square each distances
             if RMS:
@@ -1652,9 +1653,8 @@ class SSProtein:
         # ACE and NME)
         residuesWithCA = self.resid_with_CA
 
-        # compute number of frames exactly (this is empyrical but ensures we're always consistent with the projected
+        # compute number of frames exactly (this is empirical, but ensures we're always consistent with the projected
         # dimensions in the first for-loop)
-        # note that this also assumes periodic is off, which is probably a good assumption...
         tmp = self.calculate_all_CA_distances(residuesWithCA[0], stride=stride, only_C_terminal_residues=True)
         n_frames =  np.shape(tmp)[0]
 
@@ -1935,17 +1935,17 @@ class SSProtein:
         # compute the distances between these pairs in the native state
         ## NB: This breaks soursop convention of converting nm->A at the site of
         ## where it's calculated.
-        heavy_pairs_distances = md.compute_distances(native[0], heavy_pairs)[0]
+        heavy_pairs_distances = md.compute_distances(native[0], heavy_pairs, periodic=False)[0]
 
         # and get the pairs s.t. the distance is less than NATIVE_CUTOFF. This returns the
         # set of interatomic residues that define the native contacts
         native_contacts = heavy_pairs[heavy_pairs_distances < NATIVE_CUTOFF]
 
         # now compute these distances for the whole trajectory
-        r = md.compute_distances(target, native_contacts)
+        r = md.compute_distances(target, native_contacts, periodic=False)
 
         # and recompute them for just the native state
-        r0 = md.compute_distances(native[0], native_contacts)
+        r0 = md.compute_distances(native[0], native_contacts, periodic=False)
 
         # If we're just computing the protein average then this returns the Q value for the whole protein on a per-frame basis
         if protein_average:
@@ -2363,9 +2363,6 @@ class SSProtein:
         """Function which calculates the complete set of distances between two
         residues' centers of mass (COM) and returns a vector of the distances.
 
-        Distance is returned in Angstroms. Note no periodic option is currently
-        available here.
-
         Parameters
         -------------
         R1 :  int
@@ -2384,17 +2381,21 @@ class SSProtein:
            Returns an array of inter-residue distances in angstroms
         """
 
-        # get COM of the two residues for every stride-th frame (only split
-        COM_1 = self.get_residue_COM(R1)
-        COM_2 = self.get_residue_COM(R2)
+        # get COM of the two residues for every stride-th frame
+        COM_1 = self.get_residue_COM(R1)[::stride]
+        COM_2 = self.get_residue_COM(R2)[::stride]
 
 
+            
         # calculate distance
         # note 10* to get angstroms was done at the get_residue_COM level
-        d = np.sqrt(np.square(np.transpose(COM_1)[0] - np.transpose(COM_2)[0]) + np.square(np.transpose(COM_1)[1] - np.transpose(COM_2)[1])+np.square(np.transpose(COM_1)[2] - np.transpose(COM_2)[2]))
+        distances = np.linalg.norm(COM_1 - COM_2, axis=1)
+        
+        # old way
+        #d = np.sqrt(np.square(np.transpose(COM_1)[0] - np.transpose(COM_2)[0]) + np.square(np.transpose(COM_1)[1] - np.transpose(COM_2)[1])+np.square(np.transpose(COM_1)[2] - np.transpose(COM_2)[2]))
 
 
-        return d
+        return distances
 
 
 
@@ -2438,7 +2439,7 @@ class SSProtein:
     # ........................................................................
     #
     #
-    def get_inter_residue_atomic_distance(self, R1, R2, A1='CA', A2='CA', mode='atom', periodic=False, stride=1):
+    def get_inter_residue_atomic_distance(self, R1, R2, A1='CA', A2='CA', mode='atom', stride=1):
         """Function which returns the distance between two specific atoms on
         two residues. The atoms selected are based on the 'name' field from the
         topology selection language. This defines a specific atom as defined by
@@ -2481,10 +2482,6 @@ class SSProtein:
 
             * ``sidechain-heavy`` - closest atom where that atom is in the sidechain and is heavy. Note this requires mdtraj version 1.8.0 or higher.
 
-        periodic : bool
-            Flag which - if set to true - means we use minimum image
-            convention for computing distances. Default = False.
-
         stride : int
             Defines the spacing between frames to compare - i.e. if comparing
             frame1 to a trajectory we'd compare frame 1 and every stride-th
@@ -2524,7 +2521,12 @@ class SSProtein:
                 COM_1 = 10*md.compute_center_of_mass(TRJ_1)
                 COM_2 = 10*md.compute_center_of_mass(TRJ_2)
 
-                distances = np.sqrt(np.square(np.transpose(COM_1)[0] - np.transpose(COM_2)[0]) + np.square(np.transpose(COM_1)[1] - np.transpose(COM_2)[1])+np.square(np.transpose(COM_1)[2] - np.transpose(COM_2)[2]))
+
+                # 
+                distances = np.linalg.norm(COM_1 - COM_2, axis=1)
+
+                # old way
+                #distances = np.sqrt(np.square(np.transpose(COM_1)[0] - np.transpose(COM_2)[0]) + np.square(np.transpose(COM_1)[1] - np.transpose(COM_2)[1])+np.square(np.transpose(COM_1)[2] - np.transpose(COM_2)[2]))
 
             except IndexError as e:
                 ssio.exception_message("This is likely because one of [%s] or [%s] is not a valid atom type for the residue in question. Full error printed below\n%s" %( A1,A2, str(e)), e, with_frills=True)
@@ -2532,7 +2534,7 @@ class SSProtein:
         # if ANY of the other modes are passed
         else:
             subtraj = self.__get_subtrajectory(self.traj, stride)
-            distances = 10*md.compute_contacts(subtraj, [[R1,R2]], scheme=mode, periodic=periodic)[0].ravel()
+            distances = 10*md.compute_contacts(subtraj, [[R1,R2]], scheme=mode, periodic=False)[0].ravel()
 
 
         return distances
@@ -3472,7 +3474,18 @@ class SSProtein:
 
     # ........................................................................
     #
-    def get_scaling_exponent(self, inter_residue_min=15, end_effect=5, subdivision_batch_size=20, mode='COM', num_fitting_points=40, fraction_of_points=0.5, fraction_override=False, stride=1, weights=False, etol=0.0000001, verbose=True):
+    def get_scaling_exponent(self,
+                             inter_residue_min=15,
+                             end_effect=5,
+                             subdivision_batch_size=20,
+                             mode='COM',
+                             num_fitting_points=40,
+                             fraction_of_points=0.5,
+                             fraction_override=False,
+                             etol=0.0000001,
+                             stride=1,
+                             weights=False,
+                             verbose=True):
         """Estimation for the A0 and nu-app exponents for the standard polymer
         relationship :math:`\langle r_{i,j}^2 \\rangle^{1/2} = A_0 |i-j|^{\\nu_{app}}`
 
