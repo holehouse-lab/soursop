@@ -23,7 +23,7 @@ from . import ssio
 
 from copy import copy
 from functools import partial
-from multiprocessing import Pool
+from multiprocessing import Pool, cpu_count
 
 
 class SSTrajectory:
@@ -1040,27 +1040,63 @@ class SSTrajectory:
         return distances
       
 
-def parallel_load_trjs(trj_filenames, top, n_procs=1,**kwargs):
+def __load_trajectory(trj_filename, top_filename, **kwargs):
+    """ Private helper function for loading trajectories in parallel
+
+    Parameters
+    ----------
+    trj_filename : str
+        Filename of trajectory to be loaded by SSTrajectory
+    top_filenames : str
+        Topology filename to be used for loading the trajectory
+    **kwargs: dict, optional
+        Key value pairs to be passed directly to SSTrajectory.
+
+    Returns
+    -------
+    SSTrajectory
+        Returns an SSTrajectory object for the given trajectory and topology.
+    """
+
+    try:
+        return SSTrajectory(trj_filename, pdb_filename=top_filename, **kwargs)
+    except ValueError as e:
+        raise RuntimeError(f"Failed to load SSTrajectory for trajectory '{trj_filename}' with topology '{top_filename}'. "
+                           f"Perhaps you supplied the wrong topology?: {e}")
+
+def parallel_load_trjs(trj_filenames, top_filenames, n_procs=None, **kwargs):
     """
     Parallel loading of trajectories with optional kwargs.
 
     Parameters
     ----------
-    trj_filenames : str
-        A list of strings containing the trajetory filepaths to be loaded
-    top : str
-        a string for the specified path to the topology file.
+    trj_filenames : list of str
+        A list of strings containing the trajectory file paths to be loaded.
+    top_filenames : list of str
+        A list of strings containing the topology file paths corresponding to the trajectories.
     n_procs : int, optional
-        Number of separate processors to use for loading, by default 1
+        Number of separate processors to use for loading, by default None.
+        If None, it will use the number of available CPU cores.
     **kwargs: dict, optional
         Key value pairs to be passed directly to SSTrajectory.
+
     Returns
     -------
-    SSTrajectory 
+    list
         Returns a list of SSTrajectory objects.
     """
-    # parallelize load with **kwargs
-    partial_load = partial(SSTrajectory, pdb_filename=top,**kwargs)
+    if n_procs is None:
+        n_procs = cpu_count()
+
+    # Assume the same topology file for all trajectories if only one is provided
+    if len(top_filenames) < len(trj_filenames) and len(top_filenames) == 1:
+        top_filenames = [top_filenames] * len(trj_filenames)
+
+    # Partially apply load_trajectory with topology file path and kwargs
+    partial_load = partial(__load_trajectory, **kwargs)
+
+    # Parallelize load with **kwargs
     with Pool(processes=n_procs) as pool:
-        trjs = pool.map(partial_load, trj_filenames)
+        trjs = pool.starmap(partial_load, zip(trj_filenames, top_filenames))
+
     return trjs

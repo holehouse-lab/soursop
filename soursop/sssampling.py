@@ -22,15 +22,15 @@ from natsort import natsorted
 from scipy.special import rel_entr
 
 from soursop import ssutils
+from soursop.ssdata import (
+    EV_RESIDUE_MAPPER,
+    ONE_TO_THREE,
+    PHI_EV_ANGLES_DICT,
+    PSI_EV_ANGLES_DICT,
+)
 
 from .ssexceptions import SSException
 from .sstrajectory import SSTrajectory, parallel_load_trjs
-from soursop.ssdata import (
-    PSI_EV_ANGLES_DICT,
-    PHI_EV_ANGLES_DICT,
-    ONE_TO_THREE,
-    EV_RESIDUE_MAPPER,
-)
 
 
 def compute_joint_hellinger_distance(p, q):
@@ -41,7 +41,6 @@ def compute_joint_hellinger_distance(p, q):
     distance = np.sqrt(1 - b_coefficient)
 
     return distance
-
 
 def hellinger_distance(p: np.ndarray, q: np.ndarray) -> np.ndarray:
     """
@@ -364,7 +363,9 @@ class SamplingQuality:
             for trj in self.trajs:
                 temp_trajs.append(
                     SSTrajectory(
-                        TRJ=trj.proteinTrajectoryList[self.proteinID].traj[0:self.min_length]
+                        TRJ=trj.proteinTrajectoryList[self.proteinID].traj[
+                            0 : self.min_length
+                        ]
                     )
                 )
             print(
@@ -392,7 +393,9 @@ class SamplingQuality:
             )
             temp_ref_trjs.append(
                 SSTrajectory(
-                    TRJ=ref_trj.proteinTrajectoryList[self.proteinID].traj[0:self.min_length]
+                    TRJ=ref_trj.proteinTrajectoryList[self.proteinID].traj[
+                        0 : self.min_length
+                    ]
                 )
             )
 
@@ -493,7 +496,9 @@ class SamplingQuality:
 
         if self.reference_list:
             reference_helicity = [
-                ref_trj.proteinTrajectoryList[proteinID].get_secondary_structure_DSSP()[1]
+                ref_trj.proteinTrajectoryList[proteinID].get_secondary_structure_DSSP()[
+                    1
+                ]
                 for ref_trj in self.ref_trajs
             ]
         else:
@@ -1207,8 +1212,12 @@ class SamplingQuality:
             The per residue fractional helicity for each trajectory in self.trajs and self.ref_trajs.
         """
         selectors = ("trj_helicity", "ref_helicity")
-        if not recompute and all(selector in self.__precomputed for selector in selectors):
-            return self.__precomputed["trj_helicity"], self.__precomputed["ref_helicity"]
+        if not recompute and all(
+            selector in self.__precomputed for selector in selectors
+        ):
+            return self.__precomputed["trj_helicity"], self.__precomputed[
+                "ref_helicity"
+            ]
 
         trj_helicity, ref_helicity = self.compute_frac_helicity()
 
