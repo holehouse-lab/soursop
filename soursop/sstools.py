@@ -19,6 +19,8 @@ cttools contains misc. numerical python functions which provide some useful func
 import numpy as np
 from typing import Union, List
 import os
+from natsort import natsorted
+import pathlib
 
 # ........................................................................
 #
