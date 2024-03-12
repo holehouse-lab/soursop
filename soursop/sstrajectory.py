@@ -10,7 +10,6 @@
 ## Copyright 2014 - 2022
 ##
 
-from typing import List
 import mdtraj as md
 import numpy as np
 from .configs import *
