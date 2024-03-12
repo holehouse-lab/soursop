@@ -21,7 +21,8 @@ from . import ssutils
 from . import ssio
 
 from copy import copy
-
+from functools import partial
+from multiprocessing import Pool, cpu_count
 
 class SSTrajectory:
 
