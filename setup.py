@@ -50,6 +50,7 @@ setup(
         "mdtraj>=1.9.5",
         "pandas>=0.23.0",
         "threadpoolctl>=2.2.0",
+        "natsort"
     ],
 
 
