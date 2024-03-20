@@ -11,7 +11,7 @@
 ##
 
 """
-cttools contains misc. numerical python functions which provide some useful functionality 
+sstools contains misc. numerical python functions which provide some useful functionality 
 
 """
 
@@ -19,6 +19,10 @@ cttools contains misc. numerical python functions which provide some useful func
 import numpy as np
 from soursop.ssexceptions import SSException
 from soursop import ssutils
+from typing import Union, List
+import os
+from natsort import natsorted
+import pathlib
 
 # ........................................................................
 #
@@ -179,6 +183,64 @@ def get_distance_periodic(distance1, distance2, box_size, box_shape='cube'):
 
         distances.append(np.linalg.norm(delta))
 
-    return distances
+    return distances       
 
-        
+# ------------------------------------------------------------------
+#
+def find_trajectory_files(
+    root_dir: Union[str, pathlib.Path],
+    num_replicates: int,
+    exclude_dirs: Union[None, List] = ["eq", "FULL"],
+    traj_name: str = "__traj.xtc",
+    top_name: str = "__START.pdb"):
+    """
+    This function assembles the list of trajectory and topology paths
+    for a set of simulations in a given directory tree.
+
+    Parameters
+    ----------
+    root_dir : Union[str, pathlib.path]
+        Filepath or list of file paths
+    num_replicates : int
+        Number of replicas to gather trajectories from child directories [1,num_replicates+1]
+    exclude_dirs : Union[None,list], optional
+        List of directory names you want to exclude, by default ["eq", "FULL"]
+        Set to None to include "eq" and "FULL" or specify list.
+    traj_name : str, optional
+        trajectory filename, by default "__traj.xtc"
+    top_name : str, optional
+        topology filename, by default "__START.pdb"
+    """
+    if exclude_dirs is None:
+        exclude_dirs = []
+
+    traj_files = []
+    start_files = []
+    dir_dict = {}
+    
+    for dirpath, dirnames, filenames in os.walk(os.path.abspath(root_dir)):
+      
+        if any(d in exclude_dirs for d in dirnames):
+            # exclude directories in exclude_dirs
+            dirnames[:] = [d for d in dirnames if d not in exclude_dirs]
+            
+        if dirpath.endswith(tuple(str(i) for i in range(0, num_replicates + 1))):
+            # extract the parent directory name
+            parent_dirname = os.path.basename(os.path.dirname(dirpath))
+            traj_file = os.path.join(dirpath, f"{traj_name}")
+            start_file = os.path.join(dirpath, f"{top_name}")
+            
+            if os.path.isfile(traj_file) and os.path.isfile(start_file):
+                if parent_dirname not in dir_dict:
+                    # create a new list for the current parent directory name
+                    dir_dict[parent_dirname] = []
+                dir_dict[parent_dirname].append((traj_file, start_file))
+
+    for parent_dirname in natsorted(dir_dict.keys()):
+      
+        # sort the list of files for the current parent directory name
+        sorted_files = natsorted(dir_dict[parent_dirname])
+        for traj_file, start_file in sorted_files:
+            traj_files.append(traj_file)
+            start_files.append(start_file)
+    return traj_files, start_files
