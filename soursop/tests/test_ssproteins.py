@@ -964,8 +964,8 @@ def test_get_site_accessibility_residue_names(GS6_CP, NTL9_CP, cta_protein_helpe
 def test_get_angles_1(GS6_CP, NTL9_CP):
 
     assert len(GS6_CP.get_angles('phi')[0]) == 6
-    assert GS6_CP.get_angles('phi')[0][0][0] == 'ACE1-C'
-    assert GS6_CP.get_angles('phi')[0][5][3] == 'SER7-C'
+    assert str(GS6_CP.get_angles('phi')[0][0][0]) == 'ACE1-C'
+    assert str(GS6_CP.get_angles('phi')[0][5][3]) == 'SER7-C'
     assert np.isclose(GS6_CP.get_angles('phi')[1][5][3], -147.67358)
     assert np.isclose(GS6_CP.get_angles('phi')[1][5][0], -126.707436)
     assert np.isclose(GS6_CP.get_angles('phi')[1][0][0], -157.64288)
@@ -974,10 +974,10 @@ def test_get_angles_1(GS6_CP, NTL9_CP):
     assert np.isclose(GS6_CP.get_angles('psi')[1][3][3], -38.81799)
     assert np.isclose(GS6_CP.get_angles('psi')[1][4][3] , -89.94062)
 
-    assert GS6_CP.get_angles('chi1')[0][0][3] == 'SER3-OG'
-    assert GS6_CP.get_angles('chi1')[0][0][2] == 'SER3-CB'
-    assert GS6_CP.get_angles('chi1')[0][0][1] == 'SER3-CA'
-    assert GS6_CP.get_angles('chi1')[0][0][0] == 'SER3-N'
+    assert str(GS6_CP.get_angles('chi1')[0][0][3]) == 'SER3-OG'
+    assert str(GS6_CP.get_angles('chi1')[0][0][2]) == 'SER3-CB'
+    assert str(GS6_CP.get_angles('chi1')[0][0][1]) == 'SER3-CA'
+    assert str(GS6_CP.get_angles('chi1')[0][0][0]) == 'SER3-N'
 
     assert len(NTL9_CP.get_angles('phi')[0]) == 55
     assert len(NTL9_CP.get_angles('psi')[0]) == 55

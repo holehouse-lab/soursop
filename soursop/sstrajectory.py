@@ -1038,7 +1038,6 @@ class SSTrajectory:
         return distances
       
 
-
 def __load_trajectory(trj_filename, top_filename, **kwargs):
     """ Private helper function for loading trajectories in parallel
 

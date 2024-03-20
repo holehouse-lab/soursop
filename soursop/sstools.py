@@ -11,7 +11,7 @@
 ##
 
 """
-cttools contains misc. numerical python functions which provide some useful functionality 
+sstools contains misc. numerical python functions which provide some useful functionality 
 
 """
 
