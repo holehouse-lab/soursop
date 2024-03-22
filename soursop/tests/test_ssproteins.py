@@ -20,7 +20,9 @@ def test_contacts_special(NTL9_CP):
 
     with pytest.raises(SSException) as error:
         a = NTL9_CP.get_contact_map(distance_thresh=2, stride=1, mode='sidechain-invalid')
-
+    
+    
+        
 def test_code_coverage(NTL9_CP):
 
     NTL9_CP.print_residues()
@@ -46,8 +48,22 @@ def test_code_coverage(NTL9_CP):
 
     a = NTL9_CP.get_distance_map()
     a = NTL9_CP.get_distance_map(verbose=True)
+    a = NTL9_CP.get_distance_map(verbose=False)
     a = NTL9_CP.get_distance_map(verbose=True, mode='COM')
-    a = NTL9_CP.get_distance_map(verbose=True, mode='COM', RMS=True)
+    a = NTL9_CP.get_distance_map(verbose=True, mode='COM')
+    a = NTL9_CP.get_distance_map(verbose=False, mode='CA')
+    a = NTL9_CP.get_distance_map(verbose=False, mode='CA')
+    a = NTL9_CP.get_distance_map(verbose=False, mode='COM', RMS=True)
+    a = NTL9_CP.get_distance_map(verbose=False, mode='COM', RMS=True, stride=2)
+    a = NTL9_CP.get_distance_map(verbose=False, mode='CA',  RMS=True)
+    a = NTL9_CP.get_distance_map(verbose=False, mode='CA',  RMS=True, stride=2)    
+    a = NTL9_CP.get_distance_map(verbose=False, mode='COM', RMS=True, return_instantaneous_maps=True)
+    a = NTL9_CP.get_distance_map(verbose=False, mode='COM', RMS=True, stride=2, return_instantaneous_maps=True)
+    a = NTL9_CP.get_distance_map(verbose=False, mode='CA',  RMS=True, return_instantaneous_maps=True)
+    a = NTL9_CP.get_distance_map(verbose=False, mode='CA',  RMS=True, stride=2, return_instantaneous_maps=True)    
+    a = NTL9_CP.get_distance_map(verbose=False, mode='COM', RMS=True, return_instantaneous_maps=True)
+    a = NTL9_CP.get_distance_map(verbose=False, mode='COM', return_instantaneous_maps=True)
+    a = NTL9_CP.get_distance_map(verbose=False, return_instantaneous_maps=True)
 
     a = NTL9_CP.get_polymer_scaled_distance_map()
     a = NTL9_CP.get_polymer_scaled_distance_map(nu=0.54,A0=6)
@@ -193,6 +209,27 @@ def test_get_distance_map(GS6_CO):
         # verify that we obtain an upper triangular matrix
         assert np.allclose(distance_map, np.triu(distance_map)) is True
 
+def test_get_distance_map2(NTL9_CP):        
+
+    # load true map
+    test_data_mean = np.load(soursop.get_data('test_data/ntl9_distance_map_mean.npy'))
+    test_data_std  = np.load(soursop.get_data('test_data/ntl9_distance_map_std.npy'))
+
+    # calculate map
+    distance_map, stddev_map = NTL9_CP.get_distance_map()
+
+
+    assert np.allclose(test_data_mean, distance_map, atol=1e-4, rtol=1e-5)
+    assert np.allclose(test_data_std, stddev_map, atol=1e-4, rtol=1e-5)
+
+    # check we can calculate this by averaging as well... 
+    distance_map, stddev_map = NTL9_CP.get_distance_map(return_instantaneous_maps=True)
+    
+    assert np.allclose(test_data_mean, np.mean(distance_map,0), atol=1e-4, rtol=1e-5)
+    assert np.allclose(test_data_std, stddev_map, atol=1e-4, rtol=1e-5)
+
+    
+        
 
 def test_get_hydrodynamic_radius(GS6_CO):
 

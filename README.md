@@ -31,6 +31,10 @@ Lalmansingh, J. M., Keeley, A. T., Ruff, K. M., Pappu, R. V. & Holehouse, A. S. 
 Copyright (c) 2015-2024 under the GNU LESSER GENERAL PUBLIC LICENSE 
 
 # Changelog
+#### Update March 2024 (0.2.5 [patch])
+* Added `return_instantaneous_maps=False` keyword to `get_distance_maps()` function so we can return a [t,n,n] matrix where t = number of frames and n=number of residues for the instantaneous conformer-specific distance maps.
+
+
 #### Update Feb 2024 (0.2.5)
 * Removed periodic correction in SSProtein functions. We could provide periodic boundary condition checks for some but not all functions, and ensuring this flag was possible everywhere is not feasable. With this in mind, we opted to make a design decision to remove the `periodic` flag from the small number of functions that had it, such that there's no risk of a user forgetting and analyzing two distinct properties for a trajectory that requires PBC fixing where one analysis used `periodic=True` whereas another did not have this option. Now, the user must ensure their protein trajectories are corrected ahead of time. Note that we also added support for periodic=True for some of the SSTrajectory analysis functions, because in cases where multiple chains are present reconstructing a non-PBC trajectory becomes much more difficult. As such, intermolecular analysis does provide intrinsic PBC correction, whereas intramolecular analysis does not.
 

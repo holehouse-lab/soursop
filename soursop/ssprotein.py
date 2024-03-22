@@ -1162,7 +1162,7 @@ class SSProtein:
 
     # ........................................................................
     #
-    def get_distance_map(self, mode='CA', RMS=False, stride=1, weights=False, verbose=True):
+    def get_distance_map(self, mode='CA', RMS=False, stride=1, return_instantaneous_maps=False, weights=False, verbose=True):
         """Function to calculate the CA defined distance map for a protein of
         interest. Note this function doesn't take any arguments and instead
         will just calculate the complete distance map.
@@ -1194,6 +1194,11 @@ class SSProtein:
             frame1 to a trajectory we'd compare frame 1 and every stride-th
             frame. Default = 1.
 
+        return_instantaneous_maps : bool
+            If set to True, then the function will return a list of distance
+            maps for each frame in the trajectory. This can be useful for
+            further analysis. Default = False.
+
         weights : list or array of floats
             Defines the frame-specific weights if re-weighted analysis is
             required. This can be useful if an ensemble has been re-weighted
@@ -1206,7 +1211,7 @@ class SSProtein:
             computationally expensive, so having some report on status can
             be comforting!
 
-        Returns
+
         -------
         tuple
             A 2-tuple containing
@@ -1224,8 +1229,18 @@ class SSProtein:
         # initialize empty matrices that we're gonna fill up
         n_res = len(self.resid_with_CA)
 
-        distanceMap = np.zeros([n_res, n_res])
-        stdMap = np.zeros([n_res, n_res])
+        # if we want to return ALL the distance maps...
+        if return_instantaneous_maps is True:
+            # use this to empircally work out dimensions of return dime
+            test_data = self.calculate_all_CA_distances(self.resid_with_CA[0], mode=mode, stride=stride)
+            distance_map = np.zeros([n_res, test_data.shape[0], n_res])
+
+        # if we want to return JUST the average...
+        else:
+            distance_map = np.zeros([n_res, n_res])
+
+        # return same standard deviation either way...
+        std_distance_map = np.zeros([n_res, n_res])
 
         # cycle over CA-containing residues
         SM_index = 0
@@ -1244,7 +1259,7 @@ class SSProtein:
 
             # calculate mean and standard deviation
             if weights is not False:
-
+                
                 mean_data = np.average(full_data,0,weights=weights)
 
                 # if we want RMS then NOW take square root of <rij^2>
@@ -1261,13 +1276,28 @@ class SSProtein:
 
                 std_data = np.std(full_data,0)
 
+                
+                #return distance_map, full_data
             # update the maps appropriately and increment the counter
-            distanceMap[SM_index][1+SM_index:len(residuesWithCA)] = mean_data
-            stdMap[SM_index][1+SM_index:len(residuesWithCA)] = std_data
+            if return_instantaneous_maps is True:
+                distance_map[resIndex].transpose()[1+resIndex:] = full_data.transpose()
 
-            SM_index=SM_index+1
+            else:
+                distance_map[SM_index][1+SM_index:len(residuesWithCA)] = mean_data
 
-        return (distanceMap, stdMap)
+            # updated std map
+            std_distance_map[SM_index][1+SM_index:len(residuesWithCA)] = std_data
+
+            SM_index = SM_index + 1
+
+
+        if return_instantaneous_maps is True:
+
+            # note we have to transpose the distance map so the 1st index is the
+            # frame index
+            return (np.transpose(distance_map, axes=[1,0,2]), std_distance_map)
+        else:
+            return (distance_map, std_distance_map)
 
 
 
