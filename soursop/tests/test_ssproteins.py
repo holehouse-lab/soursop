@@ -228,6 +228,24 @@ def test_get_distance_map2(NTL9_CP):
     assert np.allclose(test_data_mean, np.mean(distance_map,0), atol=1e-4, rtol=1e-5)
     assert np.allclose(test_data_std, stddev_map, atol=1e-4, rtol=1e-5)
 
+def test_get_distance_map3(GS6_CP):        
+
+    # load true map
+    test_data_mean = np.load(soursop.get_data('test_data/gs6_distance_map_mean.npy'))
+    test_data_std  = np.load(soursop.get_data('test_data/gs6_distance_map_std.npy'))
+
+    # calculate map
+    distance_map, stddev_map = GS6_CP.get_distance_map()
+
+
+    assert np.allclose(test_data_mean, distance_map, atol=1e-4, rtol=1e-5)
+    assert np.allclose(test_data_std, stddev_map, atol=1e-4, rtol=1e-5)
+
+    # check we can calculate this by averaging as well... 
+    distance_map, stddev_map = GS6_CP.get_distance_map(return_instantaneous_maps=True)
+    
+    assert np.allclose(test_data_mean, np.mean(distance_map,0), atol=1e-4, rtol=1e-5)
+    assert np.allclose(test_data_std, stddev_map, atol=1e-4, rtol=1e-5)
     
         
 

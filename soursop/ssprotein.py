@@ -1215,8 +1215,17 @@ class SSProtein:
         -------
         tuple
             A 2-tuple containing
-            * `[0]` : The distance map derived from the measurements between CA atoms.
+            * `[0]` : The distance map derived from the measurements between 
+                      residues. If return_instantaneous_maps is False (default
+                      then this returns the AVERAGE inter-residue distances. If
+                      return_instantaneous_maps is True, then this returns a
+                      3D array where the first dimension is the frame number,
+                      and then dimensions 2 and 3 reflect inter-residue distances
+                      in each frame
+                        
             * `[1]` : The standard deviation corresponding to the distance map.
+                      Regardless of what is selected this returns the standard
+                      deviation of the distance map. If return_instantaneous_maps
         """
 
         ssutils.validate_keyword_option(mode, ['CA', 'COM'], 'mode')
@@ -1242,10 +1251,11 @@ class SSProtein:
         # return same standard deviation either way...
         std_distance_map = np.zeros([n_res, n_res])
 
-        # cycle over CA-containing residues
+        # cycle over CA-containing residues - note we have to define this SM_index
+        # because the matrix itself indices from 0 onwards (not from the first
+        # residue index)
         SM_index = 0
         for resIndex in self.resid_with_CA[0:-1]:
-
 
             ssio.status_message("On protein residue %i (overall residue index = %i) of %i [distance calculations]"% (SM_index, resIndex, int(len(residuesWithCA))), verbose)
 
@@ -1275,12 +1285,10 @@ class SSProtein:
                     mean_data = np.sqrt(mean_data)
 
                 std_data = np.std(full_data,0)
-
                 
-                #return distance_map, full_data
             # update the maps appropriately and increment the counter
             if return_instantaneous_maps is True:
-                distance_map[resIndex].transpose()[1+resIndex:] = full_data.transpose()
+                distance_map[SM_index].transpose()[1+SM_index:] = full_data.transpose()
 
             else:
                 distance_map[SM_index][1+SM_index:len(residuesWithCA)] = mean_data
@@ -1289,7 +1297,6 @@ class SSProtein:
             std_distance_map[SM_index][1+SM_index:len(residuesWithCA)] = std_data
 
             SM_index = SM_index + 1
-
 
         if return_instantaneous_maps is True:
 
