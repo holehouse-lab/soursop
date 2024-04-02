@@ -4,7 +4,10 @@ Unit and regression test for the soursop package.
 
 # Import package, test suite, and other packages as needed
 import numpy as np
-from soursop.sssampling import hellinger_distance, find_trajectory_files, SamplingQuality
+from soursop.sssampling import hellinger_distance, SamplingQuality
+from soursop.sstools import find_trajectory_files
+import soursop
+import os
 
 def test_hellingers_distance():
     p = np.array([1,0])
@@ -25,14 +28,17 @@ def test_hellingers_distance():
     assert np.all(hellinger_distance(p,q) == np.array([0.,1.]))
 
 def test_sampling_quality():
-    wt_traj_paths, wt_top_paths  = find_trajectory_files("data/test_data/sampling_quality/WT",3)
-    ev_traj_paths, ev_top_paths = find_trajectory_files("data/test_data/sampling_quality/EV",3)
-
+    data_dir = soursop.get_data('test_data')
+    wt_data = os.path.join(data_dir,"sampling_quality/WT")
+    ev_data = os.path.join(data_dir,"sampling_quality/EV")
+    wt_traj_paths, wt_top_paths  = find_trajectory_files(wt_data,3)
+    ev_traj_paths, ev_top_paths = find_trajectory_files(ev_data,3)
+    
     alanine_qual = SamplingQuality(wt_traj_paths,
                     ev_traj_paths, 
-                    top_file=wt_top_paths[0],
-                    ref_top=ev_top_paths[0],
-                    method="dihedral")
+                    top_file=wt_top_paths,
+                    ref_top=ev_top_paths,
+                    method="1D angle distributions")
 
     hellingers = np.array([[[0.24167835, 0.19611402],
                             [0.24688875, 0.24731097],
