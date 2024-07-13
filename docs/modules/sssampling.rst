@@ -1,8 +1,8 @@
 
-ssampling 
+sssampling 
 =========================================================
 
-ssampling contains functions related to assessing sampling quality. This is where PENGUIN (Pipeline for Evaluating coNformational heteroGeneity in Unstructured proteINs) is implemented
+ssampling contains functions related to assessing sampling quality. This is where PENGUIN (Pipeline for Evaluating coNformational heteroGeneity in Unstructured proteINs) is implemented.
 
 
 SamplingQuality Functions
@@ -35,7 +35,7 @@ PrecomputedDihedralInterface Functions
         .. automethod:: gather_psi_reference_dihedrals
 
 
-Stand-alone ssampling functions
+Stand-alone sssampling functions
 ----------------------------------------------
 		
 .. automodule:: soursop.sssampling
