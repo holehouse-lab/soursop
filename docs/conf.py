@@ -16,6 +16,9 @@
 #import sys
 #sys.path.insert(0, os.path.abspath('.'))
 
+import os
+import sys
+sys.path.insert(0, os.path.abspath('..'))  # Adjust the path as needed
 
 # -- Project information -----------------------------------------------------
 
@@ -44,6 +47,10 @@ autodoc_default_options = {
     #'inherited-members': True,
     #'show-inheritance': True
 }
+
+# added july 2024 - stubs for imports
+autodoc_mock_imports = ["mdtraj", "threadpoolctl", "natsort", "matplotlib", "pandas"]
+
 
 autosummary_generate = True
 
