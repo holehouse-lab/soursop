@@ -683,7 +683,7 @@ class SSTrajectory:
         Specifically, this allows the user to define two distinct chains
         (i.e.  an "interchain" distance map).        
 
-        Obviously this only makes sense if your system has two separate 
+        Obviously, this only makes sense if your system has two separate 
         protein objects defined, but in principle the output from::        
 
             TrajObj # TrajOb is an SSTrajectory object
@@ -716,28 +716,19 @@ class SSTrajectory:
             carbon and COM means center of mass. 
 
         periodic : bool (default = False)
-            Flag which if distances mode is passed as anything other than 'atom'
-            then this determines if the minimum image convention should be used.
-            Note that this is only available if pdb crystal dimensions are
-            provided, and in general it's better to set this to false and
-           center the molecule first. Default = False.
+            Flag which if distances mode is passed as anything other than 'atom' 
+            then this determines if the minimum image convention should be used. 
+            Note that this is only available if pdb crystal dimensions are provided, 
+            and in general it's better to set this to false and center the molecule 
+            first. Default = False.
 
         Returns
         ---------
-        tuple 
 
-           get_interchain_distance_map() returns a tuple containing two 
-           elements, distanceMap and STDMap.
+            Tuple
 
-            **distanceMap** is an [n x m] numpy matrix where n and m are 
-            the  number of proteinID1 residues and proteinID2 residues. 
-            Each position  in the matrix corresponds to the mean distance 
-            between those two  residues over the course of the simulation.
-        
-            **stdMap** is an [n x m] numpy matrix where n and m are the number 
-            of proteinID1 residues and proteinID2 residues. Each position in the 
-            matrix corresponds to the standard devaiation associated with the 
-            distances  between those two residues.
+                - **distanceMap** is an [n x m] numpy matrix where n and m are the number of proteinID1 residues and proteinID2 residues. Each position  in the matrix corresponds to the mean distance between those two  residues over the course of the simulation.
+                - **stdMap** is an [n x m] numpy matrix where n and m are the number of proteinID1 residues and proteinID2 residues. Each position in the matrix corresponds to the standard deviation of the distances between those two residues.
         
         """
 
@@ -804,8 +795,8 @@ class SSTrajectory:
         "contact" is defined as the inter-residue distance being below the
         passed threshold.
 
-        By *default* the mode here is CA-CA distance, which depending on the
-        question may not be what you want. See the various options under
+        By *default* the mode here is CA-CA distance, which, depending on the
+        question, may not be what you want. See the various options under
         'mode' for alternatives.
 
         Note that this analysis can take some time for large trajectories. If
@@ -818,12 +809,12 @@ class SSTrajectory:
 
         proteinID1 : int
             The ID of the first protein of the two being considered, where the 
-            ID is the proteins position in the `self.proteinTrajectoryList` 
+            ID is the protein's index in the `self.proteinTrajectoryList` 
             list.             
 
         proteinID2 : int
             The ID of the second protein of the two being considered, where 
-            the ID is the proteins position in the 
+            the ID is the protein's inde in the 
             `self.proteinTrajectoryList` list.
 
         threshold : float 
