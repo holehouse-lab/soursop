@@ -7,12 +7,5 @@ build:
   tools:
     python: "3.8"  
 
-python:
-  version: 3.8
-  install:
-    - method: pip
-      path: .
-
-conda:
-  environment: devtools/conda-envs/test_env_nomdtraj.yaml
-
+sphinx:
+  configuration: docs/conf.py
