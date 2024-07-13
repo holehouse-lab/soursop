@@ -5,6 +5,7 @@ pytest-forked
 pytest-xdist
 mdtraj==1.9.7
 numpy
+natsort
 cx_Freeze
 PyYAML
 ruamel_yaml

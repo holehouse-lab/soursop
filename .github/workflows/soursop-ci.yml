@@ -14,7 +14,7 @@ jobs:
         # See: https://stackoverflow.com/questions/64405836/github-actions-no-such-file-or-directory-on-any-run-step
       - uses: actions/checkout@v3
 
-        # Ensuring miniconda is installed by adding the miniconda-version: "latest"  line..
+        # Ensuring miniconda is installed by adding the miniconda-version: "latest"  line (~ash 2024-07-13)
       - name: Set up Python ${{ matrix.python-version }}
         uses: conda-incubator/setup-miniconda@v2
         with:
