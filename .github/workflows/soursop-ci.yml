@@ -17,6 +17,7 @@ jobs:
       - name: Set up Python ${{ matrix.python-version }}
         uses: conda-incubator/setup-miniconda@v2
         with:
+		  miniconda-version: "latest"  # Ensure Miniconda is installed; added by ASH 2024-07-13			
           auto-update-conda: true
           python-version: ${{ matrix.python-version }}
 
