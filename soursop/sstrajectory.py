@@ -1139,9 +1139,6 @@ def parallel_load_trjs(trj_filenames, top_filenames, n_procs=None, **kwargs):
 
     partial_load = partial(__load_trajectory, **kwargs)
     
-    print("Trajectory filenames:", trj_filenames)
-    print("Topology filenames:", top_filenames)
-    
     with Pool(processes=n_procs) as pool:
         trjs = pool.starmap(partial_load, zip(trj_filenames, top_filenames))
 
