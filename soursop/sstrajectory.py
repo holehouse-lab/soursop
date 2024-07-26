@@ -1129,14 +1129,19 @@ def parallel_load_trjs(trj_filenames, top_filenames, n_procs=None, **kwargs):
     if n_procs is None:
         n_procs = cpu_count()
 
-    # Assume the same topology file for all trajectories if only one is provided
-    if len(top_filenames) < len(trj_filenames) and len(top_filenames) == 1:
+    # Handle the case where a single topology file is provided
+    if isinstance(top_filenames, str):
         top_filenames = [top_filenames] * len(trj_filenames)
+    
+    # Ensure top_filenames is a list with the same length as trj_filenames
+    if len(top_filenames) != len(trj_filenames):
+        raise ValueError("Number of topology files must match number of trajectory files")
 
-    # Partially apply load_trajectory with topology file path and kwargs
     partial_load = partial(__load_trajectory, **kwargs)
-
-    # Parallelize load with **kwargs
+    
+    print("Trajectory filenames:", trj_filenames)
+    print("Topology filenames:", top_filenames)
+    
     with Pool(processes=n_procs) as pool:
         trjs = pool.starmap(partial_load, zip(trj_filenames, top_filenames))
 
