@@ -45,12 +45,14 @@ def compute_joint_hellinger_distance(p, q):
 def hellinger_distance(p: np.ndarray, q: np.ndarray) -> np.ndarray:
     """
     Computes the Hellinger distance between a set of probability distributions p and q.
-    The hellinger distances is defined as:
-        H(P,Q) = r'\frac{1}{\sqrt{2}} \times \sqrt{\sum_{i=1}^{k}(\sqrt{p_i}-\sqrt{q_i})^2}'
-    where k is the length of the probability vectors being compared.
+    The Hellinger distances is defined as:
+    
+        :math:`H(P,Q) = \\frac{1}{\\sqrt{2}} \\times \\sqrt{\\sum_{i=1}^{k}(\\sqrt{p_i}-\\sqrt{q_i})^2}`
+    
+    where k is the length of the probability vectors being compared. 
 
     For sets of distributions, the datapoints should be in the last axis.
-
+    
     Parameters
     ----------
     p : np.ndarray
@@ -114,9 +116,10 @@ class SamplingQuality:
         truncate: bool = False,
         **kwargs: dict,
     ):
-        """SamplingQuality is a class to compare the sampling quality for a set of trajectories
-            relative to some referene model. This is usually a polymer limiting model, but could
-            be different proteins, mutations, or PTMs.
+        """
+        SamplingQuality is a class to compare the sampling quality for a set of trajectories
+        relative to some referene model. This is usually a polymer limiting model, but could
+        be different proteins, mutations, or PTMs.
 
         Parameters
         ----------
@@ -131,7 +134,7 @@ class SamplingQuality:
             path to the reference topology - usually the same topology file
             if using a polymer model, but can differ if reference is e.g., a mutant.
         method : str
-            The method used to compute the hellingers distance
+            The method used to compute the Hellinger distance
             between the simulated trajectories and the polymer limiting model.
             options include: 'dihedral' and 'rmsd' or 'p_vects' [not currently implemented]
         bwidth : float, optional
@@ -454,12 +457,12 @@ class SamplingQuality:
         return self.__precomputed["trj_helicity"], self.__precomputed["ref_helicity"]
 
     def compute_dihedral_hellingers(self) -> np.ndarray:
-        """Compute the hellingers distance for both the phi and psi angles between a set of trajectories.
+        """Compute the Hellinger distance for both the phi and psi angles between a set of trajectories.
 
         Returns
         -------
         np.ndarray
-            The hellinger distances between the probability density distributions for the phi and psi angles for a set of trajectories.
+            The Hellinger distances between the probability density distributions for the phi and psi angles for a set of trajectories.
         """
         if self.method == "2D angle distributions":
             data = np.array([self.phi_angles, self.psi_angles])
@@ -497,7 +500,7 @@ class SamplingQuality:
 
     def __compute_2d_dihedral_hellingers(self, trj_pdfs, ref_pdfs):
         """
-        Helpter function to Compute the Hellinger's distances for
+        Helter function to Compute the Hellinger distances for
         2D dihedral angle probability density functions (PDFs).
 
         Parameters
@@ -510,7 +513,7 @@ class SamplingQuality:
         Returns
         -------
         ndarray
-            Array of Hellinger's distances for each trajectory replicate and dihedral angle.
+            Array of Hellinger distances for each trajectory replica and dihedral angle.
 
         Notes
         -----
@@ -519,8 +522,8 @@ class SamplingQuality:
         where num_replicates is the number of trajectory replicates,
         num_angles is the number of dihedral angles, and
         num_bins_phi and num_bins_psi are the number of bins in the phi and psi dimensions, respectively.
-        - The function computes Hellinger's distances between the corresponding PDFs of each replicate and angle.
-        - The Hellinger's distance measures the similarity between two probability distributions.
+        - The function computes the Hellinger distances between the corresponding PDFs of each replicate and angle.
+        - The Hellinger distance measures the similarity between two probability distributions.
         - 0 is returned if the two distributions are identical, and 1 is returned if the two distributions are completely different.
         - The computed distances are returned as an ndarray of shape (num_replicates, num_angles).
         """
@@ -567,8 +570,7 @@ class SamplingQuality:
         return np.array((phi_rel_entr, psi_rel_entr))
 
     def compute_series_of_histograms_along_axis(
-        self, data: np.ndarray, bins: np.ndarray, axis: int = 0
-    ):
+        self, data: np.ndarray, bins: np.ndarray, axis: int = 0):
         """
         Compute a series of 2D histograms along an axis of a 4D array
         and convert them into probability density functions (PDFs).
@@ -577,8 +579,10 @@ class SamplingQuality:
         ----------
         data : ndarray
             4D array containing the joint phi/psi angle data.
+    
         bins : ndarray
             1D array defining the bin edges for the histograms.
+    
         axis : int, optional
             Axis along which to compute the histograms (default=0).
 
@@ -586,14 +590,14 @@ class SamplingQuality:
         -------
         pdfs : ndarray
             Series of 2D probability density functions (PDFs) along the given axis.
-
+        
         Notes
         -----
         - The input data array should have dimensions (2, n_trajs, n_residues, n_samples).
         - The bins array should contain the bin edges for the histograms.
-        - The resulting PDFs will have dimensions (n_trajs, n_residues, num_bins_phi, num_bins_psi),
-        where num_bins_phi and num_bins_psi are the number of bins in the phi and psi dimensions, respectively.
+        - The resulting PDFs will have dimensions (n_trajs, n_residues, num_bins_phi, num_bins_psi), where num_bins_phi and num_bins_psi are the number of bins in the phi and psi dimensions, respectively.        
         - The PDFs are computed by normalizing the histogram values and multiplying them by the corresponding bin widths.
+        
         """
         # Get the shape of the input array
         shape = data.shape
@@ -750,7 +754,7 @@ class SamplingQuality:
         Returns
         -------
         Tuple[pd.DataFrame, pd.DataFrame]
-            all-to-all trajectory comparisons for the hellingers distances in 'self.trj_pdfs'
+            all-to-all trajectory comparisons for the Hellinger distances in 'self.trj_pdfs'
         """
         phi_pdfs = self.trj_pdfs(recompute=recompute, dihedral="trj_phi_pdfs")
         psi_pdfs = self.trj_pdfs(recompute=recompute, dihedral="trj_psi_pdfs")
@@ -828,7 +832,9 @@ class SamplingQuality:
         dihedral: Union[None, str] = "2D",
         figname: str = "hellingers.pdf",
     ):
-        """convenience plotting functionality for quick visual inspection of sampling quality
+        """
+        This function enables a convenient plotting functionality for quick visual 
+        inspection of the sampling quality.
 
         Parameters
         ----------
@@ -1034,15 +1040,16 @@ class SamplingQuality:
         return fig, axd
 
     def trj_pdfs(self, dihedral: str = "joint", recompute: bool = False):
-        """Function to return the pdfs computed from the phi/psi angles respectively
+        """Function to return the pdfs computed from the phi/psi angles, respectively
 
         Parameters
         ----------
         dihedral : str, optional
-              method to use to return specific PDFs. Options are: "trj_phi_pdfs","trj_psi_pdfs","joint",
-              by default "joint"
+              method to use to return specific PDFs. Options are: "trj_phi_pdfs", "trj_psi_pdfs",
+              "joint". By default this is "joint".
+        
         recompute : bool, optional
-            Whether or not to recompute the PDFs, by default False
+            Whether or not to recompute the PDFs, by default False.
 
         Returns
         -------
@@ -1053,7 +1060,7 @@ class SamplingQuality:
         Raises
         ------
         NotImplementedError
-            Raised if selector is not one of the implemented options.
+            Raised if the selector is not one of the implemented options.
         """
         selectors = ["trj_phi_pdfs", "trj_psi_pdfs", "joint"]
         if dihedral not in selectors:
@@ -1081,16 +1088,18 @@ class SamplingQuality:
 
         return self.__precomputed[dihedral]
 
+
     def ref_pdfs(self, dihedral="joint", recompute=False):
-        """Function to return the pdfs computed from the phi/psi angles respectively
+        """Function to return the pdfs computed from the phi/psi angles, respectively
 
         Parameters
         ----------
         dihedral : str, optional
-              method to use to return specific PDFs. Options are: "trj_phi_pdfs","trj_psi_pdfs","joint",
-              by default "joint"
+              method to use to return specific PDFs. Options are: "trj_phi_pdfs", "trj_psi_pdfs",
+              and "joint". By default this is "joint".
+        
         recompute : bool, optional
-            Whether or not to recompute the PDFs, by default False
+            Whether or not to recompute the PDFs, by default False.
 
         Returns
         -------
@@ -1101,7 +1110,7 @@ class SamplingQuality:
         Raises
         ------
         NotImplementedError
-            Raised if selector is not one of the implemented options.
+            Raised if the selector is not one of the implemented options.
         """
         selectors = ["ref_phi_pdfs", "ref_psi_pdfs", "joint"]
 
@@ -1130,13 +1139,14 @@ class SamplingQuality:
 
         return self.__precomputed[dihedral]
 
+
     def hellingers_distances(self, recompute=False):
-        """property for getting the hellingers distances computed from the phi/psi angles respectively
+        """property for getting the Hellinger distances computed from the phi/psi angles, respectively
 
         Returns
         -------
         np.ndarray
-            hellingers distance computed from the phi and psi angles with the specified bins.
+            Hellinger distances computed from the phi and psi angles with the specified bins.
             2 x n_reps x n_angles
             where 0 is phi and 1 is psi
         """
@@ -1152,9 +1162,10 @@ class SamplingQuality:
         Property for getting the per residue fractional helicity for all trajectories.
 
         Returns:
-        -------
+        ----------
         np.ndarray
             The per residue fractional helicity for each trajectory in self.trajs and self.ref_trajs.
+        
         """
         selectors = ("trj_helicity", "ref_helicity")
         if not recompute and all(

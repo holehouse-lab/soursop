@@ -3525,9 +3525,9 @@ class SSProtein:
                              verbose=True):
         """Estimation for the A0 and nu-app exponents for the standard polymer
         relationship :math:`\langle r_{i,j}^2 \\rangle^{1/2} = A_0 |i-j|^{\\nu_{app}}`
-
+        
         Here, :math:`{\\nu}^{app}` (nu-app) reports on the solvent quality,
-        while the  prefactor (:math:`A_0`) reports on the average chain
+        while the  prefactor A0 (:math:`A_0`) reports on the average chain
         persistence length and volume, which itself also depends on the solvent
         quality  - see [1]. For polymers with an apparently scaling exponent
         above a 0.5  this works, but below this internal scaling starts to
@@ -3539,20 +3539,19 @@ class SSProtein:
         chain is compact  does not necessarily track with the nu-app calculated
         from multiple chains of varying length where the radius of gyration is
         fitted to the number of residues in the chain.
-
-        :NOTE: Despite their precision nu-app and A0 should be treated as
+        
+        **NOTE**: Despite their precision, nu-app and A0 should be treated as
         qualitative metrics, and are subject to finite chain effects. The
         idea of a polymer scaling behaviour is only necessarily useful in
         the case of a homopolymer, whereas heterpolymers engender massive
         averaging that can mask underlying conformational complexity. We
         *strongly* caution against over interpretation of the scaling
         exponent. For a better assement of how your chain actually deviates
-        from homopolymer behaviour, see the function
-        ``get_polymer_scaled_distance_map()``
-
+        from homopolymer behaviour, see the function ``get_polymer_scaled_distance_map()``
+        
         Parameters
         ------------------
-
+                                                          
         inter_residue_min : int
             Minimum distances used when selecting pairs of residues. This
             25 threshold was determined previously, and essentially avoids
@@ -3618,7 +3617,6 @@ class SSProtein:
             computationally expensive, so having some report on status can
             be comforting!
 
-
         Returns
         ----------
         tuple
@@ -3635,8 +3633,9 @@ class SSProtein:
             * `[7]` - reduced chi^2 for ALL points
             * `[8]` - 2-column array, where col 1 is the sequence separation and col 2 is the real spatila separation for the ACTUAL data used to fit to the polymer model (i.e. these points are uniformly spaced from one another on a log-log plot). Reduced chi^2 for the fit region is calculated using this dataset.
             * `[9]` - 3-column array, where col 1 is the sequence separation, col 2 is the real spatial separation observed and col 3 is the best fit curve, for ALL i-j distances. Reduced chi^2 for all points is calculated using this dataset.
+                             
         """
-
+                    
 
         # check weights are OK
         weights = self.__check_weights(weights, stride, etol)

@@ -27,10 +27,14 @@ This documentation is currently being generated as we finalize **SOURSOP**.
    modules/ssprotein
    modules/ssnmr
    modules/sspre
+   modules/sssampling
    usage/development
 
 Changelog
 ==========
+*Update: July. 2024*
+Official inclusion of the PENGUIN code into sssampling is now complete ahead of preprint!
+
 *Update: July. 2023*
 Added ``explicit_residue_checking`` option to SSTrajectory constructor to make parsing solvated .gro files or files where non-protein molecules are included in the same chain possible and easy.
 
