@@ -13,15 +13,14 @@
 import os
 
 # Add imports here
-from .soursop import *
+from soursop import *
 
-# Handle versioneer
-from ._version import get_versions
-versions = get_versions()
-__version__ = versions['version']
-__git_revision__ = versions['full-revisionid']
-del get_versions, versions
-
+# Generate _version.py if missing and in the Read the Docs environment
+if os.getenv("READTHEDOCS") == "True" and not os.path.isfile('../soursop/_version.py'):   
+    import versioningit            
+    __version__ = versioningit.get_version('../')
+else:
+    from soursop._version import __version__
 
 # code that allows access to the data directory
 _ROOT = os.path.abspath(os.path.dirname(__file__))
@@ -32,5 +31,3 @@ def get_data(path):
 def get_version():
     return "%s - %s" % (str(__version__), str(__git_revision__))
 
-from . import _version
-__version__ = _version.get_versions()['version']

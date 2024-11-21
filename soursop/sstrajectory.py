@@ -10,6 +10,7 @@
 ## Copyright 2014 - 2024
 ##
 
+import time
 import mdtraj as md
 import numpy as np
 from .configs import *
@@ -30,6 +31,34 @@ from copy import copy
 from functools import partial
 from multiprocessing import Pool, cpu_count
 
+def lazy_loading_single_protein_trajectory(func):
+    """
+    Deocrator function that means we lazyily load the full
+    trajectory (once) only if we needed it. This is a stand-
+    alone decorator function that can be used on any function
+    in the SSTrajectory class that needs the hidden 
+    single_protein_traj object.
+
+    Parameters
+    -----------
+    func : function
+        Function to be decorated
+
+    Returns
+    --------
+    function
+        Returns a function that will load the full protein trajectory
+        if it's not already loaded.
+    """
+    
+    def wrapper(self, *args, **kwargs):
+        if self._SSTrajectory__single_protein_traj is None:
+            self._SSTrajectory__single_protein_traj = self._SSTrajectory__get_all_proteins(self.traj, self._SSTrajectory__explicit_residue_checking)
+        return func(self, *args, **kwargs)
+    return wrapper
+    
+
+
 class SSTrajectory:
 
     #oxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxo
@@ -42,7 +71,9 @@ class SSTrajectory:
                  pdblead=False,
                  debug=False,
                  extra_valid_residue_names=None,
-                 explicit_residue_checking=False):
+                 explicit_residue_checking=False,
+                 print_warnings=False):
+                 
         
         """
         SSTrajectory is the class used to read in a work with simulation
@@ -145,6 +176,11 @@ class SSTrajectory:
             chain is explicitly checked, meaning solvent molecules/atoms in 
             a single chain are discarded.
 
+        print_warnings : bool
+            Print warnings if the unit cell lengths are zero or not set. This 
+            is a common issue with old CAMPARI trajectories or trajectories 
+            generated without CRYSTAL records, but is generally not an issue.
+            Default = False 
 
         Example
         -----------
@@ -157,8 +193,12 @@ class SSTrajectory:
 
         """
 
+        
         self.valid_residue_names = []
         self.valid_residue_names.extend(ALL_VALID_RESIDUE_NAMES)
+
+        # save this so we can lazy load the full protein trajectory as needed
+        self.__explicit_residue_checking = explicit_residue_checking
 
         if extra_valid_residue_names is not None:
             try:
@@ -180,19 +220,20 @@ class SSTrajectory:
                 raise SSException('No PDB file provided!')
 
             # read in the raw trajectory
-            self.traj = self.__readTrajectory(trajectory_filename, pdb_filename, pdblead)
-
-
+            self.traj = self.__readTrajectory(trajectory_filename, pdb_filename, pdblead, print_warnings)
+        
         # Next, having read in the trajectory we parse out into proteins
         # extract a list of protein trajectories where each protein is assumed
         # to be in its own chain
         if protein_grouping == None:
-            self.proteinTrajectoryList = self.__get_proteins(self.traj, debug, explicit_residue_checking=explicit_residue_checking)        
+            (self.proteinTrajectoryList, single_chain_sim) = self.__get_proteins(self.traj, debug, explicit_residue_checking=explicit_residue_checking)        
         else:
             self.proteinTrajectoryList = self.__get_proteins_by_residue(self.traj, protein_grouping, debug)
 
-        self.__single_protein_traj = self.__get_all_proteins(self.traj, explicit_residue_checking=explicit_residue_checking)
-
+        # this is initialized to None and then gets defined using the lazy_loading_single_protein_trajectory() 
+        # decorator when it's first needed
+        self.__single_protein_traj = None
+        
 
     def  __repr__(self):
         return "SSTrajectory (%s): %i proteins and %i frames" % (hex(id(self)), self.n_proteins, self.n_frames)
@@ -234,12 +275,12 @@ class SSTrajectory:
         """
         return self.traj.unitcell_lengths[0]*10
         
-
+        
 
     #oxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxo
     #
     #
-    def __readTrajectory(self, trajectory_filename, pdb_filename, pdblead):
+    def __readTrajectory(self, trajectory_filename, pdb_filename, pdblead, print_warnings):
         """
         Internal function which parses and reads in a CAMPARI trajectory
 
@@ -272,6 +313,11 @@ class SSTrajectory:
             an analysis where that first structure should be a reference frame
             but it's not actually included in the trajectory file.
 
+        print_warnings : bool
+            Print warnings if the unit cell lengths are zero or not set. This 
+            is a common issue with old CAMPARI trajectories or trajectories 
+            generated without CRYSTAL records, but is generally not an issue.
+
         Returns
         --------
         mdtraj.traj 
@@ -289,10 +335,12 @@ class SSTrajectory:
 
             # this is s custom warning for a specific edge-case we encounter a lot
             if (uc_lengths[0] == 0 or uc_lengths[1] == 0 or uc_lengths[2] == 0):
-                ssio.warning_message("Trajectory file unit cell lengths are zero for at least one dimension. This is a probably a bug with an FRC generated __START.pdb file, because in the old version of CAMPARI used to do grid based FRC calculations the unit cell dimensions are not written correctly. This may cause issues but we're going to assume everything is OK for now. Check the validity of any analysis output. If you're worried, you can use the following workaround.\n\n:::: WORK AROUNDS ::::\nSimply run\n\ntrjconv -f __traj.xtc -s __START.pdb -box a b c -o frc.xtc \n\nAn then \n\ntrjconv -f frc.xtc -s __START.pdb -box a b c -o start.pdb -dump 0\n\n\nHere\n-f n__traj.xtc   : defines the trajectory file\n-s __start.pdb   : defines the pdb file used to parse the topology\n-box a b c       : defines the box lengths **in nanometers**\n-o frc.xtc       : is the name of the new trajectory file with updated box lengths\nSelect 0 (system) when asked to 'Select group for output'.The second step creates the equivalent PDB file with the header-line correctly defining the box unit cell lengths and angles. These two new files should then be used for analysis.\n\nAs an example, if my FRC simulation had a sphere radius of 100 angstroms then my correction command would look something like \n\ntrjconv -f __traj.xtc -s __START.pdb -box 20 20 20 -o frc.xtc\ntrjconv -f frc.xtc -s __START.pdb -box 20 20 20 -o start.pdb -dump 0")
+                if print_warnings:
+                    ssio.warning_message("Trajectory file unit cell lengths are zero for at least one dimension. This is a probably a bug with an FRC generated __START.pdb file, because in the old version of CAMPARI used to do grid based FRC calculations the unit cell dimensions are not written correctly. This may cause issues but we're going to assume everything is OK for now. Check the validity of any analysis output. If you're worried, you can use the following workaround.\n\n:::: WORK AROUNDS ::::\nSimply run\n\ntrjconv -f __traj.xtc -s __START.pdb -box a b c -o frc.xtc \n\nAn then \n\ntrjconv -f frc.xtc -s __START.pdb -box a b c -o start.pdb -dump 0\n\n\nHere\n-f n__traj.xtc   : defines the trajectory file\n-s __start.pdb   : defines the pdb file used to parse the topology\n-box a b c       : defines the box lengths **in nanometers**\n-o frc.xtc       : is the name of the new trajectory file with updated box lengths\nSelect 0 (system) when asked to 'Select group for output'.The second step creates the equivalent PDB file with the header-line correctly defining the box unit cell lengths and angles. These two new files should then be used for analysis.\n\nAs an example, if my FRC simulation had a sphere radius of 100 angstroms then my correction command would look something like \n\ntrjconv -f __traj.xtc -s __START.pdb -box 20 20 20 -o frc.xtc\ntrjconv -f frc.xtc -s __START.pdb -box 20 20 20 -o start.pdb -dump 0")
 
         except TypeError:
-            ssio.warning_message("Warning: UnitCell lengths were not provided... This may cause issues but we're going to assume everything is OK for now...")
+            if print_warnings:
+                ssio.warning_message("Warning: UnitCell lengths were not provided... This may cause issues but we're going to assume everything is OK for now...")
         
         # if pdbLead is true then load the pdb_filename as a trajectory
         # and then add it to the front (the PDB file is its own topology
@@ -345,6 +393,7 @@ class SSTrajectory:
         # for each chain in this toplogy determine if the 
         # first residue is protein or not. If it's protein we parse it if 
         # not it gets skipped
+        
         for chain in topology.chains:
 
 
@@ -411,11 +460,14 @@ class SSTrajectory:
             SSProtein objects in it
                     
         """
-
+        
         # extract full system topology
         topology = trajectory.topology
 
         chainAtoms = []
+
+        # flag that gets set to true if this is a single chain simulation
+        single_chain_sim = False
         
         # for each chain in this toplogy determine if the 
         # first residue is protein or not. If it's protein we parse it if 
@@ -457,20 +509,30 @@ class SSTrajectory:
                         local_atoms.extend([a.index for a in res.atoms])
 
                 chainAtoms.append(local_atoms)
-                    
+
+        
+                  
         # for each protein chain that we have atomic indices
         # for (hopefully all of them!) cycle through and create
         # sub-trajectories
         proteinTrajectoryList = []
+
+        # after parsing define number of chains we're gonna have... We do this because
+        # the ONLY scenario (for now) where we want to use the CG check is if we have
+        # a single chain simulation. 
         for local_chain_atoms in chainAtoms:
+
+            if single_chain_sim:
+                raise SSException('Error parsing trajectory; this is a bug and this should never happen.')
 
             # generate a trajectory composed of *JUST* the
             # $chain atoms. The PT object created now is self
             # consistent and contains an associated and fully
             # correct .topology object (NOTE this fixes a 
             # previous bug in CAMPARITraj 0.1.4)
+                        
             PT = trajectory.atom_slice(local_chain_atoms)
-
+            
             # WA
             # gets the resid offset in a way that is ensures internal
             # consistency for the SSProtein object
@@ -479,13 +541,22 @@ class SSTrajectory:
             if first_resid != 0:
                 raise SSException('After extracting a protein subtrajectory, the first resid is not 0. This may reflect a bug, or you may not be using MDTraj 1.9.5')
                 
-            # add that SSProtein to the ever-growing proteinTrajectory list
+            # if the number of atoms in the subtrajectory is the same as the 
+            # the number of atoms in the FULL trajectory we know there is only
+            # a single chain here - no need to pay the penalty of initializing                        
+            if PT.n_atoms == trajectory.n_atoms:                                
+                single_chain_sim = True
+            
+            # add that SSProtein to the ever-growing proteinTrajectory list. NOTE that 
+            # THIS is the line that is the source of most of the slowness for trajectory
+            # loading.... 
             proteinTrajectoryList.append(SSProtein(PT))
+            
 
         if len(proteinTrajectoryList) == 0:
             ssio.warning_message('No protein chains found in the trajectory')
-
-        return proteinTrajectoryList
+        
+        return (proteinTrajectoryList, single_chain_sim)
 
 
 
@@ -591,6 +662,7 @@ class SSTrajectory:
     #oxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxo
     #
     #
+    @lazy_loading_single_protein_trajectory
     def get_overall_radius_of_gyration(self):
         """
         Function which returns the per-frame OVERALL radius of gyration for 
@@ -619,6 +691,7 @@ class SSTrajectory:
     #oxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxo
     #
     #
+    @lazy_loading_single_protein_trajectory
     def get_overall_asphericity(self):
         """
         Function which returns the per-frame OVERALL asphericity for every
@@ -645,6 +718,7 @@ class SSTrajectory:
     #oxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxo
     #
     #
+    @lazy_loading_single_protein_trajectory
     def get_overall_hydrodynamic_radius(self):
         """
         Function which returns the per-frame OVERALL hydrodynamic radius for 

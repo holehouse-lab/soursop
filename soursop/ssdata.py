@@ -41,7 +41,9 @@ THREE_TO_ONE = {'ALA':'A',
                 'TYR':'Y',
                 'ACE':'<',
                 'NME':'>',
-                'NAC':'>'}
+                'NAC':'>',
+                'NH2':'(',
+                'FOR':')'}
 
 ONE_TO_THREE = {'A':'ALA', 
                 'C':'CYS',
@@ -64,7 +66,9 @@ ONE_TO_THREE = {'A':'ALA',
                 'W':'TRP',
                 'Y':'TYR',
                 '<':'ACE',
-                '>':'NME'}
+                '>':'NME',
+                '(':'NH2',
+                ')':'FOR'}
 
 DEFAULT_SIDECHAIN_VECTOR_ATOMS = {'ALA': 'CB', 
                                   'CYS': 'SG',
@@ -100,7 +104,9 @@ DEFAULT_SIDECHAIN_VECTOR_ATOMS = {'ALA': 'CB',
                                   'TYR': 'CZ',
                                   'PTR': 'CZ',
                                   'ACE': 'ERROR',
-                                  'NME': 'ERROR'}
+                                  'NME': 'ERROR',
+                                  'FOR': 'ERROR',
+                                  'NH2': 'ERROR'}
 
 # list of valid residue names as supported by SOURSOP. These are the resnames compared againt when assessing for if a molecule is a protein or not. 
 ALL_VALID_RESIDUE_NAMES = ['ALA','CYS','ASP','ASH','GLU','GLH','PHE','GLY','HIE','HIS','HID','HIP','ILE','LEU', 'LYS','LYD','MET','ASN','PRO','GLN','ARG','SER','THR','VAL','TRP','TYR','AIB', 'ABA','NVA','NLE', 'ORN', 'DAB','PTR','TPO','SEP', 'KAC', 'KM1', 'KM2' 'KM3', 'ACE','NME', 'FOR', 'NH2']

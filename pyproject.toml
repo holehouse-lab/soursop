@@ -1,0 +1,68 @@
+[build-system]
+
+# delete cython/numpy if not needed
+requires = ["setuptools>=61", "versioningit~=2.0", "numpy", ]
+build-backend = "setuptools.build_meta"
+
+
+# define project info
+[project]
+name = "SOURSOP"
+dynamic = ["version"]
+description = "Simulation analysis package for working with disordered proteins"
+authors = [
+    {name = "Alex Holehouse", email = "alex.holehouse@wustl.edu"}
+]
+license = {text = "LGPLv3"}
+readme = "README.md"  
+requires-python = ">=3.7"
+
+# add in as needed  
+dependencies = [      
+        "numpy>=1.20.0",
+        "scipy>=1.5.0",
+        "cython",
+        "mdtraj>=1.9.5",
+        "pandas>=0.23.0",
+        "threadpoolctl>=2.2.0",
+        "natsort",
+        "matplotlib",
+]
+
+[project.optional-dependencies]
+test = [
+  "pytest>=6.1.2",
+]
+
+
+[tool.setuptools]
+zip-safe = false
+include-package-data = true 
+
+[tool.setuptools.packages.find]
+namespaces = true
+where = ["."]
+include = ["soursop", "soursop*"]  # Discover all sub-packages inside the main package
+
+[tool.setuptools.package-data]
+soursop = [
+    "py.typed"
+]
+
+[tool.versioningit]
+default-version = "1+unknown"
+
+[tool.versioningit.format]
+distance = "{base_version}+{distance}.{vcs}{rev}"
+dirty = "{base_version}+{distance}.{vcs}{rev}.dirty"
+distance-dirty = "{base_version}+{distance}.{vcs}{rev}.dirty"
+
+[tool.versioningit.vcs]
+# The method key:
+method = "git"  # <- The method name
+# Parameters to pass to the method:
+match = ["*"]
+default-tag = "1.0.0"
+
+[tool.versioningit.write]
+file = "soursop/_version.py"

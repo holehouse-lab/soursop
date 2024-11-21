@@ -10,6 +10,7 @@ __pycache__/
 *.so
 
 soursop/tests/test_scratchpad.ipynb
+soursop/_version.py
 
 # Distribution / packaging
 .Python

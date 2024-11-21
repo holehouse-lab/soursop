@@ -31,6 +31,14 @@ Lalmansingh, J. M., Keeley, A. T., Ruff, K. M., Pappu, R. V. & Holehouse, A. S. 
 Copyright (c) 2015-2024 under the GNU LESSER GENERAL PUBLIC LICENSE 
 
 # Changelog
+#### Update November 2024 (0.2.6)
+* Major update to SOURSOP. 
+* Explicit support for single-chain one-bead-per-residue trajectory loading that dramatically improves load time (~30x improvement)
+* Officially added the `SSSampling` class and support for PENGUIN (see [Lotthammer & Holehouse, bioRxiv](https://www.biorxiv.org/content/10.1101/2024.11.06.622270v1.abstract)
+* Added support for NH3 and FOR residue types in get_amino_acid_sequence()
+* Switched over packaging to use `pyproject.toml` instead of `setup.py` and switched versioning to use v
+
+
 #### Update March 2024 (0.2.5 [patch])
 * Added `return_instantaneous_maps=False` keyword to `get_distance_maps()` function so we can return a [t,n,n] matrix where t = number of frames and n=number of residues for the instantaneous conformer-specific distance maps.
 

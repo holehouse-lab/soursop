@@ -18,7 +18,7 @@ import numpy
 import ctypes
 import platform
 import warnings
-from . ssexceptions import SSException
+from soursop.ssexceptions import SSException
 from threadpoolctl import threadpool_info, threadpool_limits
 
 

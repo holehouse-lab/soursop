@@ -10,6 +10,7 @@
 ## Copyright 2014 - 2024
 ##
 
+import time
 import mdtraj as md
 import numpy as np
 from numpy import linalg as LA
@@ -55,7 +56,7 @@ class SSProtein:
 
     # ........................................................................
     #
-    def __init__(self, traj, debug=DEBUGGING):
+    def __init__(self, traj, debug=DEBUGGING, check_one_bead_per_residue=True):
         """SSProtein objects are initialized with a trajectory subset that
         contains only the atoms a specific, single protein. This means that a
         SSProtein object allows operations to performed on a single protein. A
@@ -87,8 +88,19 @@ class SSProtein:
         traj: `sstrajectory.SSTrajectory`
             An instance of a system's trajectory populated via
             `sstrajectory.SSTrajectory`.
+
+        debug: bool {False}
+            If set to `True` the code will print out debug messages to the
+            screen. This is useful for debugging purposes.
+
+        check_one_bead_per_residue: bool {True}
+            If set to `True` the code will check to see if this passed trajectory
+            makes sense as a 1 bead per residue (number of atoms = number of amino
+            acids) and if yes initialize accordingly.
+
         """
 
+        
         # This is necessary to support sstrajectory.Trajectory as well as the default `mdtraj`.
         # note that this is not super elegant - we'd rather use isinstance(), but this would
         # neceisstate a circular import which is not great so
@@ -117,6 +129,7 @@ class SSProtein:
         # initialze various protein-centric data
         self.__num_residues       = sum( 1 for _ in self.topology.residues)
 
+        
         ## DEVELOPMENT NOTES
         # Anything below this lines should be reset by the delete_cache() function
 
@@ -132,7 +145,16 @@ class SSProtein:
         self.__SASA_saved         = {}
         self.__all_angles         = {} # will be used to store different dihedral (backbone and sidechain) angles
 
+        # deterine if we can set the __sg_onechain to true or not. This ONLY serves to dramatically speed up initialization
+        # of the SSProtein object but should have no effects beyond that.         
+        if check_one_bead_per_residue is True:
+            self.__cg_onechain        = self.__check_cg_onebead()
+        else:
+            self.__cg_onechain = False
+
+        # this is the slow step in initialization        
         self.__resid_with_CA = self.__get_resid_with_CA()
+        
 
         # define if caps are present or not - specifically, if the resid 0 is in the CA-containing
         if 0 in self.resid_with_CA:
@@ -144,6 +166,9 @@ class SSProtein:
             self.__ccap = False
         else:
             self.__ccap = True
+
+        
+        
 
     # <><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><>
     #
@@ -176,6 +201,7 @@ class SSProtein:
         self.__residue_atom_COM   = {}
         self.__SASA_saved         = {}
         self.__all_angles         = {} # will be used to store different dihedral (backbone and sidechain) angles
+        self.__cg_onechain = False # if we reset the cache we force _cg_onechain to be False which forces detailed CA_assigmnet
 
         self.__resid_with_CA = self.__get_resid_with_CA()
 
@@ -432,8 +458,6 @@ class SSProtein:
                 if self.ccap:
                    R2 = self.n_residues - 2
 
-
-
         # finally flip around if R1 is larger than R2
         if R1 > R2:
             tmp = R2
@@ -445,8 +469,6 @@ class SSProtein:
 
         if R2 >= self.n_residues:
             raise SSException(f'ERROR: This protein only has {self.n_residues:d} residues, SO valid indices for selection are between 0 and {self.n_residues-1:d}, yet [{R2}] was passed to function.')
-
-
 
         return (R1, R2, f"resid {R1} to {R2}")
 
@@ -504,6 +526,31 @@ class SSProtein:
         if R1  >= self.n_residues:
             raise SSException("Trying to use a residue ID greater than the chain length [residue index = %i, chain length = %i] " % (R1, self.n_residues))
 
+    # ........................................................................
+    #
+    def __check_cg_onebead(self):
+        """Internal function that checks if the chain is a single chain and
+        coarse grained (1 bead per residue).
+
+        Returns
+        --------------
+        bool
+            Returns True if the chain is a single chain and coarse grained
+            (1 bead per residue), False otherwise.
+        """
+
+        # the only condition in which we have a single chain and coarse grained
+        # is if the number of residues is equal to the number of atoms
+        if self.traj.n_atoms == len(self.get_amino_acid_sequence(oneletter=True)):
+            return True
+        else:
+            return False
+
+
+
+
+        
+        
 
     # ........................................................................
     #
@@ -595,6 +642,11 @@ class SSProtein:
         # initialize empty lists
         resid_with_CA = []
 
+        # if this is a one chain we initialize both the CA and 'all atoms' for each residue
+        # here, which then mean the code that follows just looks these precomputed values up
+        if self.__cg_onechain:
+            self.__initialize_cg_atoms()
+
         # for each residue in the topology
         for res in self.topology.residues:
 
@@ -609,7 +661,23 @@ class SSProtein:
                 continue
 
         return resid_with_CA
+    
+    def __initialize_cg_atoms(self):
+        """Internal function that initializes the CA and 'all atoms' for each residue
+        in the topology. This is only called if the chain is a single chain and
+        coarse grained (1 bead per residue).
 
+        Returns
+        -----------
+        None
+        """
+
+        for res in self.topology.residues:
+            self.__residue_atom_table[res.index] = {}
+            self.__residue_atom_table[res.index]['all_atoms'] = np.array([res.index])
+            self.__residue_atom_table[res.index]['CA'] = np.array([res.index])
+
+        
 
     # ........................................................................
     #
@@ -621,6 +689,11 @@ class SSProtein:
         atom/residue lookup information into a dynamic O(1) operation, greatly
         improving the performance of a number of different methods in the
         processes.
+        
+        As of Nov 2024, this function also explicitly will short circuit for 
+        coarse grained chains (1 bead per residue) and raise an exception if 
+        the atom name is not 'CA' (since that's the only atom we can select 
+        for a coarse grained chain).
 
         Parameters
         ----------
@@ -637,11 +710,17 @@ class SSProtein:
         list
             A list containing all the atoms corresponding to a given residue id that match the input residue id (`resid`)
             or, the residue corresponding to the atom name (`atom_name`).
+
+        Raises
+        ------
+        SSException
+            -  If the atom name is not 'CA' and the chain is coarse grained (1 bead per residue).
         """
 
         # if resid is not yet in table, create an empty dicitionary
         if resid not in self.__residue_atom_table:
             self.__residue_atom_table[resid] = {}
+            
 
         # if we haven't specified an atom look up ALL the atoms associated with this residue
         if atom_name is None:
@@ -656,6 +735,13 @@ class SSProtein:
         # if atom_ame not yet associated with this resid lookup
         # the atom_name from the underlying topology
         if atom_name not in self.__residue_atom_table[resid]:
+
+            # if our chain is a single chain and coarse grained (1 bead per residue)
+            # we actually raise an exception if that atom name is not CA
+            if self.__cg_onechain:
+                if atom_name != 'CA':
+                    raise SSException("Trying to select a single atom for a coarse grained chain, but the atom name is not 'CA'. SOURSOP requires all bead atoms to be defined as 'CA'")
+            
             self.__residue_atom_table[resid][atom_name] = self.topology.select('resid %i and name "%s"'%(resid, atom_name))
 
         # at this point we know the resid-atom_name pair is in the table
