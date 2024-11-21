@@ -6,7 +6,7 @@
 Welcome to the SOURSOP Documentation!
 =========================================================
 
-*Last updated: July 2023*
+*Last updated: November 2024*
 
 **SOURSOP** (**S**\imulation analysis **O**\f **U**\nfolded **R**\egion\ **S** **O**\f **P**\roteins) is a Python package for the analysis of all-atom and coarse-grained simulations of unfolded and disordered proteins. It provides a wide range of functionalities that may not be of use for folded proteins, but provide important insight into simulations of intrinsically disordered proteins. **SOURSOP** was formerly *CAMPARITraj*, which was formerly *CTraj*, and includes all the original functionality therein. 
 
@@ -32,6 +32,10 @@ This documentation is currently being generated as we finalize **SOURSOP**.
 
 Changelog
 ==========
+*Update: Novemver. 2024* (0.2.6)
+Transition to pyproject.toml for packaging and versioningit for versioning. Dramatically improved performance of loading coarse-grained ensembles.
+
+
 *Update: July. 2024*
 Official inclusion of the PENGUIN code into sssampling is now complete ahead of preprint!
 
@@ -62,4 +66,4 @@ The anticipated release of `soursop` is August 2021! We have nearly finished all
 
 About
 ========
-**SOURSOP** is built and maintained by Jared Lalmansingh (Pappu lab) and `Alex Holehouse <https://holehouselab.com/>`_. Its development was supported financially and intellectually by the  `Molecular Sciences Software Institute (MOLSSI) <https://molssi.org/>`_. It was also supported by NSF grant no. 2128068 to Alex, and we thank members of the `Water and Life Interface Institute (WALII) <https://www.walii.science/>`_, supported by NSF DBI grant #2213983, for helpful discussions. 
+**SOURSOP** was built by Jared Lalmansingh (Pappu lab) and `Alex Holehouse <https://holehouselab.com/>`_. Its development was supported financially and intellectually by the  `Molecular Sciences Software Institute (MOLSSI) <https://molssi.org/>`_. It was also supported by NSF grant no. 2128068 to Alex, and we thank members of the `Water and Life Interface Institute (WALII) <https://www.walii.science/>`_, supported by NSF DBI grant #2213983, for helpful discussions. 
