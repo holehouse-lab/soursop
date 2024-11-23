@@ -32,7 +32,7 @@ This documentation is currently being generated as we finalize **SOURSOP**.
 
 Changelog
 ==========
-*Update: Novemver. 2024* (0.2.6)
+*Update: November. 2024* (0.2.6)
 Transition to pyproject.toml for packaging and versioningit for versioning. Dramatically improved performance of loading coarse-grained ensembles.
 
 

@@ -6,7 +6,7 @@ SOURSOP
 ## ABOUT
 SOURSOP is a Python-based simulation analysis package for working with intrinsically disordered and unfolded proteins. It is built on top of [mdtraj](https://mdtraj.org/), and was developed by Jared Lalmansingh and Alex Holehouse. 
 
-The current stable release candidate on PyPI is 0.2.5 (Feb 2024).
+The current stable release candidate on PyPI is 0.2.6 (November 2024).
 
 ## DOCUMENTATION
 All documentation, including installation information [can be found here](https://soursop.readthedocs.io/). 
