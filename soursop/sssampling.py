@@ -1184,7 +1184,6 @@ class SamplingQuality:
 # will serve to return precomputed excluded volume dihedral angle distributions
 # if no EV trajectories are provided.
 
-
 class PrecomputedDihedralInterface:
     """docstring for PrecomputedDihedralInterface."""
 
@@ -1194,8 +1193,8 @@ class PrecomputedDihedralInterface:
         self.nsamples = nsamples
         self.bins = bins
 
-        self.tmp_phi_angles = self.gather_phi_reference_dihedrals(self.sequence)
-        self.tmp_psi_angles = self.gather_psi_reference_dihedrals(self.sequence)
+        self.tmp_phi_angles = self.gather_phi_reference_dihedrals()
+        self.tmp_psi_angles = self.gather_psi_reference_dihedrals()
 
         # ensure len ref angles is equal to number of angles found in traj arrays.
 
@@ -1205,14 +1204,13 @@ class PrecomputedDihedralInterface:
 
         # sampling introduces a small amount of error from sampling, but this error is inconsequential
         # and will asymtotically decrease with larger trajectories
-        # and is easier than me refactoring...
         self.ref_phi_angles = np.tile(self.sample_angles("phi"), (self.num_trajs, 1, 1))
         self.ref_psi_angles = np.tile(self.sample_angles("psi"), (self.num_trajs, 1, 1))
 
     def sample_angles(self, angle):
         dist_selector = {
-            "phi": self.gather_phi_reference_dihedrals(self.sequence),
-            "psi": self.gather_psi_reference_dihedrals(self.sequence),
+            "phi": self.gather_phi_reference_dihedrals(),
+            "psi": self.gather_psi_reference_dihedrals(),
         }
 
         dihedral_hist = []
@@ -1241,7 +1239,7 @@ class PrecomputedDihedralInterface:
 
         return np.array(dihedral_hist)
 
-    def gather_phi_reference_dihedrals(self, sequence: str) -> np.ndarray:
+    def gather_phi_reference_dihedrals(self) -> np.ndarray:
         """Gather the reference phi dihedral angles for a given sequence.
 
         Parameters
@@ -1254,24 +1252,33 @@ class PrecomputedDihedralInterface:
         np.ndarray
             The reference phi dihedral angles for the given sequence.
         """
-
         phi_angles = []
-        for i, residue in enumerate(sequence):
+        shredded_seq = self.shred_sequence(window_size=3,stride=1)
+        
+        for i,kmer in enumerate(shredded_seq):
             if i == 0:
-                phi_preceeding_context = "A"
+                # the tripeptide simulations have capping groups, so for the initial sequence
+                # we need to grab all the phi angles.
+                # But for subsequent ones, we don't want to include the capping phi angle every time.
+                phi_angles.append(
+                    PHI_EV_ANGLES_DICT[kmer]
+                )
+            elif len(kmer) < 3:
+                kmer_len = len(kmer)
+                kmer = (shredded_seq[i-1]+kmer)[-3:]
+                # grab the last kmer_len phi angles from the tripeptide with the appropriate context
+                phi_angles.append(PHI_EV_ANGLES_DICT[kmer][-kmer_len:])
             else:
-                phi_preceeding_context = sequence[i - 1]
+                # grab the middle context phi angle
+                phi_angles.append(
+                    PHI_EV_ANGLES_DICT[kmer][2].reshape(1,1000)
+                )
+                
+        phi_angles = np.concatenate([*phi_angles],axis=0)
 
-            three_letter_residue = ONE_TO_THREE[phi_preceeding_context]
-            approximate_residue = EV_RESIDUE_MAPPER[three_letter_residue]
+        return phi_angles
 
-            phi_angles.append(
-                PHI_EV_ANGLES_DICT[three_letter_residue][approximate_residue]
-            )
-
-        return np.array(phi_angles)
-
-    def gather_psi_reference_dihedrals(self, sequence: str) -> np.ndarray:
+    def gather_psi_reference_dihedrals(self) -> np.ndarray:
         """Gather the reference psi dihedral angles for a given sequence.
 
         Parameters
@@ -1286,16 +1293,45 @@ class PrecomputedDihedralInterface:
         """
 
         psi_angles = []
-        for i, residue in enumerate(sequence):
-            if i == len(sequence) - 1:
-                psi_subsequent_context = "A"
+        # stride by two because we're only going to grab the first two angles 
+        # since the third angle is the c-terminal capping group.
+
+        shredded_seq = self.shred_sequence(window_size=3, stride=1)
+
+        for i,kmer in enumerate(shredded_seq):    
+            if i == len(self.sequence) - 2:
+                # if we're at the last tripeptide of the sequence
+                # we need to grab all the psi angles 
+                # e.g., the last angle will include the C terminal
+                # capping group.
+                # if the kmer is the following atoms:
+                # [[ALA2-N, ALA2-CA, ALA2-C, ALA3-N],
+                # [ALA3-N, ALA3-CA, ALA3-C, ASP4-N],
+                # [ASP4-N, ASP4-CA, ASP4-C, NME5-N]]
+                # Then we'd want to grab them all to get the capped c-terminal angle.
+                psi_angles.append(PSI_EV_ANGLES_DICT[kmer])
             else:
-                psi_subsequent_context = sequence[i + 1]
+                # For all other tripeptides, we only want to take the first angle as 
+                # we're going to slide along the sequence grabbing each residue's psi 
+                # in the correct context. 
+                psi_angles.append(PSI_EV_ANGLES_DICT[kmer][0].reshape(1,1000))
 
-            three_letter_residue = ONE_TO_THREE[psi_subsequent_context]
-            approximate_residue = EV_RESIDUE_MAPPER[three_letter_residue]
-            psi_angles.append(
-                PSI_EV_ANGLES_DICT[three_letter_residue][approximate_residue]
-            )
+        psi_angles = np.concatenate([*psi_angles],axis=0)
 
-        return np.array(psi_angles)
+        return psi_angles
+
+    def shred_sequence(self, window_size=3, stride=1):
+        if len(self.sequence) < window_size:
+            return [self.sequence]
+        
+        shredded = []
+        for i in range(0, len(self.sequence) - window_size + 1, stride):
+            shredded.append(self.sequence[i:i+window_size])
+        
+        # Check for the remainder sequence
+        remainder = len(self.sequence) % window_size
+
+        if remainder != 0:
+            shredded.append(self.sequence[-remainder:])
+    
+        return shredded
