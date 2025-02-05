@@ -42,17 +42,18 @@ def compute_joint_hellinger_distance(p, q):
 
     return distance
 
+
 def hellinger_distance(p: np.ndarray, q: np.ndarray) -> np.ndarray:
     """
     Computes the Hellinger distance between a set of probability distributions p and q.
     The Hellinger distances is defined as:
-    
+
         :math:`H(P,Q) = \\frac{1}{\\sqrt{2}} \\times \\sqrt{\\sum_{i=1}^{k}(\\sqrt{p_i}-\\sqrt{q_i})^2}`
-    
-    where k is the length of the probability vectors being compared. 
+
+    where k is the length of the probability vectors being compared.
 
     For sets of distributions, the datapoints should be in the last axis.
-    
+
     Parameters
     ----------
     p : np.ndarray
@@ -114,6 +115,7 @@ class SamplingQuality:
         proteinID: int = 0,
         n_cpus: int = None,
         truncate: bool = False,
+        force_sequential: bool = False,
         **kwargs: dict,
     ):
         """
@@ -149,6 +151,8 @@ class SamplingQuality:
         truncate : bool, optional
             if True, will slice all the trajectories such that
             they're all of the same minimum length.
+        force_sequential: bool, optional
+            if True, will load trajectories sequentially instead of in parallel.
         kwargs : dict, optional
             if provided, key-value pairs will be passed to SSTrajectory for file
             loading. For example, can be useful for passing a stride.
@@ -169,6 +173,7 @@ class SamplingQuality:
         self.bwidth = bwidth
         self.n_cpus = n_cpus
         self.truncate = truncate
+        self.force_sequential = force_sequential
         self.kwargs = kwargs
 
         self.bins = self.get_degree_bins()
@@ -272,20 +277,37 @@ class SamplingQuality:
                 )
 
         else:
-            # if many trajectories, load in parallel
-            self.trajs = parallel_load_trjs(
-                self.traj_list, self.top, n_procs=self.n_cpus, **self.kwargs
-            )
+            if self.force_sequential:
+                # Load trajectories sequentially
+                self.trajs = []
+                for traj in self.traj_list:
+                    self.trajs.append(
+                        SSTrajectory([traj], pdb_filename=self.top, **self.kwargs)
+                    )
 
-            # if the reference list has been provided initialize the reference trajectories
-            # else the reference dihedrals will be assigned from precomputed dihedrals later.
-            if self.reference_list:
-                self.ref_trajs = parallel_load_trjs(
-                    self.reference_list,
-                    self.ref_top,
-                    n_procs=self.n_cpus,
-                    **self.kwargs,
+                if self.reference_list:
+                    self.ref_trajs = []
+                    for ref_traj in self.reference_list:
+                        self.ref_trajs.append(
+                            SSTrajectory(
+                                [ref_traj], pdb_filename=self.ref_top, **self.kwargs
+                            )
+                        )
+            else:
+                # if many trajectories, load in parallel
+                self.trajs = parallel_load_trjs(
+                    self.traj_list, self.top, n_procs=self.n_cpus, **self.kwargs
                 )
+
+                # if the reference list has been provided initialize the reference trajectories
+                # else the reference dihedrals will be assigned from precomputed dihedrals later.
+                if self.reference_list:
+                    self.ref_trajs = parallel_load_trjs(
+                        self.reference_list,
+                        self.ref_top,
+                        n_procs=self.n_cpus,
+                        **self.kwargs,
+                    )
 
     def __truncate_trajectories(self) -> Tuple[List[SSTrajectory], List[SSTrajectory]]:
         """Internal function used to truncate the lengths of trajectories
@@ -570,7 +592,8 @@ class SamplingQuality:
         return np.array((phi_rel_entr, psi_rel_entr))
 
     def compute_series_of_histograms_along_axis(
-        self, data: np.ndarray, bins: np.ndarray, axis: int = 0):
+        self, data: np.ndarray, bins: np.ndarray, axis: int = 0
+    ):
         """
         Compute a series of 2D histograms along an axis of a 4D array
         and convert them into probability density functions (PDFs).
@@ -579,10 +602,10 @@ class SamplingQuality:
         ----------
         data : ndarray
             4D array containing the joint phi/psi angle data.
-    
+
         bins : ndarray
             1D array defining the bin edges for the histograms.
-    
+
         axis : int, optional
             Axis along which to compute the histograms (default=0).
 
@@ -590,14 +613,14 @@ class SamplingQuality:
         -------
         pdfs : ndarray
             Series of 2D probability density functions (PDFs) along the given axis.
-        
+
         Notes
         -----
         - The input data array should have dimensions (2, n_trajs, n_residues, n_samples).
         - The bins array should contain the bin edges for the histograms.
-        - The resulting PDFs will have dimensions (n_trajs, n_residues, num_bins_phi, num_bins_psi), where num_bins_phi and num_bins_psi are the number of bins in the phi and psi dimensions, respectively.        
+        - The resulting PDFs will have dimensions (n_trajs, n_residues, num_bins_phi, num_bins_psi), where num_bins_phi and num_bins_psi are the number of bins in the phi and psi dimensions, respectively.
         - The PDFs are computed by normalizing the histogram values and multiplying them by the corresponding bin widths.
-        
+
         """
         # Get the shape of the input array
         shape = data.shape
@@ -652,7 +675,6 @@ class SamplingQuality:
         """
         # Lambda function is used to ignore the bin edges returned by np.histogram at index 1
         # xhistogram is ~2x faster, but introduces depedency - keeping lambda function for legacy for now
-        # tbh this isn't that slow with the lambda function after all
 
         # if (traj x n_res x frames), histogram axis (2) associated all the frames
         if arr.ndim == 3:
@@ -833,7 +855,7 @@ class SamplingQuality:
         figname: str = "hellingers.pdf",
     ):
         """
-        This function enables a convenient plotting functionality for quick visual 
+        This function enables a convenient plotting functionality for quick visual
         inspection of the sampling quality.
 
         Parameters
@@ -1047,7 +1069,7 @@ class SamplingQuality:
         dihedral : str, optional
               method to use to return specific PDFs. Options are: "trj_phi_pdfs", "trj_psi_pdfs",
               "joint". By default this is "joint".
-        
+
         recompute : bool, optional
             Whether or not to recompute the PDFs, by default False.
 
@@ -1088,7 +1110,6 @@ class SamplingQuality:
 
         return self.__precomputed[dihedral]
 
-
     def ref_pdfs(self, dihedral="joint", recompute=False):
         """Function to return the pdfs computed from the phi/psi angles, respectively
 
@@ -1097,7 +1118,7 @@ class SamplingQuality:
         dihedral : str, optional
               method to use to return specific PDFs. Options are: "trj_phi_pdfs", "trj_psi_pdfs",
               and "joint". By default this is "joint".
-        
+
         recompute : bool, optional
             Whether or not to recompute the PDFs, by default False.
 
@@ -1139,7 +1160,6 @@ class SamplingQuality:
 
         return self.__precomputed[dihedral]
 
-
     def hellingers_distances(self, recompute=False):
         """property for getting the Hellinger distances computed from the phi/psi angles, respectively
 
@@ -1165,7 +1185,7 @@ class SamplingQuality:
         ----------
         np.ndarray
             The per residue fractional helicity for each trajectory in self.trajs and self.ref_trajs.
-        
+
         """
         selectors = ("trj_helicity", "ref_helicity")
         if not recompute and all(
