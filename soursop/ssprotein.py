@@ -3861,6 +3861,7 @@ class SSProtein:
         # fit to a log/log model and extract params
         out = np.polyfit(np.log(fitting_separation), np.log(fitting_distances), 1)
         nu_best = out[0]
+        logR0_best = out[1]
         R0_best = np.exp(out[1])
 
         ## >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
@@ -3868,7 +3869,7 @@ class SSProtein:
         n_points = len(fitting_distances)
         chi2=0
         for i in range(0, n_points):
-            chi2 = chi2 + (np.power(np.log(fitting_distances[i]) - nu_best*np.log(fitting_separation[i])+R0_best,2))/fitting_variance[i]
+            chi2 = chi2 + (np.power(np.log(fitting_distances[i]) - (nu_best*np.log(fitting_separation[i])+logR0_best),2))/fitting_variance[i]
 
         # finally calculated reduced chi squared correcting for 2 model parameters
         reduced_chi_squared_fitting = chi2 / (n_points-2)
@@ -3878,7 +3879,7 @@ class SSProtein:
         chi2=0
 
         for i in range(0, full_n_points):
-            chi2 = chi2 + (np.power(np.log(seq_sep_RMS_distance[i]) - nu_best*np.log(seq_sep_vals[i])+R0_best,2))/seq_sep_RMS_var_distance[i]
+            chi2 = chi2 + (np.power(np.log(seq_sep_RMS_distance[i]) - (nu_best*np.log(seq_sep_vals[i])+logR0_best),2))/seq_sep_RMS_var_distance[i]
 
         # finally calculated reduced chi squared correcting for 2 model parameters
         reduced_chi_squared_all = chi2 / (full_n_points-2)
