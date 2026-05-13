@@ -139,6 +139,12 @@ EV_RESIDUE_MAPPER = {
                     'LYS':'LEU',
                     }
 
-PSI_EV_ANGLES_DICT = np.load(soursop.get_data("psi_excluded_volume_tripeptides.pickle"),allow_pickle=True)
+try:
+    PSI_EV_ANGLES_DICT = np.load(soursop.get_data("psi_excluded_volume_tripeptides.pickle"),allow_pickle=True)
 
-PHI_EV_ANGLES_DICT = np.load(soursop.get_data("phi_excluded_volume_tripeptides.pickle"),allow_pickle=True)
+    PHI_EV_ANGLES_DICT = np.load(soursop.get_data("phi_excluded_volume_tripeptides.pickle"),allow_pickle=True)
+except Exception:
+    PSI_EV_ANGLES_DICT = None
+    PHI_EV_ANGLES_DICT = None
+    print('WARNING: No Phi/Psi data loaded for PENGUIN analysis...')
+    

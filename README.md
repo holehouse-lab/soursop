@@ -75,6 +75,9 @@ We are currently and systematically updating all of the CAMPARITraj codebase to 
 #### Update December 2020
 Release 0.1.2 includes updated support to ensure CAMPARITraj will continue to work with MDTraj 1.9.5, as well as numerous additional updated.
 
+#### Update May 2026 (0.2.7)
+* Bugfix: Corrected three copy-paste errors in the propagation of Ser/Thr/Tyr neighbor-correction values to pSer/pThr/pTyr slots in the glycine-specific random-coil correction tables (gly_ca_c, gly_co_c, gly_n_c) in ssnmr.py. This ensures that phospho-residues at the i+1 neighbor position of glycine now correctly use the Ser/Thr/Tyr _c-row corrections. Previously, these slots either pulled the _a-row value or stayed at zero, leading to errors of up to ~2.7 ppm in rare gly-phospho-gly contexts. All random-coil predictions are now consistent with the intended Kjaergaard parameterization.
+
 #### Update May 2019
 This is the *development* repository of CAMPARITraj and SHOULD NOT be used for production. Seriously, it is being modified constantly and with no building requirements during code pushes. If you want a building copy PLEASE contact Alex directly! [last touched June 24th 2019].
 
