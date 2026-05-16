@@ -661,3 +661,78 @@ class TestExtraReweightedGetters:
             P.get_inter_residue_atomic_distance(1, 5, weights=np.full(n, 0.5 / n))
         with pytest.raises(SSException):
             P.get_t(weights=np.full(n, 2.0 / n))
+
+
+# --------------------------------------------------------------------------
+# Remaining weights-bearing entry points: get_polymer_scaled_distance_map
+# and the low-level ssmutualinformation.calc_MI (the function whose
+# weighted path was bug-fixed).
+# --------------------------------------------------------------------------
+class TestPolymerScaledDistanceMapWeights:
+
+    def test_uniform_equals_unweighted_explicit_model(self, NTL9_CP):
+        # with nu/A0 supplied the only weighted dependence is the internal
+        # get_distance_map, so uniform weights must reproduce the
+        # unweighted deviation matrix.
+        P = NTL9_CP
+        uni = _uniform(P.n_frames)
+        m0, nu0, a0, _ = P.get_polymer_scaled_distance_map(nu=0.5, A0=5.5,
+                                                           min_separation=5,
+                                                           verbose=False)
+        m1, nu1, a1, _ = P.get_polymer_scaled_distance_map(nu=0.5, A0=5.5,
+                                                           min_separation=5,
+                                                           weights=uni,
+                                                           verbose=False)
+        assert (nu0, a0) == (nu1, a1) == (0.5, 5.5)
+        assert np.allclose(m0, m1, rtol=1e-5, atol=1e-5)
+
+    def test_default_model_with_weights_runs(self, NTL9_CP):
+        # default nu/A0 -> internally fits via get_scaling_exponent; with
+        # weights it must still run and return a finite matrix.
+        P = NTL9_CP
+        uni = _uniform(P.n_frames)
+        np.random.seed(42)
+        m, nu, a0, _ = P.get_polymer_scaled_distance_map(min_separation=5,
+                                                         weights=uni,
+                                                         verbose=False)
+        assert np.all(np.isfinite(np.asarray(m, dtype=float)))
+        assert np.isfinite(nu) and np.isfinite(a0)
+
+    def test_invalid_weights_raise(self, NTL9_CP):
+        P = NTL9_CP
+        n = P.n_frames
+        with pytest.raises(SSException):
+            P.get_polymer_scaled_distance_map(nu=0.5, A0=5.5,
+                                              weights=_uniform(n - 1),
+                                              verbose=False)
+        with pytest.raises(SSException):
+            P.get_polymer_scaled_distance_map(nu=0.5, A0=5.5,
+                                              weights=np.full(n, 0.5 / n),
+                                              verbose=False)
+
+
+class TestCalcMIWeights:
+
+    def test_uniform_weights_equal_unweighted(self):
+        from soursop.ssmutualinformation import calc_MI
+        rng = np.random.RandomState(0)
+        X = rng.uniform(-1, 1, 200)
+        Y = 0.7 * X + 0.3 * rng.uniform(-1, 1, 200)
+        bins = np.linspace(-1.05, 1.05, 12)
+        base = calc_MI(X, Y, bins)                       # unweighted
+        w = np.full(len(X), 1.0 / len(X))
+        wtd = calc_MI(X, Y, bins, weights=w)             # uniform weights
+        assert np.isclose(base, wtd, rtol=1e-9, atol=1e-9)
+
+    def test_array_weights_do_not_raise(self):
+        # regression guard: `if weights:` used to raise ValueError on an
+        # array ("truth value of an array ... is ambiguous").
+        from soursop.ssmutualinformation import calc_MI
+        rng = np.random.RandomState(1)
+        X = rng.uniform(-1, 1, 100)
+        Y = rng.uniform(-1, 1, 100)
+        bins = np.linspace(-1.05, 1.05, 10)
+        w = np.full(len(X), 1.0 / len(X))
+        val = calc_MI(X, Y, bins, weights=w)
+        assert np.isfinite(val)
+        assert calc_MI(X, Y, bins, weights=False) is not None
