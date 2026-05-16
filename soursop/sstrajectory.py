@@ -685,7 +685,7 @@ class SSTrajectory:
     #
     #
     @lazy_loading_single_protein_trajectory
-    def get_overall_radius_of_gyration(self):
+    def get_overall_radius_of_gyration(self, weights=False, etol=0.0000001):
         """Per-frame radius of gyration computed across every protein chain.
 
         For multi-chain systems the chains are combined into a single
@@ -697,24 +697,34 @@ class SSTrajectory:
             This does NOT apply periodic-boundary corrections. If your
             chains are split across PBC images, centre the molecule first.
 
+        Parameters
+        ----------
+        weights : array_like or False, optional
+            Per-frame re-weighting vector forwarded to
+            :meth:`SSProtein.get_radius_of_gyration`. ``False`` (default)
+            returns the per-frame array; if supplied the scalar
+            deterministic weighted-mean :math:`R_g` is returned.
+        etol : float, optional
+            Tolerance on ``|sum(weights) - 1|``. Default ``1e-7``.
+
         Returns
         -------
-        np.ndarray
-            1D array of length ``n_frames`` with per-frame :math:`R_g` in
-            Angstroms.
+        np.ndarray or float
+            Per-frame :math:`R_g` (length ``n_frames``), or the scalar
+            weighted mean if ``weights`` is supplied. Angstroms.
 
         Example
         -------
         >>> rg_all = traj.get_overall_radius_of_gyration()
         """
 
-        return self.__single_protein_traj.get_radius_of_gyration()
+        return self.__single_protein_traj.get_radius_of_gyration(weights=weights, etol=etol)
 
     #oxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxo
     #
     #
     @lazy_loading_single_protein_trajectory
-    def get_overall_asphericity(self):
+    def get_overall_asphericity(self, weights=False, etol=0.0000001):
         """Per-frame asphericity computed across every protein chain.
 
         For multi-chain systems the chains are combined into a single
@@ -725,23 +735,34 @@ class SSTrajectory:
         .. warning::
             This does NOT apply periodic-boundary corrections.
 
+        Parameters
+        ----------
+        weights : array_like or False, optional
+            Per-frame re-weighting vector forwarded to
+            :meth:`SSProtein.get_asphericity`. ``False`` (default) returns
+            the per-frame array; if supplied the scalar deterministic
+            weighted-mean asphericity is returned.
+        etol : float, optional
+            Tolerance on ``|sum(weights) - 1|``. Default ``1e-7``.
+
         Returns
         -------
-        np.ndarray
-            1D array of length ``n_frames`` with per-frame asphericity.
+        np.ndarray or float
+            Per-frame asphericity (length ``n_frames``), or the scalar
+            weighted mean if ``weights`` is supplied.
 
         Example
         -------
         >>> asph_all = traj.get_overall_asphericity()
         """
 
-        return self.__single_protein_traj.get_asphericity()
+        return self.__single_protein_traj.get_asphericity(weights=weights, etol=etol)
 
     #oxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxo
     #
     #
     @lazy_loading_single_protein_trajectory
-    def get_overall_hydrodynamic_radius(self):
+    def get_overall_hydrodynamic_radius(self, weights=False, etol=0.0000001):
         """Per-frame hydrodynamic radius computed across every protein chain.
 
         For multi-chain systems the chains are combined into a single
@@ -749,24 +770,34 @@ class SSTrajectory:
         Nygaard-et-al estimator. For single-chain systems the result equals
         ``self.proteinTrajectoryList[0].get_hydrodynamic_radius()``.
 
+        Parameters
+        ----------
+        weights : array_like or False, optional
+            Per-frame re-weighting vector forwarded to
+            :meth:`SSProtein.get_hydrodynamic_radius`. ``False`` (default)
+            returns the per-frame array; if supplied the scalar
+            deterministic weighted-mean :math:`R_h` is returned.
+        etol : float, optional
+            Tolerance on ``|sum(weights) - 1|``. Default ``1e-7``.
+
         Returns
         -------
-        np.ndarray
-            1D array of length ``n_frames`` with per-frame :math:`R_h` in
-            Angstroms.
+        np.ndarray or float
+            Per-frame :math:`R_h` (length ``n_frames``), or the scalar
+            weighted mean if ``weights`` is supplied. Angstroms.
 
         Example
         -------
         >>> rh_all = traj.get_overall_hydrodynamic_radius()
         """
 
-        return self.__single_protein_traj.get_hydrodynamic_radius()
+        return self.__single_protein_traj.get_hydrodynamic_radius(weights=weights, etol=etol)
 
 
     #oxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxo
     #
     #
-    def get_interchain_distance_map(self, proteinID1, proteinID2, mode='CA', periodic=False):
+    def get_interchain_distance_map(self, proteinID1, proteinID2, mode='CA', periodic=False, weights=False, etol=0.0000001):
         """Mean and std inter-chain distance map between two protein chains.
 
         Returns an ``(n_res_P1, n_res_P2)`` matrix of per-pair *mean*
@@ -792,6 +823,14 @@ class SSTrajectory:
             recorded periodic box and a cubic cell. Generally it is better
             to centre the molecule first and leave this False. Default
             False.
+        weights : array_like or False, optional
+            Per-frame re-weighting vector (validated against the shared
+            trajectory frame count). ``False`` (default) gives the
+            ordinary per-pair mean/std (byte-identical to before); if
+            supplied each pair's mean/std is the deterministic weighted
+            mean / weighted (population) std over frames.
+        etol : float, optional
+            Tolerance on ``|sum(weights) - 1|``. Default ``1e-7``.
 
         Returns
         -------
@@ -809,8 +848,12 @@ class SSTrajectory:
         ssutils.validate_keyword_option(mode, ['CA', 'COM'], 'mode')
         
         # get SSProtein objects for the two IDs passed (could be the same)
-        P1 = self.proteinTrajectoryList[proteinID1]        
+        P1 = self.proteinTrajectoryList[proteinID1]
         P2 = self.proteinTrajectoryList[proteinID2]
+
+        # optional deterministic per-frame re-weighting of every pair's
+        # mean/std (validated against the shared trajectory frame count).
+        wv = ssutils.validate_weights(weights, P1.n_frames, 1, etol)
 
         # create the empty distance maps
         p1_residues = P1.resid_with_CA
@@ -819,41 +862,53 @@ class SSTrajectory:
         distanceMap = np.zeros(map_shape)
         stdMap      = np.zeros(map_shape)
 
-        for r1 in p1_residues:
-            if mode == 'COM':
-                COM_1 = P1.get_residue_COM(r1)
-            else:
-                COM_1 = P1.get_residue_COM(r1, atom_name='CA')
+        # Hoist the per-residue center-of-mass computation out of the
+        # nested loop. A residue's COM is independent of the residue it
+        # is paired with, so computing it once per residue (O(n1 + n2))
+        # rather than once per pair (O(n1 * n2)) is numerically identical
+        # and removes the dominant cost. The atom_name selection per mode
+        # is exactly that of the original per-pair calls.
+        if mode == 'COM':
+            com1 = [P1.get_residue_COM(r1) for r1 in p1_residues]
+            com2 = [P2.get_residue_COM(r2) for r2 in p2_residues]
+        else:
+            com1 = [P1.get_residue_COM(r1, atom_name='CA') for r1 in p1_residues]
+            com2 = [P2.get_residue_COM(r2, atom_name='CA') for r2 in p2_residues]
 
-            p1_index = r1
-            if P1.ncap:
-                p1_index = r1 - 1
+        # the (unchanged) ncap-shifted output indices
+        p1_indices = [(r1 - 1) if P1.ncap else r1 for r1 in p1_residues]
+        p2_indices = [(r2 - 1) if P2.ncap else r2 for r2 in p2_residues]
 
-            for r2 in p2_residues:
-
-                if mode == 'COM':
-                    COM_2 = P2.get_residue_COM(r2)
-                else:
-                    COM_2 = P2.get_residue_COM(r2, atom_name='CA')
-
-                p2_index = r2
-                if P2.ncap:
-                    p2_index = r2 - 1
-                
-                # compute distance... 
-                if periodic:
+        if periodic:
+            # preserve the exact original per-pair minimum-image call
+            for i, COM_1 in enumerate(com1):
+                p1_index = p1_indices[i]
+                for j, COM_2 in enumerate(com2):
                     d = sstools.get_distance_periodic(COM_1, COM_2, self.unitcell[0], 'cube')
+                    if wv is False:
+                        distanceMap[p1_index, p2_indices[j]] = np.mean(d, 0)
+                        stdMap[p1_index, p2_indices[j]]      = np.std(d, 0)
+                    else:
+                        d = np.asarray(d)
+                        distanceMap[p1_index, p2_indices[j]] = ssutils.weighted_mean(d, wv)
+                        stdMap[p1_index, p2_indices[j]]      = ssutils.weighted_std(d, wv)
+        else:
+            # com2 stacked once -> (n2, F, 3); broadcasting COM_1 (F, 3)
+            # against it reproduces the per-pair np.linalg.norm exactly.
+            com2_stack = np.stack(com2, axis=0)
+            for i, COM_1 in enumerate(com1):
+                d = np.linalg.norm(COM_1 - com2_stack, axis=-1)   # (n2, F)
+                if wv is False:
+                    row_mean = np.mean(d, axis=1)
+                    row_std  = np.std(d, axis=1)
                 else:
-                    d = np.linalg.norm(COM_1 - COM_2, axis=1)                    
+                    row_mean = ssutils.weighted_mean(d, wv, axis=1)
+                    row_std  = ssutils.weighted_std(d, wv, axis=1)
+                p1_index = p1_indices[i]
+                for j, p2_index in enumerate(p2_indices):
+                    distanceMap[p1_index, p2_index] = row_mean[j]
+                    stdMap[p1_index, p2_index]      = row_std[j]
 
-                    # old way
-                    #d = np.sqrt(np.square(np.transpose(COM_1)[0] - np.transpose(COM_2)[0]) + np.square(np.transpose(COM_1)[1] - np.transpose(COM_2)[1])+np.square(np.transpose(COM_1)[2] - np.transpose(COM_2)[2]))
-    
-
-                
-                distanceMap[p1_index, p2_index] =  np.mean(d, 0)
-                stdMap[p1_index, p2_index]    =  np.std(d, 0)
-                
         return (distanceMap, stdMap)
 
 
@@ -952,6 +1007,80 @@ class SSTrajectory:
         # get number of residues/bases for the two proteins
         n_res_P1 = self.proteinTrajectoryList[proteinID1].n_residues
         n_res_P2 = self.proteinTrajectoryList[proteinID2].n_residues
+
+        P1 = self.proteinTrajectoryList[proteinID1]
+        P2 = self.proteinTrajectoryList[proteinID2]
+
+        # Fast path: for mode='atom' (non-periodic) the named-atom
+        # position of a residue is independent of the residue it is
+        # paired with. Compute each residue's atom position once
+        # (O(n1 + n2)) instead of re-deriving it inside an O(n1 * n2)
+        # loop of get_interchain_distance() calls. This reproduces the
+        # per-pair atom math exactly: same residue/atom selection, same
+        # frame stride, the same 10x compute_center_of_mass, Euclidean
+        # norm, threshold, and the same zero-fill for residues whose
+        # A1/A2 atom is absent (caps, missing atom names). The periodic
+        # branch is intentionally left to the original per-pair path so
+        # its behaviour is byte-for-byte unchanged.
+        if mode == 'atom' and not periodic:
+
+            def _residue_atom_positions(P, n_res, atom_name):
+                # positions[r] = 10x-COM (F,3) of the named atom of
+                # residue r over the strided frames; ok[r] mirrors the
+                # exact success/failure of the original
+                # get_interchain_distance() 'atom' selection for that
+                # residue (the conditions the caller's except catches).
+                positions = [None] * n_res
+                ok = [False] * n_res
+                for r in range(n_res):
+                    try:
+                        sel = P.topology.select('resid %i' % r)
+                        if len(sel) == 0:
+                            continue
+                        sub = P.traj.atom_slice(sel)
+                        if stride > 1:
+                            sub = sub[::stride]
+                        a = sub.topology.select('resid 0 and name "%s"' % atom_name)
+                        if len(a) != 1:
+                            continue
+                        positions[r] = 10 * md.compute_center_of_mass(sub.atom_slice(a))
+                        ok[r] = True
+                    except (SSException, ValueError, IndexError):
+                        continue
+                return positions, ok
+
+            pos1, ok1 = _residue_atom_positions(P1, n_res_P1, A1)
+            pos2, ok2 = _residue_atom_positions(P2, n_res_P2, A2)
+
+            # The original per-pair loop succeeds for a pair iff both
+            # residues' atom selections succeed (independently), so the
+            # number of successful pairs is the product of the per-chain
+            # success counts. Preserve the original "all failed -> raise"
+            # behaviour and exception message.
+            success_count = int(np.sum(ok1)) * int(np.sum(ok2))
+            if success_count == 0:
+                raise SSException(
+                    f"In get_interchain_contact_map(): no residue pair could be "
+                    f"computed for mode={mode!r} (A1={A1!r}, A2={A2!r}). Check that "
+                    f"the mode/atom selections are valid for the residues in "
+                    f"protein {proteinID1} and protein {proteinID2}."
+                )
+
+            cmap = np.zeros((n_res_P1, n_res_P2))
+            ok2_idx = [j for j in range(n_res_P2) if ok2[j]]
+            # success_count > 0 guarantees ok2_idx is non-empty here
+            pos2_stack = np.stack([pos2[j] for j in ok2_idx], axis=0)  # (m, F, 3)
+            for i in range(n_res_P1):
+                if verbose:
+                    print(f'On {i} of {n_res_P1}')
+                if not ok1[i]:
+                    continue
+                d = np.linalg.norm(pos1[i] - pos2_stack, axis=-1)       # (m, F)
+                frac = np.sum(d < threshold, axis=1) / d.shape[1]
+                for k, j in enumerate(ok2_idx):
+                    cmap[i, j] = frac[k]
+
+            return cmap
 
         all_contact_fractions = []
         # Track successful (R1, R2) computations. If zero pairs succeed (e.g.,

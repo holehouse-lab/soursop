@@ -19,7 +19,6 @@ from scipy import stats
 from scipy.special import expit
 import scipy.optimize as SPO
 from scipy.spatial import ConvexHull
-from numpy.random import choice
 from .configs import DEBUGGING
 from .ssdata import THREE_TO_ONE, DEFAULT_SIDECHAIN_VECTOR_ATOMS, ALL_VALID_RESIDUE_NAMES
 from .ssexceptions import SSException
@@ -405,11 +404,13 @@ class SSProtein:
     def __check_weights(self, weights, stride=1, etol=0.0000001):
         """Validate a frame-weights vector before it is used in averaging.
 
-        Ensures the weights are a numeric numpy array, that there is one
-        weight per frame, and that they sum to 1 within ``etol`` (after
-        any stride subsampling). Type-casts to ``np.float64`` so the
-        result can be used as numpy indexing or weighting input
-        downstream.
+        Thin instance-level wrapper around
+        :func:`soursop.ssutils.validate_weights` (the single shared
+        validator). Ensures the weights are a finite numeric vector with
+        one weight per frame, every element in ``[0, 1]``, and a sum of 1
+        within ``etol``. When ``stride > 1`` the vector is subsampled and
+        renormalised so the strided weighted average is still a proper
+        expectation. Type-cast to ``np.float64`` for downstream use.
 
         Parameters
         ----------
@@ -433,32 +434,7 @@ class SSProtein:
               ``ceil(n_frames / stride)``.
         """
 
-        if weights is not False:
-            # convert to an array of doubles
-            try:
-                weights = np.array(weights, dtype=np.float64)
-            except ValueError as e:
-                ssio.exception_message(f"Unable to convert passed weights to a np.array(). Likely means the passed value is not numerical (printed below):\n\n{weights}", e, with_frills=True, raise_exception=True)
-
-
-            if len(weights) != self.n_frames:
-                raise SSException(f'Passed frame weights array is {len(weights)} in length, while there are actually {self.n_frames} frames - these must match')
-
-
-            if stride > 1:
-                ssio.warning_message("WARNING: Using stride with weights is ALMOST certainly not a good idea unless the weights are\ncalculated for every stride-th residue", with_frills=True)
-                return weights[list(range(0,self.n_frames,stride))]
-            else:
-                weights_sum = np.sum(weights)
-                weights_difference = weights_sum - 1.0
-                abs_weights_difference = abs(weights_difference)
-                if abs(np.sum(weights) - 1.0) < etol:
-                    return weights
-                else:
-                    ssio.exception_message(f"The passed weights are not within the specified floating point epsilon tolerance (etol={etol:f}). | sum of weights - 1 | = {abs_weights_difference:f}\n\n", with_frills=True, raise_exception=True)
-
-
-        return False
+        return ssutils.validate_weights(weights, self.n_frames, stride=stride, etol=etol)
 
 
     # ........................................................................
@@ -1096,8 +1072,6 @@ class SSProtein:
                 return [x.split('-')[0] for x in self.__amino_acids_3LTR]
 
 
-
-
     # ........................................................................
     #
     def get_CA_index(self, resid):
@@ -1647,7 +1621,7 @@ class SSProtein:
 
     # ........................................................................
     #
-    def get_local_heterogeneity(self, fragment_size=10, bins=None, stride=20, verbose=True):
+    def get_local_heterogeneity(self, fragment_size=10, bins=None, stride=20, verbose=True, weights=False, etol=0.0000001):
         """Sliding-window heterogeneity: per-position distribution of intra-window RMSDs.
 
         At each starting residue ``i`` (from 0 to ``n_residues - fragment_size``)
@@ -1658,6 +1632,12 @@ class SSProtein:
 
         Computational cost scales with ``n_residues * (n_frames / stride)``;
         the default ``stride=20`` keeps things tractable on long trajectories.
+
+        .. note::
+            ``weights`` / ``etol`` are accepted for API uniformity with the
+            other ensemble-average methods, but supplying ``weights`` raises
+            an ``SSException``: this is a pairwise frame-vs-frame measure for
+            which a single per-frame probability vector is not well-defined.
 
         Parameters
         ----------
@@ -1731,6 +1711,20 @@ class SSProtein:
         if fragment_size < 2:
             raise SSException('fragment_size must be 2 or larger')
 
+        # This is a pairwise frame-vs-frame measure (each value is an RMSD
+        # between a reference frame and a comparison frame), so a single
+        # per-frame probability vector does not map onto the pooled
+        # distribution unambiguously. Rather than invent a questionable
+        # deterministic weighting we reject it explicitly (the same stance
+        # taken for get_internal_scaling(mean_vals=False)). The unweighted
+        # path is unchanged.
+        if weights is not False:
+            raise SSException(
+                "get_local_heterogeneity(): deterministic frame re-weighting "
+                "is not well-defined for this pairwise frame-vs-frame RMSD "
+                "distribution (each value depends on two frames, not one). "
+                "Call without weights."
+            )
 
         meanData = []
         stdData  = []
@@ -1842,7 +1836,6 @@ class SSProtein:
         D_vector = []
         for A in range(0, n_frames):
             ssio.status_message(f"Running PHI calculation on frame {A} of {n_frames}", verbose)
-
 
             for B in range(A+1, n_frames):
 
@@ -1994,13 +1987,24 @@ class SSProtein:
             Distance cutoff (Angstroms) that defines a contact in the
             reference frame. Default is 4.5.
         stride : int, optional
-            Use every ``stride``-th frame. Default is 1. Must be 1 if
-            ``weights`` is given.
+            Use every ``stride``-th frame. Default is 1. May be combined
+            with ``weights`` (the weight vector is subsampled with the
+            same stride and renormalised internally).
         native_state_reference_frame : int, optional
             Currently ignored — the reference frame is always frame 0. Kept
             in the signature for backward compatibility.
         weights : list or np.ndarray, optional
-            Per-frame weights for re-weighted analysis. Default ``False``.
+            Per-frame weights for re-weighted analysis, one entry per
+            trajectory frame (``len(weights) == n_frames``), each in
+            ``[0, 1]`` and summing to 1. Validated by
+            :func:`soursop.ssutils.validate_weights`. Only used when
+            ``protein_average=False`` (the per-contact / per-residue
+            breakdown); for ``protein_average=True`` see *Raises*. When a
+            ``stride`` is given the vector is strided and renormalised, and
+            the native reference frame (frame 0) is excluded and the
+            remainder renormalised so the weighted average is a proper
+            expectation over the non-native (strided) frames. Default
+            ``False``.
 
         Returns
         -------
@@ -2025,8 +2029,12 @@ class SSProtein:
         Raises
         ------
         SSException
-            If ``weights`` is given with ``stride != 1``, or any constant
-            cannot be coerced to float.
+            If ``weights`` is given with ``protein_average=True``
+            (frame-averaged Q must be reweighted outside SOURSOP); if the
+            weight vector fails validation (wrong length, out of ``[0, 1]``,
+            non-finite, or not summing to 1); if excluding the native
+            reference frame leaves a zero-sum weight vector; or if any
+            constant cannot be coerced to float.
 
         Example
         -------
@@ -2043,65 +2051,73 @@ class SSProtein:
         """
 
         # SET
-        native_state_frame = 0
         n_res = self.n_residues
 
-        # less stringent weights test cos trajectory is one frame too long because we probably loaded the PDB file
-        # as a frame
-        #weights = self.__check_weights(weights, stride)
+        # =================================================================
+        # STEP 1 - extract the reference frame and define the native state
+        # FIRST, completely independent of stride / weights.
+        #
+        # The reference frame is sliced out of the FULL trajectory, so the
+        # native-contact definition and the reference distances r0 can
+        # never be perturbed by frame striding or re-weighting (those only
+        # ever touch the analysis ensemble built in STEP 2). This is the
+        # ONLY role the reference frame plays.
+        # =================================================================
 
-        if weights is not False and stride != 1:
-            raise SSException('For get_Q() weights must be set for EACH frame and stride=1')
-
-        # if we're using a subregion
-        # NOTE this is WAY more elegant than the previous way of doing this but there *used* to be problems with MDTraj doing
-        # things like this...
+        # atom selection (optionally restricted to a sub-region)
         selectionatoms = self.__get_selection_atoms(region, backbone=False, heavy=True)
 
-        # extract out the native state frame
-        native = self.traj.slice(native_state_frame)
-
-        # get the sub-trajectory to be used
-        target = self.__get_subtrajectory(self.traj, stride)
-
-        # now align the entire trajectory to the 'native' frame
-        target.superpose(target, frame=native_state_frame, atom_indices=selectionatoms)
+        # the reference structure (a single frame from the full trajectory)
+        native = self.traj.slice(native_state_reference_frame)
 
         try:
             BETA_CONST = float(beta_const)       # in reciprocal nm (1/nm)
             LAMBDA_CONST = float(lambda_const)    # For all-atom simulations
 
-            # Native contact threshold distance in nm (not param is passed in Angstroms but the calculation
+            # Native contact threshold distance in nm (note param is passed in Angstroms but the calculation
             # happens expecting nanometers so have to update (hence divide by 10). NB: This breaks standard
             # soursop convention and we probably should rescale the various parameters so this works in
             # A instead of bm
             NATIVE_CUTOFF = float(native_contact_threshold)/10
 
-
         except ValueError as e:
             raise SSException(f'Could not convert constant into float for setting constants in get_Q().\nSee below:\n\n{e}')
 
-
-        # use all pairs of atoms that are over 3 away in sequence space
+        # native contacts are heavy-atom pairs >3 residues apart and within
+        # NATIVE_CUTOFF in the reference structure; r0 is their reference
+        # distance. Both come purely from the extracted reference frame.
         heavy_pairs = np.array(
             [(i,j) for (i,j) in combinations(selectionatoms, 2)
              if abs(native.topology.atom(i).residue.index - \
                     native.topology.atom(j).residue.index) > 3])
 
-        # compute the distances between these pairs in the native state
         ## NB: This breaks soursop convention of converting nm->A at the site of
         ## where it's calculated.
         heavy_pairs_distances = md.compute_distances(native[0], heavy_pairs, periodic=False)[0]
-
-        # and get the pairs s.t. the distance is less than NATIVE_CUTOFF. This returns the
-        # set of interatomic residues that define the native contacts
         native_contacts = heavy_pairs[heavy_pairs_distances < NATIVE_CUTOFF]
-
-        # now compute these distances for the whole trajectory
-        r = md.compute_distances(target, native_contacts, periodic=False)
-
-        # and recompute them for just the native state
         r0 = md.compute_distances(native[0], native_contacts, periodic=False)
+
+        # =================================================================
+        # STEP 2 - now (and only now) resolve the analysis ensemble:
+        # apply the frame stride and validate the weights.
+        #
+        # The weight vector has one entry per trajectory frame
+        # (len == n_frames); __check_weights -> ssutils.validate_weights
+        # subsamples it with the same stride and renormalises, so it lines
+        # up 1:1 with the strided analysis frames. No frame is special-
+        # cased: the reference frame's job was done in STEP 1.
+        # =================================================================
+        weights = self.__check_weights(weights, stride)
+        target  = self.__get_subtrajectory(self.traj, stride)
+
+        # align the analysis frames onto the extracted reference. (This
+        # does not change the pairwise contact distances below, which are
+        # rotation/translation invariant, but keeps `target` in the
+        # reference frame.)
+        target.superpose(native, frame=0, atom_indices=selectionatoms)
+
+        # contact distances across the (strided) analysis ensemble
+        r = md.compute_distances(target, native_contacts, periodic=False)
 
         # If we're just computing the protein average then this returns the Q value for the whole protein on a per-frame basis
         if protein_average:
@@ -2114,22 +2130,18 @@ class SSProtein:
 
         else:
 
-            # if the analysis is to be re-weighted uses the weights here on a per-frame basis
+            # if the analysis is to be re-weighted use the weights here on
+            # a per-frame basis. `weights` is the validated, stride-
+            # subsampled, renormalised vector and aligns 1:1 with the
+            # strided analysis frames (one weight per frame). The reference
+            # frame's only role was defining native_contacts / r0 in
+            # STEP 1, so - unlike the old implementation - no frame is
+            # dropped here and the weighted average is taken over exactly
+            # the same frame set as the unweighted np.mean below.
             if weights is not False:
                 q_full = expit(-BETA_CONST * (r - LAMBDA_CONST * r0)).transpose()
-
-                q = []
-                for i in q_full:
-
-                    # note i[1:] means we ignore the first (native) frame
-                    q.append(np.average(i[1:], 0, weights))
-
-                q = np.array(q)
+                q = np.array([np.average(i, 0, weights) for i in q_full])
             else:
-
-                # check this makes sense - aboe we do i[1:] should probably correct this to remove
-                # the native state structure? Anyway, here we're averaging over every from for each
-                # residue
                 q = np.mean(expit(-BETA_CONST * (r - LAMBDA_CONST * r0)), axis=0)
 
             # get the set of unqiue atoms which are involved in native contacts
@@ -2234,10 +2246,17 @@ class SSProtein:
             * ``'sidechain-heavy'`` - closest pair of sidechain heavy atoms
               (mdtraj >= 1.8). Raises if any residue is glycine.
         stride : int, optional
-            Use every ``stride``-th frame. Default is 1. Must be 1 if
-            ``weights`` is provided.
+            Use every ``stride``-th frame. Default is 1. May be combined
+            with ``weights`` (the weight vector is subsampled with the
+            same stride and renormalised internally so it aligns with the
+            strided frames).
         weights : list or np.ndarray, optional
-            Per-frame weights for re-weighted averaging. Default ``False``.
+            Per-frame weights for re-weighted averaging, one entry per
+            trajectory frame (``len(weights) == n_frames``), each in
+            ``[0, 1]`` and summing to 1. Validated by
+            :func:`soursop.ssutils.validate_weights`. When supplied the
+            contact map is the deterministic weighted mean of the per-frame
+            contact maps over the (strided) frames. Default ``False``.
 
         Returns
         -------
@@ -2254,7 +2273,8 @@ class SSProtein:
         ------
         SSException
             For ``mode='sidechain-heavy'`` when any glycine is present, or
-            if ``weights`` is given with ``stride != 1``.
+            if the weight vector fails validation (wrong length, out of
+            ``[0, 1]``, non-finite, or not summing to 1).
 
         Example
         -------
@@ -2265,11 +2285,12 @@ class SSProtein:
 
         ssutils.validate_keyword_option(mode, ['closest-heavy', 'ca', 'closest', 'sidechain', 'sidechain-heavy'] , 'mode')
 
-        if weights is not False:
-            if int(stride) != 1:
-                raise SSException("Cannot accomodate weights if stride is not set to 1")
-
-        # check weights are correct
+        # Validate the weight vector against the FULL trajectory (one
+        # weight per trajectory frame, len == n_frames). __check_weights
+        # delegates to ssutils.validate_weights, which - for stride > 1 -
+        # subsamples (weights[::stride]) and renormalises so the vector
+        # lines up 1:1 with the strided frames of `subtraj` below. stride
+        # != 1 and weights are now both supported together.
         weights = self.__check_weights(weights, stride)
 
         # set the distance threshold to a value in nm (we use A by default)
@@ -2328,7 +2349,11 @@ class SSProtein:
         # else, if weights...
         else:
 
-            # if we use weights then we multiply each frame's contact map by the weight and sum
+            # Deterministic weighted mean of the per-frame contact maps.
+            # `weights` has already been stride-subsampled + renormalised
+            # by __check_weights, so it aligns 1:1 with the strided frames
+            # of CMAP and sums to 1 - hence no division by a normalization
+            # factor here (cf. the unweighted branch above).
             n_frames = CMAP.shape[0]
             normalized_contact_map = np.zeros((CMAP.shape[1],CMAP.shape[1]))
             for fid in range(0,n_frames):
@@ -2354,7 +2379,6 @@ class SSProtein:
         normalized_contact_order = np.sum(normalized_contact_map,0)/contact_order_normalization_vector
 
         return (normalized_contact_map, normalized_contact_order)
-
 
 
     # ........................................................................
@@ -2508,7 +2532,7 @@ class SSProtein:
     # ........................................................................
     #
     #
-    def get_inter_residue_COM_distance(self, R1, R2, stride=1):
+    def get_inter_residue_COM_distance(self, R1, R2, stride=1, weights=False, etol=0.0000001):
         """Per-frame distance between two residues' centres of mass.
 
         Distances are in Angstroms.
@@ -2521,12 +2545,24 @@ class SSProtein:
             Resid of the second residue.
         stride : int, optional
             Use every ``stride``-th frame. Default is 1.
+        weights : array_like or False, optional
+            Per-frame re-weighting vector, one entry per trajectory frame
+            (``len == n_frames``), validated by
+            :func:`soursop.ssutils.validate_weights` (stride-subsampled and
+            renormalised to align with the strided frames). ``False``
+            (default) returns the per-frame array; if supplied the frame
+            axis is collapsed and the scalar deterministic weighted-mean
+            distance is returned.
+        etol : float, optional
+            Tolerance on ``|sum(weights) - 1|``. Default ``1e-7``.
 
         Returns
         -------
-        np.ndarray
-            1D array of length ``ceil(n_frames / stride)`` with the
-            inter-residue COM distance for each (strided) frame, in Angstroms.
+        np.ndarray or float
+            If ``weights is False``: 1D array of length
+            ``ceil(n_frames / stride)`` with the inter-residue COM distance
+            for each (strided) frame. If ``weights`` is supplied: the
+            scalar weighted-mean distance. Angstroms.
 
         Example
         -------
@@ -2540,16 +2576,19 @@ class SSProtein:
         COM_2 = self.get_residue_COM(R2)[::stride]
 
 
-            
+
         # calculate distance
         # note 10* to get angstroms was done at the get_residue_COM level
         distances = np.linalg.norm(COM_1 - COM_2, axis=1)
-        
+
         # old way
         #d = np.sqrt(np.square(np.transpose(COM_1)[0] - np.transpose(COM_2)[0]) + np.square(np.transpose(COM_1)[1] - np.transpose(COM_2)[1])+np.square(np.transpose(COM_1)[2] - np.transpose(COM_2)[2]))
 
-
-        return distances
+        # optional deterministic frame re-weighting (collapses frame axis)
+        weights = self.__check_weights(weights, stride, etol)
+        if weights is False:
+            return distances
+        return ssutils.weighted_mean(distances, weights)
 
 
 
@@ -2597,7 +2636,7 @@ class SSProtein:
     # ........................................................................
     #
     #
-    def get_inter_residue_atomic_distance(self, R1, R2, A1='CA', A2='CA', mode='atom', stride=1):
+    def get_inter_residue_atomic_distance(self, R1, R2, A1='CA', A2='CA', mode='atom', stride=1, weights=False, etol=0.0000001):
         """Per-frame distance between two residues, with mode-dependent semantics.
 
         For ``mode='atom'`` the distance is between the named atoms ``A1`` of
@@ -2633,15 +2672,28 @@ class SSProtein:
 
         Returns
         -------
-        np.ndarray
-            1D array of length ``ceil(n_frames / stride)`` with the
-            inter-residue distance for each (strided) frame, in Angstroms.
+        np.ndarray or float
+            If ``weights is False``: 1D array of length
+            ``ceil(n_frames / stride)`` with the inter-residue distance for
+            each (strided) frame. If ``weights`` is supplied: the scalar
+            deterministic weighted-mean distance. Angstroms.
+
+        Other Parameters
+        ----------------
+        weights : array_like or False, optional
+            Per-frame re-weighting vector, one entry per trajectory frame
+            (``len == n_frames``), validated by
+            :func:`soursop.ssutils.validate_weights` and stride-aligned.
+            ``False`` (default) returns the per-frame array; if supplied
+            the frame axis is collapsed to the scalar weighted mean.
+        etol : float, optional
+            Tolerance on ``|sum(weights) - 1|``. Default ``1e-7``.
 
         Raises
         ------
         SSException
-            If ``mode`` is invalid or if an atom name cannot be found in the
-            corresponding residue.
+            If ``mode`` is invalid, an atom name cannot be found in the
+            corresponding residue, or the weight vector fails validation.
 
         Example
         -------
@@ -2690,8 +2742,11 @@ class SSProtein:
             subtraj = self.__get_subtrajectory(self.traj, stride)
             distances = 10*md.compute_contacts(subtraj, [[R1,R2]], scheme=mode, periodic=False)[0].ravel()
 
-
-        return distances
+        # optional deterministic frame re-weighting (collapses frame axis)
+        weights = self.__check_weights(weights, stride, etol)
+        if weights is False:
+            return distances
+        return ssutils.weighted_mean(distances, weights)
 
 
 
@@ -2734,7 +2789,7 @@ class SSProtein:
     # ........................................................................
     #
     #
-    def get_asphericity(self, R1=None, R2=None, verbose=True):
+    def get_asphericity(self, R1=None, R2=None, verbose=True, weights=False, etol=0.0000001):
         """Per-frame asphericity of the chain (or a sub-region).
 
         Asphericity is a dimensionless shape descriptor computed from the
@@ -2757,11 +2812,18 @@ class SSProtein:
         verbose : bool, optional
             If True (default), print one status line every 500 frames during
             the gyration-tensor computation.
+        weights : array_like or False, optional
+            Per-frame re-weighting vector. ``False`` (default) returns the
+            per-frame array; if supplied the frame axis is collapsed and the
+            scalar deterministic weighted-mean asphericity is returned.
+        etol : float, optional
+            Tolerance on ``|sum(weights) - 1|``. Default ``1e-7``.
 
         Returns
         -------
-        np.ndarray
-            1D array of length ``n_frames`` with the per-frame asphericity.
+        np.ndarray or float
+            Per-frame asphericity (length ``n_frames``), or the scalar
+            weighted mean if ``weights`` is supplied.
 
         Example
         -------
@@ -2786,13 +2848,19 @@ class SSProtein:
 
             asph_vector.append(asph)
 
-        return np.array(asph_vector)
+        asph_vector = np.array(asph_vector)
+
+        # optional deterministic frame re-weighting (collapses frame axis)
+        weights = self.__check_weights(weights, 1, etol)
+        if weights is False:
+            return asph_vector
+        return ssutils.weighted_mean(asph_vector, weights)
 
 
     # ........................................................................
     #
     #
-    def get_gyration_tensor(self, R1=None, R2=None, verbose=True):
+    def get_gyration_tensor(self, R1=None, R2=None, verbose=True, weights=False, etol=0.0000001):
         """Per-frame ``3 x 3`` gyration tensor of the chain (or a sub-region).
 
         The gyration tensor :math:`T_{ab} = (1/N) \\sum_i (r_{i,a} - R_a)(r_{i,b} - R_b)`
@@ -2811,12 +2879,19 @@ class SSProtein:
             the last residue (including caps).
         verbose : bool, optional
             If True (default), print one status line every 500 frames.
+        weights : array_like or False, optional
+            Per-frame re-weighting vector. ``False`` (default) returns the
+            per-frame ``(n_frames, 3, 3)`` array; if supplied the frame axis
+            is collapsed and a single deterministic weighted-mean ``(3, 3)``
+            tensor is returned.
+        etol : float, optional
+            Tolerance on ``|sum(weights) - 1|``. Default ``1e-7``.
 
         Returns
         -------
         np.ndarray
-            Array of shape ``(n_frames, 3, 3)`` where ``[f]`` is the gyration
-            tensor for frame ``f``.
+            ``(n_frames, 3, 3)`` per-frame tensors, or a single ``(3, 3)``
+            weighted-mean tensor if ``weights`` is supplied.
 
         Example
         -------
@@ -2868,14 +2943,19 @@ class SSProtein:
 
             gyration_tensor_vector.append(T_new)
 
+        gyration_tensor_vector = np.array(gyration_tensor_vector)
 
-        return np.array(gyration_tensor_vector)
+        # optional deterministic frame re-weighting -> single 3x3 tensor
+        weights = self.__check_weights(weights, 1, etol)
+        if weights is False:
+            return gyration_tensor_vector
+        return ssutils.weighted_mean(gyration_tensor_vector, weights, axis=0)
 
 
     # ........................................................................
     #
     #
-    def get_end_to_end_distance(self, mode='COM'):
+    def get_end_to_end_distance(self, mode='COM', weights=False, etol=0.0000001):
         """Per-frame end-to-end distance between the first and last CA residues.
 
         Caps (ACE / NME) are excluded — the "ends" are the first and last
@@ -2889,12 +2969,18 @@ class SSProtein:
         mode : {'CA', 'COM'}, optional
             * ``'COM'`` (default) - distance between residue centres of mass.
             * ``'CA'`` - distance between alpha-carbon atoms.
+        weights : array_like or False, optional
+            Per-frame re-weighting vector. ``False`` (default) returns the
+            per-frame array; if supplied the scalar deterministic
+            weighted-mean end-to-end distance is returned.
+        etol : float, optional
+            Tolerance on ``|sum(weights) - 1|``. Default ``1e-7``.
 
         Returns
         -------
-        np.ndarray
-            1D array of length ``n_frames`` with the per-frame end-to-end
-            distance in Angstroms.
+        np.ndarray or float
+            Per-frame end-to-end distance (length ``n_frames``), or the
+            scalar weighted mean if ``weights`` is supplied. Angstroms.
 
         Example
         -------
@@ -2915,7 +3001,10 @@ class SSProtein:
         elif mode == 'COM':
             distance = self.get_inter_residue_COM_distance(start, end, stride=1)
 
-        return distance
+        weights = self.__check_weights(weights, 1, etol)
+        if weights is False:
+            return distance
+        return ssutils.weighted_mean(distance, weights)
 
 
     # ........................................................................
@@ -2960,7 +3049,7 @@ class SSProtein:
     # ........................................................................
     #
     #
-    def get_radius_of_gyration(self, R1=None, R2=None):
+    def get_radius_of_gyration(self, R1=None, R2=None, weights=False, etol=0.0000001):
         """Per-frame radius of gyration of the chain (or a sub-region).
 
         :math:`R_g = \\sqrt{(1/N) \\sum_i (r_i - R)^2}` is the canonical
@@ -2976,12 +3065,21 @@ class SSProtein:
         R2 : int, optional
             Last residue of the region. ``None`` (default) means the last
             residue including caps.
+        weights : array_like or False, optional
+            Per-frame re-weighting vector (validated by
+            :func:`soursop.ssutils.validate_weights`). ``False`` (default)
+            returns the unmodified per-frame array. If supplied, the frame
+            axis is collapsed and the single deterministic weighted-mean
+            :math:`R_g` is returned instead.
+        etol : float, optional
+            Tolerance on ``|sum(weights) - 1|``. Default ``1e-7``.
 
         Returns
         -------
-        np.ndarray
-            1D array of length ``n_frames`` with the per-frame :math:`R_g` in
-            Angstroms.
+        np.ndarray or float
+            If ``weights is False``: 1D array of length ``n_frames`` with
+            the per-frame :math:`R_g` in Angstroms. If ``weights`` is
+            supplied: the scalar weighted-mean :math:`R_g`.
 
         Example
         -------
@@ -2992,14 +3090,19 @@ class SSProtein:
 
         (_, _, selection_string) = self.__get_first_and_last(R1,R2, withCA=False)
 
-        # in angstroms
-        return 10*md.compute_rg(self.traj.atom_slice(self.topology.select(selection_string)))
+        # in angstroms (per-frame)
+        rg = 10*md.compute_rg(self.traj.atom_slice(self.topology.select(selection_string)))
+
+        weights = self.__check_weights(weights, 1, etol)
+        if weights is False:
+            return rg
+        return ssutils.weighted_mean(rg, weights)
 
 
     # ........................................................................
     #
     #
-    def get_hydrodynamic_radius(self, R1=None, R2=None, mode='nygaard', alpha1=0.216, alpha2=4.06, alpha3=0.821, distance_mode='CA'):
+    def get_hydrodynamic_radius(self, R1=None, R2=None, mode='nygaard', alpha1=0.216, alpha2=4.06, alpha3=0.821, distance_mode='CA', weights=False, etol=0.0000001):
         """Per-frame apparent hydrodynamic radius :math:`R_h` (in Angstroms).
 
         Two estimators are available:
@@ -3030,12 +3133,18 @@ class SSProtein:
             For ``mode='kr'``, which inter-residue distance to feed into the
             Kirkwood-Riseman sum. Default is ``'CA'``. Ignored for
             ``mode='nygaard'``.
+        weights : array_like or False, optional
+            Per-frame re-weighting vector. ``False`` (default) returns the
+            per-frame array; if supplied the scalar deterministic
+            weighted-mean :math:`R_h` is returned.
+        etol : float, optional
+            Tolerance on ``|sum(weights) - 1|``. Default ``1e-7``.
 
         Returns
         -------
-        np.ndarray
-            1D array of length ``n_frames`` with the per-frame :math:`R_h` in
-            Angstroms.
+        np.ndarray or float
+            Per-frame :math:`R_h` (length ``n_frames``), or the scalar
+            weighted mean if ``weights`` is supplied. Angstroms.
 
         Example
         -------
@@ -3062,6 +3171,9 @@ class SSProtein:
         # check a valid mode was passed and FREAK OUT if not!
         ssutils.validate_keyword_option(mode, ['nygaard', 'kr'], 'mode')
 
+        # optional deterministic frame re-weighting (collapses frame axis)
+        wv = self.__check_weights(weights, 1, etol)
+
 
         # if we're using the nygaard mode
         if mode == 'nygaard':
@@ -3075,7 +3187,10 @@ class SSProtein:
 
             Rg_over_Rh = ((alpha1*(rg - alpha2*N_033)) / (N_060 - N_033)) + alpha3
 
-            return (1/Rg_over_Rh)*rg
+            Rh = (1/Rg_over_Rh)*rg
+            if wv is False:
+                return Rh
+            return ssutils.weighted_mean(Rh, wv)
 
         # if we're using the Kirkwood-Riseman mode
         elif mode == 'kr':
@@ -3103,7 +3218,9 @@ class SSProtein:
             # to get Rh
             Rh = np.reciprocal(np.mean(all_rij, axis=1).astype(float))
 
-            return Rh
+            if wv is False:
+                return Rh
+            return ssutils.weighted_mean(Rh, wv)
 
 
 
@@ -3145,7 +3262,7 @@ class SSProtein:
     # ........................................................................
     #
     #
-    def get_t(self, R1=None, R2=None):
+    def get_t(self, R1=None, R2=None, weights=False, etol=0.0000001):
         r"""Per-frame dimensionless size parameter :math:`\langle t \rangle`.
 
         :math:`\langle t \rangle` is the Vitalis-thesis size parameter
@@ -3161,12 +3278,20 @@ class SSProtein:
         R2 : int, optional
             Last residue of the region. ``None`` (default) means the last
             residue.
+        weights : array_like or False, optional
+            Per-frame re-weighting vector (``len == n_frames``), validated
+            by :func:`soursop.ssutils.validate_weights`. ``False``
+            (default) returns the per-frame array; if supplied the frame
+            axis is collapsed and the scalar deterministic weighted-mean
+            :math:`\langle t \rangle` is returned.
+        etol : float, optional
+            Tolerance on ``|sum(weights) - 1|``. Default ``1e-7``.
 
         Returns
         -------
-        np.ndarray
-            1D array of length ``n_frames`` with the per-frame
-            :math:`\langle t \rangle`.
+        np.ndarray or float
+            Per-frame :math:`\langle t \rangle` (length ``n_frames``), or
+            the scalar weighted mean if ``weights`` is supplied.
 
         Example
         -------
@@ -3198,8 +3323,14 @@ class SSProtein:
         # compile into a vectorized version
         K = np.vectorize(inst_t)
 
-        # run over all rg
-        return K(rg)
+        # per-frame t
+        t = K(rg)
+
+        # optional deterministic frame re-weighting (collapses frame axis)
+        weights = self.__check_weights(weights, 1, etol)
+        if weights is False:
+            return t
+        return ssutils.weighted_mean(t, weights)
 
 
     # ........................................................................
@@ -3283,6 +3414,38 @@ class SSProtein:
             self.__all_angles[angle_name] = [all_atom_names, angles]
 
         return self.__all_angles[angle_name]
+
+
+
+    # ........................................................................
+    #
+    #
+    def __ca_position_cache(self, stride):
+        """Return a closure ``r -> 10*COM`` of residue ``r``'s CA atom over
+        the strided frames, computed once per residue (per-call cache).
+
+        This reproduces, byte-for-byte, the CA branch of
+        ``get_inter_residue_atomic_distance`` (mode='atom', A1=A2='CA'):
+        the same ``__residue_atom_lookup`` -> ``atom_slice`` ->
+        ``__get_subtrajectory`` -> ``10*md.compute_center_of_mass``
+        sequence. The only difference is the per-residue result is cached,
+        so an O(n^2) pair loop performs O(n) CA-COM computations instead
+        of O(n^2). Lazy caching also preserves the exact first-error
+        location and message for a residue lacking a CA atom.
+        """
+        cache = {}
+
+        def _ca(r):
+            if r not in cache:
+                atom = self.__residue_atom_lookup(r, 'CA')
+                if len(atom) == 0:
+                    raise SSException(f'Unable to find atom [CA] in residue R1 ({r})')
+                TRJ = self.traj.atom_slice(atom)
+                TRJ = self.__get_subtrajectory(TRJ, stride)
+                cache[r] = 10 * md.compute_center_of_mass(TRJ)
+            return cache[r]
+
+        return _ca
 
 
 
@@ -3388,13 +3551,33 @@ class SSProtein:
         if max_seq_sep < 1:
             return ([], [])
 
+        # Deterministic re-weighting: a re-weighted ensemble *distribution*
+        # cannot be represented as a flat per-frame array, so weights are
+        # only meaningful when reducing to a mean.
+        if (weights is not False) and (mean_vals is False):
+            raise SSException(
+                "get_internal_scaling(): mean_vals=False is incompatible with "
+                "weights - a re-weighted distribution cannot be returned as a "
+                "flat per-frame array. Use mean_vals=True, or "
+                "get_internal_scaling_RMS()."
+            )
+
         seq_sep_distances = []
+        seq_sep_weights = []
         seq_sep_vals = []
+
+        # Hoist the per-residue CA position out of the O(n^2) pair loop.
+        # get_inter_residue_atomic_distance recomputes each residue's CA
+        # center-of-mass from scratch on every call; caching it per
+        # residue is byte-identical but O(n) rather than O(n^2).
+        if mode == 'CA':
+            _ca = self.__ca_position_cache(stride)
 
         for seq_sep in range(0, max_seq_sep):
             ssio.status_message(f"Internal Scaling - on sequence separation {seq_sep} of {max_seq_sep-1}", verbose)
 
             tmp = []
+            tmp_w = []
             seq_sep_vals.append(seq_sep)
             for pos in range(0, max_seq_sep-seq_sep):
 
@@ -3405,21 +3588,29 @@ class SSProtein:
                 # get the distance for every stride-th frame between those two positions using either the CA
                 # mode or the COM mode
                 if mode == 'CA':
-                    distance = self.get_inter_residue_atomic_distance(A, B, stride=stride)
+                    # byte-identical to get_inter_residue_atomic_distance(A, B, stride=stride)
+                    distance = np.linalg.norm(_ca(A) - _ca(B), axis=1)
 
                 elif mode == 'COM':
                     distance = self.get_inter_residue_COM_distance(A, B, stride=stride)
 
-                # if weights were provided subsample from the set of distances using the weights vector
-                if weights is not False:
-                    distance = choice(distance, len(distance), p=weights)
-
                 tmp = np.concatenate((tmp,distance))
 
+                # deterministic re-weighting: pool the (validated, per-frame)
+                # weights alongside the distances rather than stochastically
+                # resampling. The unweighted path is untouched.
+                if weights is not False:
+                    tmp_w = np.concatenate((tmp_w, weights))
+
             seq_sep_distances.append(tmp)
+            if weights is not False:
+                seq_sep_weights.append(tmp_w)
 
         if mean_vals:
-            mean_is = [np.mean(i) for i in seq_sep_distances]
+            if weights is not False:
+                mean_is = [ssutils.weighted_mean(d, w/np.sum(w)) for d, w in zip(seq_sep_distances, seq_sep_weights)]
+            else:
+                mean_is = [np.mean(i) for i in seq_sep_distances]
             return (seq_sep_vals, mean_is)
         else:
             return (seq_sep_vals, seq_sep_distances)
@@ -3483,11 +3674,31 @@ class SSProtein:
         aggregation. Arch Biochem Biophys. 2008;469:132-141.
         """
 
-        # compute the non RMS internal scaling behaviour
-        (seq_sep_vals, seq_sep_distances) = self.get_internal_scaling(R1=R1, R2=R2, mode=mode, mean_vals=False, stride=stride, weights=weights, etol=etol, verbose=verbose)
+        # validate weights here (get_internal_scaling no longer accepts
+        # weights with mean_vals=False); the raw per-pair distance pools
+        # are always computed unweighted and then reduced.
+        w = self.__check_weights(weights, stride, etol)
+
+        # compute the non RMS internal scaling behaviour (unweighted pools)
+        (seq_sep_vals, seq_sep_distances) = self.get_internal_scaling(R1=R1, R2=R2, mode=mode, mean_vals=False, stride=stride, weights=False, etol=etol, verbose=verbose)
 
         # calculate RMS for each distance
-        mean_is = [np.sqrt(np.mean(i*i)) for i in seq_sep_distances]
+        if w is False:
+            mean_is = [np.sqrt(np.mean(i*i)) for i in seq_sep_distances]
+        else:
+            # each separation's distance pool is n_pairs copies of a
+            # len(w) per-pair block; tile + renormalise the validated
+            # weights to match and take the deterministic weighted RMS.
+            n_w = len(w)
+            mean_is = []
+            for i in seq_sep_distances:
+                i = np.asarray(i)
+                if i.size == 0 or n_w == 0 or (i.size % n_w) != 0:
+                    mean_is.append(np.sqrt(np.mean(i*i)))
+                    continue
+                pooled = np.tile(w, i.size // n_w)
+                pooled = pooled / np.sum(pooled)
+                mean_is.append(ssutils.weighted_rms(i, pooled))
 
         return (seq_sep_vals, mean_is)
 
@@ -3639,12 +3850,22 @@ class SSProtein:
         seq_sep_RSTDS_distance   = []
         seq_sep_subsampled_distances  = []
 
+        # Hoist the per-residue CA position out of the O(n^2) pair loop.
+        # get_inter_residue_atomic_distance recomputes each residue's CA
+        # center-of-mass from scratch on every call; caching it per
+        # residue is byte-identical but O(n) rather than O(n^2). The
+        # hoist consumes no RNG, so the np.random error-bootstrap below
+        # sees an identical stream and its output is unchanged.
+        if mode == 'CA':
+            _ca = self.__ca_position_cache(stride)
+
         # for each possible sequence separation  (|i-j| value)
         for seq_sep in range(1, max_separation):
 
             ssio.status_message(f"Internal Scaling - on sequence separation {seq_sep} of {max_separation}", verbose)
 
             tmp = []
+            tmp_w = []
             seq_sep_vals.append(seq_sep)
 
             # collect all possible average seq-sep values weighted by the weights
@@ -3656,23 +3877,33 @@ class SSProtein:
 
 
                 if mode == 'CA':
-                    distance = self.get_inter_residue_atomic_distance(A, B, stride=stride)
+                    # byte-identical to get_inter_residue_atomic_distance(A, B, stride=stride)
+                    distance = np.linalg.norm(_ca(A) - _ca(B), axis=1)
 
                 elif mode == 'COM':
                     distance = self.get_inter_residue_COM_distance(A, B, stride=stride)
 
-                # compute the ensemble average of the distances
-                if weights is not False:
-                    distance = choice(distance, len(distance), p=weights)
-
                 tmp.extend(distance)
+
+                # deterministic re-weighting: pool the validated per-frame
+                # weights alongside the distances instead of stochastic
+                # resampling. Unweighted path is untouched.
+                if weights is not False:
+                    tmp_w.extend(weights)
 
             tmp = np.array(tmp)
 
             # add mean and std vals for this sequence sep
-            seq_sep_RMS_distance.append(np.sqrt(np.mean(tmp*tmp)))
-            seq_sep_RSTDS_distance.append(np.sqrt(np.std(tmp*tmp)))
-            seq_sep_RMS_var_distance.append(np.sqrt(np.power(np.var(tmp),2)))
+            if weights is not False:
+                wn = np.array(tmp_w)
+                wn = wn / np.sum(wn)
+                seq_sep_RMS_distance.append(ssutils.weighted_rms(tmp, wn))
+                seq_sep_RSTDS_distance.append(np.sqrt(ssutils.weighted_std(tmp*tmp, wn)))
+                seq_sep_RMS_var_distance.append(np.sqrt(np.power(ssutils.weighted_std(tmp, wn)**2, 2)))
+            else:
+                seq_sep_RMS_distance.append(np.sqrt(np.mean(tmp*tmp)))
+                seq_sep_RSTDS_distance.append(np.sqrt(np.std(tmp*tmp)))
+                seq_sep_RMS_var_distance.append(np.sqrt(np.power(np.var(tmp),2)))
 
             if num_subdivisions_for_error > 0:
 
@@ -3695,8 +3926,19 @@ class SSProtein:
 
                 for idx_set in subdivided_idx:
 
-                    # subselect a random set of distances and compute RMS
-                    RMS_local.append(np.sqrt(np.mean(tmp[idx_set]*tmp[idx_set])))
+                    # subselect a random set of distances and compute RMS.
+                    # The permutation/chunking (and hence the RNG stream) is
+                    # identical to the unweighted path; only the per-chunk
+                    # statistic is deterministically re-weighted.
+                    if weights is not False:
+                        cw = wn[idx_set]
+                        cw_sum = np.sum(cw)
+                        if cw_sum <= 0.0:
+                            RMS_local.append(np.nan)
+                        else:
+                            RMS_local.append(ssutils.weighted_rms(tmp[idx_set], cw / cw_sum))
+                    else:
+                        RMS_local.append(np.sqrt(np.mean(tmp[idx_set]*tmp[idx_set])))
 
                 # add distribution of values for this sequence sep
                 seq_sep_subsampled_distances.append(RMS_local)
@@ -3782,7 +4024,7 @@ class SSProtein:
     # ........................................................................
     #
     #
-    def get_all_SASA(self, probe_radius=1.4, mode='residue', stride=20):
+    def get_all_SASA(self, probe_radius=1.4, mode='residue', stride=20, weights=False, etol=0.0000001):
         """Solvent-accessible surface area (SASA) per residue or per atom.
 
         Internally uses mdtraj's Shrake-Rupley implementation (Golden-Spiral
@@ -3811,11 +4053,22 @@ class SSProtein:
               arrays.
         stride : int, optional
             Use every ``stride``-th frame. Default is 20.
+        weights : array_like or False, optional
+            Per-frame re-weighting vector (validated against the strided
+            frame axis). ``False`` (default) returns the per-frame array
+            (and uses the memo cache). If supplied, the strided frame axis
+            is collapsed and the deterministic weighted-mean SASA is
+            returned (not cached).
+        etol : float, optional
+            Tolerance on ``|sum(weights) - 1|``. Default ``1e-7``.
 
         Returns
         -------
         np.ndarray or tuple of np.ndarray
-            See ``mode`` description. All arrays are in Angstroms^2.
+            See ``mode`` description. All arrays are in Angstroms^2. If
+            ``weights`` is supplied the frame axis is collapsed (e.g.
+            ``(n_residues,)`` for ``mode='residue'``; a 3-tuple of such
+            arrays for ``mode='all'``).
 
         Example
         -------
@@ -3869,11 +4122,17 @@ class SSProtein:
         # validate input mode
         ssutils.validate_keyword_option(mode, ['residue', 'atom','backbone','sidechain','all'], 'mode')
 
+        # optional deterministic frame re-weighting. The weights are
+        # validated against the STRIDED frame axis (the validator applies
+        # the stride + renormalises). The memoisation cache is only used
+        # for the unweighted path so cached results stay byte-identical.
+        wv = self.__check_weights(weights, stride, etol)
+
         # build a specific memoized name for this request
         memoized_name = f'SASA_{stride}_{mode}_{probe_radius}'
 
         # return already computed SASA is available...
-        if memoized_name in self.__SASA_saved:
+        if wv is False and memoized_name in self.__SASA_saved:
             return self.__SASA_saved[memoized_name]
 
         # downsample based on the stride
@@ -3911,16 +4170,22 @@ class SSProtein:
             if mode == 'all':
                 return_data =  (ALL_SASA, SC_SASA, BB_SASA)
 
-        # save for the future!!
-        self.__SASA_saved[memoized_name] = return_data
-        return return_data
+        # unweighted: cache + return exactly as before (byte-identical)
+        if wv is False:
+            self.__SASA_saved[memoized_name] = return_data
+            return return_data
+
+        # weighted: collapse the (strided) frame axis; do not cache
+        if mode == 'all':
+            return tuple(ssutils.weighted_mean(x, wv, axis=0) for x in return_data)
+        return ssutils.weighted_mean(return_data, wv, axis=0)
 
 
 
     # ........................................................................
     #
     #
-    def get_site_accessibility(self, input_list, probe_radius=1.4, mode='residue_type', stride=20):
+    def get_site_accessibility(self, input_list, probe_radius=1.4, mode='residue_type', stride=20, weights=False, etol=0.0000001):
         """Mean & std SASA for selected residue types or specific residue indices.
 
         Under ``mode='residue_type'``, ``input_list`` is interpreted as
@@ -3945,6 +4210,14 @@ class SSProtein:
             How to interpret ``input_list``. Default ``'residue_type'``.
         stride : int, optional
             Use every ``stride``-th frame. Default is 20.
+        weights : array_like or False, optional
+            Per-frame re-weighting vector (validated against the strided
+            frame axis). ``False`` (default) gives the ordinary mean/std
+            (byte-identical to before); if supplied the per-residue
+            ``[mean, std]`` is the deterministic weighted mean and weighted
+            (population) std.
+        etol : float, optional
+            Tolerance on ``|sum(weights) - 1|``. Default ``1e-7``.
 
         Returns
         -------
@@ -4005,16 +4278,24 @@ class SSProtein:
 
         lookup = self.get_amino_acid_sequence()
 
+        # optional deterministic frame re-weighting (validated against the
+        # strided frame axis used by get_all_SASA)
+        wv = self.__check_weights(weights, stride, etol)
+
         return_data = {}
         for i in resid_list:
-            return_data[lookup[i]] = [np.mean(ALL_SASA[i]), np.std(ALL_SASA[i])]
+            if wv is False:
+                return_data[lookup[i]] = [np.mean(ALL_SASA[i]), np.std(ALL_SASA[i])]
+            else:
+                return_data[lookup[i]] = [ssutils.weighted_mean(ALL_SASA[i], wv),
+                                          ssutils.weighted_std(ALL_SASA[i], wv)]
 
         return return_data
 
     # ........................................................................
     #
     #
-    def get_regional_SASA(self, R1, R2, probe_radius=1.4, stride=20):
+    def get_regional_SASA(self, R1, R2, probe_radius=1.4, stride=20, weights=False, etol=0.0000001):
         """Mean total SASA summed over a contiguous residue range.
 
         Calls :meth:`get_all_SASA` (whose result is memoised) and sums the
@@ -4034,6 +4315,13 @@ class SSProtein:
             Solvent probe radius in Angstroms. Default 1.4 (water).
         stride : int, optional
             Use every ``stride``-th frame. Default is 20.
+        weights : array_like or False, optional
+            Per-frame re-weighting vector (validated against the strided
+            frame axis). ``False`` (default) is byte-identical to before;
+            if supplied each residue's time-average is the deterministic
+            weighted mean before summing.
+        etol : float, optional
+            Tolerance on ``|sum(weights) - 1|``. Default ``1e-7``.
 
         Returns
         -------
@@ -4053,9 +4341,16 @@ class SSProtein:
 
         total = np.transpose(total)
 
+        # optional deterministic frame re-weighting (validated against the
+        # strided frame axis used by get_all_SASA)
+        wv = self.__check_weights(weights, stride, etol)
+
         regional_SASA = 0
         for i in range(R1, R2):
-            regional_SASA = regional_SASA + np.mean(total[i])
+            if wv is False:
+                regional_SASA = regional_SASA + np.mean(total[i])
+            else:
+                regional_SASA = regional_SASA + ssutils.weighted_mean(total[i], wv)
 
         # return the mean sum of SASA for all atoms
         return regional_SASA
@@ -4367,6 +4662,15 @@ class SSProtein:
 
         FIRST_CHECK = True
 
+        # Hoist the per-residue CA position out of the O(n^2) pair loop.
+        # get_inter_residue_atomic_distance recomputes each residue's CA
+        # center-of-mass from scratch on every call; caching it per
+        # residue is byte-identical but O(n) rather than O(n^2). The
+        # hoist consumes no RNG, so the downstream pair-resampling sees
+        # an identical stream and its output is unchanged.
+        if mode == 'CA':
+            _ca = self.__ca_position_cache(stride)
+
         # start with a sequence separation of 1
         for seq_sep in range(1, self.n_residues):
             ssio.status_message(f"On sequence separation {seq_sep}", verbose)
@@ -4380,7 +4684,8 @@ class SSProtein:
                 # get the distance for every stride-th frame between those two positions using either the CA
                 # mode or the COM mode
                 if mode == 'CA':
-                    distance = self.get_inter_residue_atomic_distance(A, B, stride=stride)
+                    # byte-identical to get_inter_residue_atomic_distance(A, B, stride=stride)
+                    distance = np.linalg.norm(_ca(A) - _ca(B), axis=1)
 
                 elif mode == 'COM':
                     distance = self.get_inter_residue_COM_distance(A, B, stride=stride)
@@ -4405,8 +4710,15 @@ class SSProtein:
 
         return_data = np.zeros((len(pair_selection_vector)*n_cycles,2))
 
-        weights = False
-        weights = np.repeat(1.0/len(stride_rg),len(stride_rg))
+        # Default (unweighted) behaviour: uniform weights, so the weighted
+        # covariance path below reduces to the ordinary Pearson
+        # correlation - byte-identical to the previous default. If the
+        # caller supplied weights they were validated, strided and
+        # renormalised by __check_weights() above and are now used
+        # directly (previously they were silently discarded here, so the
+        # weighted path was a no-op - that bug is fixed).
+        if weights is False:
+            weights = np.repeat(1.0/len(stride_rg), len(stride_rg))
 
         idx=0
         for n_selected in pair_selection_vector:
@@ -4461,7 +4773,7 @@ class SSProtein:
     # ........................................................................
     #
     #
-    def get_end_to_end_vs_rg_correlation(self, mode='COM'):
+    def get_end_to_end_vs_rg_correlation(self, mode='COM', weights=False, etol=0.0000001):
         """Pearson correlation between per-frame :math:`R_e^2` and :math:`R_g^2`.
 
         For a Gaussian chain Debye's result gives :math:`R_e^2 = 6 R_g^2`,
@@ -4501,14 +4813,19 @@ class SSProtein:
         # matter , ie really this is Rg^2 vs Re^2 - scalar is irrelevant. But, this approach is consistent with
         # the approach in the get_local_to_global_correlation() function
         local_mean_square = np.power(distance,2)/(2)
-        c = np.corrcoef(local_mean_square, np.power(full_rg,2))[0][1]
+
+        weights = self.__check_weights(weights, 1, etol)
+        if weights is False:
+            c = np.corrcoef(local_mean_square, np.power(full_rg,2))[0][1]
+        else:
+            c = ssutils.weighted_corr(local_mean_square, np.power(full_rg,2), weights)
 
         return c
 
     # ........................................................................
     #
     #
-    def get_secondary_structure_DSSP(self, R1=None, R2=None, return_per_frame=False):
+    def get_secondary_structure_DSSP(self, R1=None, R2=None, return_per_frame=False, weights=False, etol=0.0000001):
         """Per-residue secondary structure (helix / extended / coil) via DSSP.
 
         Calls ``mdtraj.compute_dssp`` on the chosen residue range and
@@ -4529,6 +4846,16 @@ class SSProtein:
         return_per_frame : bool, optional
             * False (default): return per-residue fractional occupancies.
             * True: return per-frame binary 1/0 masks.
+        weights : array_like or False, optional
+            Per-frame re-weighting vector (``len == n_frames``), validated
+            by :func:`soursop.ssutils.validate_weights`. Only valid with
+            ``return_per_frame=False``: the per-residue fractional
+            occupancies become the deterministic frame-weighted fractions.
+            Supplying ``weights`` with ``return_per_frame=True`` raises an
+            ``SSException`` (a per-frame mask is not an ensemble average).
+            Default ``False`` (unweighted).
+        etol : float, optional
+            Tolerance on ``|sum(weights) - 1|``. Default ``1e-7``.
 
         Returns
         -------
@@ -4558,6 +4885,17 @@ class SSProtein:
         # select the relevant subtrajectory (out[2] is the 'resid %i to %i' where %i and %i are R1 and R2)
         ats = self.traj.atom_slice(self.topology.select(f'{out[2]}'))
 
+        # validate optional per-frame re-weighting (only meaningful for the
+        # collapsed per-residue fractions; a per-frame mask is not an
+        # ensemble average)
+        wv = self.__check_weights(weights, 1, etol)
+        if wv is not False and return_per_frame is True:
+            raise SSException(
+                "get_secondary_structure_DSSP(): weights are only valid "
+                "with return_per_frame=False (a per-frame binary mask is "
+                "not a re-weighted ensemble average)."
+            )
+
         # compute DSSP over the selected subtrajectory
         dssp_data = md.compute_dssp(ats)
         reslist    = list(range(R1_real, R2_real+1))
@@ -4580,9 +4918,15 @@ class SSProtein:
             n_frames   = self.n_frames
 
             for i in range(len(reslist)):
-                C_vector.append(float(sum(dssp_data.transpose()[i] == 'C'))/n_frames)
-                E_vector.append(float(sum(dssp_data.transpose()[i] == 'E'))/n_frames)
-                H_vector.append(float(sum(dssp_data.transpose()[i] == 'H'))/n_frames)
+                if wv is False:
+                    C_vector.append(float(sum(dssp_data.transpose()[i] == 'C'))/n_frames)
+                    E_vector.append(float(sum(dssp_data.transpose()[i] == 'E'))/n_frames)
+                    H_vector.append(float(sum(dssp_data.transpose()[i] == 'H'))/n_frames)
+                else:
+                    col = dssp_data.transpose()[i]
+                    C_vector.append(ssutils.weighted_mean((col == 'C').astype(float), wv))
+                    E_vector.append(ssutils.weighted_mean((col == 'E').astype(float), wv))
+                    H_vector.append(ssutils.weighted_mean((col == 'H').astype(float), wv))
 
 
             return (reslist, np.array(H_vector), np.array(E_vector), np.array(C_vector))
@@ -4591,7 +4935,7 @@ class SSProtein:
     # ........................................................................
     #
     #
-    def get_secondary_structure_BBSEG(self, R1=None, R2=None, return_per_frame=False):
+    def get_secondary_structure_BBSEG(self, R1=None, R2=None, return_per_frame=False, weights=False, etol=0.0000001):
         """Per-residue secondary structure via the BBSEG2 phi/psi classification.
 
         Classifies each (phi, psi) pair into one of 9 BBSEG2 bins using a
@@ -4621,6 +4965,15 @@ class SSProtein:
         return_per_frame : bool, optional
             * False (default): return per-residue fractional occupancies.
             * True: return per-frame binary masks.
+        weights : array_like or False, optional
+            Per-frame re-weighting vector (``len == n_frames``), validated
+            by :func:`soursop.ssutils.validate_weights`. Only valid with
+            ``return_per_frame=False``: the per-class per-residue fractional
+            occupancies become the deterministic frame-weighted fractions.
+            Supplying ``weights`` with ``return_per_frame=True`` raises an
+            ``SSException``. Default ``False`` (unweighted).
+        etol : float, optional
+            Tolerance on ``|sum(weights) - 1|``. Default ``1e-7``.
 
         Returns
         -------
@@ -4674,6 +5027,16 @@ class SSProtein:
         all_classes = np.array(all_classes)
         return_bbseg = {}
 
+        # validate optional per-frame re-weighting (only meaningful for the
+        # collapsed per-residue fractions)
+        wv = self.__check_weights(weights, 1, etol)
+        if wv is not False and return_per_frame:
+            raise SSException(
+                "get_secondary_structure_BBSEG(): weights are only valid "
+                "with return_per_frame=False (a per-frame binary mask is "
+                "not a re-weighted ensemble average)."
+            )
+
         # if we want per-frame BBSEG secondary structure info
         if return_per_frame:
 
@@ -4697,7 +5060,10 @@ class SSProtein:
             # over each frame (shape_info[0] is number of frames)
 
             for c in range(0,9):
-                return_bbseg[c] = np.sum((all_classes == c)*1,0)/shape_info[0]
+                if wv is False:
+                    return_bbseg[c] = np.sum((all_classes == c)*1,0)/shape_info[0]
+                else:
+                    return_bbseg[c] = ssutils.weighted_mean((all_classes == c).astype(float), wv, axis=0)
 
             return (reslist, return_bbseg)
 
@@ -4783,7 +5149,7 @@ class SSProtein:
     # ........................................................................
     #
     #
-    def get_angle_decay(self, atom1='C', atom2='N', return_all_pairs=False):
+    def get_angle_decay(self, atom1='C', atom2='N', return_all_pairs=False, weights=False, etol=0.0000001):
 
         """Bond-vector autocorrelation along the chain (persistence-length proxy).
 
@@ -4807,6 +5173,13 @@ class SSProtein:
         return_all_pairs : bool, optional
             If True, additionally return a dict of every individual
             ``"i-j"`` residue-pair correlation. Default is False.
+        weights : array_like or False, optional
+            Per-frame re-weighting vector. ``False`` (default) is
+            byte-identical to before. If supplied, each residue-pair's
+            mean cos(theta) is the deterministic frame-weighted mean
+            (the over-pairs averaging per separation is unchanged).
+        etol : float, optional
+            Tolerance on ``|sum(weights) - 1|``. Default ``1e-7``.
 
         Returns
         -------
@@ -4824,6 +5197,11 @@ class SSProtein:
         >>> decay = protein.get_angle_decay()
         >>> # decay[:, 0] is separation, decay[:, 1] is mean correlation
         """
+
+        # optional deterministic per-frame re-weighting of each pair's
+        # mean cos(theta) (weighting is over frames, not over residue
+        # pairs - the per-separation mean/std over pairs is unchanged).
+        wv = self.__check_weights(weights, 1, etol)
 
         # first compute all the C-N vector for each residue
 
@@ -4870,7 +5248,11 @@ class SSProtein:
                 # average to avoid storing a ton of numbers and generating these giant vectors
                 # 
 
-                all_vals[j1-i1].append(np.mean(np.sum(CN_vectors[i1]*CN_vectors[j1],axis=1)/length_multiplier[i1][j1]))
+                per_frame_cos = np.sum(CN_vectors[i1]*CN_vectors[j1],axis=1)/length_multiplier[i1][j1]
+                if wv is False:
+                    all_vals[j1-i1].append(np.mean(per_frame_cos))
+                else:
+                    all_vals[j1-i1].append(ssutils.weighted_mean(per_frame_cos, wv))
 
         return_matrix = []
         return_matrix.append([0, 1.0, 0.0])
@@ -4914,7 +5296,7 @@ class SSProtein:
     #oxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxo
     #
     #
-    def get_local_collapse(self, window_size=10, bins=None, verbose=True):
+    def get_local_collapse(self, window_size=10, bins=None, verbose=True, weights=False, etol=0.0000001):
         """Sliding-window local radius of gyration profile.
 
         At every starting residue ``i`` the local Rg is computed over the
@@ -4932,6 +5314,13 @@ class SSProtein:
             ``np.arange(0, 10, 0.01)`` is used.
         verbose : bool, optional
             If True (default), print one status line per starting residue.
+        weights : array_like or False, optional
+            Per-frame re-weighting vector. ``False`` (default) is
+            byte-identical to before. If supplied, each window's mean/std
+            is the deterministic weighted mean / weighted (population) std
+            and the histogram counts are frame-weighted.
+        etol : float, optional
+            Tolerance on ``|sum(weights) - 1|``. Default ``1e-7``.
 
         Returns
         -------
@@ -5004,6 +5393,10 @@ class SSProtein:
         if window_size > n_residues:
             raise SSException('window_size is larger than the number of residues')
 
+        # optional deterministic frame re-weighting (collapses the
+        # per-window frame distribution)
+        wv = self.__check_weights(weights, 1, etol)
+
         meanData = []
         stdData  = []
         histo    = []
@@ -5016,12 +5409,16 @@ class SSProtein:
             # - in previous versions we performed a conversion here)
             tmp = self.get_radius_of_gyration(i - (window_size-1), i)
 
-
-            (b, c) = np.histogram(tmp, bins)
-            histo.append(b)
-
-            meanData.append(np.mean(tmp))
-            stdData.append(np.std(tmp))
+            if wv is False:
+                (b, c) = np.histogram(tmp, bins)
+                histo.append(b)
+                meanData.append(np.mean(tmp))
+                stdData.append(np.std(tmp))
+            else:
+                (b, c) = np.histogram(tmp, bins, weights=wv)
+                histo.append(b)
+                meanData.append(ssutils.weighted_mean(tmp, wv))
+                stdData.append(ssutils.weighted_std(tmp, wv))
 
 
         return (meanData, stdData, histo, bins)

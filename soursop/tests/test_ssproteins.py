@@ -364,7 +364,9 @@ def test_check_weights_invalid_weights_type(GS6_CP, NTL9_CP):
     proteins = [GS6_CP, NTL9_CP]
     for protein in proteins:
         weights = 'abcdefgh'
-        with pytest.raises(ValueError):
+        # __check_weights now delegates to ssutils.validate_weights, which
+        # raises a (consistent) SSException for non-numeric input.
+        with pytest.raises(SSException):
             protein._SSProtein__check_weights(weights=weights)
 
 
