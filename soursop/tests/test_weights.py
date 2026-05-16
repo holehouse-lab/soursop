@@ -554,3 +554,110 @@ class TestContactMapWeightsAndStride:
             P.get_contact_map(mode='ca', stride=2, weights=_uniform(n - 1))
         with pytest.raises(SSException):                   # sum != 1
             P.get_contact_map(mode='ca', weights=np.full(n, 0.5 / n))
+
+
+# --------------------------------------------------------------------------
+# Additional opt-in reweighted getters: the two inter-residue distance
+# functions, get_t, and DSSP / BBSEG (return_per_frame=False only).
+# --------------------------------------------------------------------------
+class TestExtraReweightedGetters:
+
+    def test_inter_residue_COM_distance(self, NTL9_CP):
+        P = NTL9_CP
+        n = P.n_frames
+        base = np.asarray(P.get_inter_residue_COM_distance(1, 20))
+        assert np.isclose(P.get_inter_residue_COM_distance(1, 20, weights=_uniform(n)),
+                          base.mean(), rtol=1e-6, atol=1e-9)
+
+    def test_inter_residue_COM_distance_one_hot(self, GS6_CP):
+        P = GS6_CP
+        n = P.n_frames
+        base = np.asarray(P.get_inter_residue_COM_distance(1, 5))
+        for k in range(n):
+            assert np.isclose(P.get_inter_residue_COM_distance(1, 5, weights=_one_hot(n, k)),
+                              base[k], rtol=1e-9, atol=1e-9)
+
+    def test_inter_residue_atomic_distance(self, NTL9_CP):
+        P = NTL9_CP
+        n = P.n_frames
+        for mode in ('atom', 'ca', 'closest', 'closest-heavy'):
+            base = np.asarray(P.get_inter_residue_atomic_distance(1, 20, mode=mode))
+            assert np.isclose(P.get_inter_residue_atomic_distance(1, 20, mode=mode, weights=_uniform(n)),
+                              base.mean(), rtol=1e-5, atol=1e-6), mode
+
+    def test_inter_residue_atomic_distance_one_hot(self, GS6_CP):
+        P = GS6_CP
+        n = P.n_frames
+        base = np.asarray(P.get_inter_residue_atomic_distance(1, 5))
+        for k in range(n):
+            assert np.isclose(P.get_inter_residue_atomic_distance(1, 5, weights=_one_hot(n, k)),
+                              base[k], rtol=1e-9, atol=1e-9)
+
+    def test_inter_residue_distances_stride_plus_weights(self, NTL9_CP):
+        # full-length weights + stride must work and equal the unweighted
+        # strided mean (uniform over strided frames == plain strided mean)
+        P = NTL9_CP
+        n = P.n_frames
+        uni = _uniform(n)
+        for fn in (lambda **k: P.get_inter_residue_COM_distance(1, 20, stride=2, **k),
+                   lambda **k: P.get_inter_residue_atomic_distance(1, 20, stride=2, **k)):
+            base = np.asarray(fn()).mean()
+            assert np.isclose(fn(weights=uni), base, rtol=1e-5, atol=1e-6)
+
+    def test_get_t(self, NTL9_CP):
+        P = NTL9_CP
+        n = P.n_frames
+        base = np.asarray(P.get_t())
+        assert np.isclose(P.get_t(weights=_uniform(n)), base.mean(), rtol=1e-6, atol=1e-9)
+
+    def test_get_t_one_hot(self, GS6_CP):
+        P = GS6_CP
+        n = P.n_frames
+        base = np.asarray(P.get_t())
+        for k in range(n):
+            assert np.isclose(P.get_t(weights=_one_hot(n, k)), base[k], rtol=1e-9, atol=1e-9)
+
+    def test_dssp_uniform_and_onehot(self, NTL9_CP):
+        P = NTL9_CP
+        n = P.n_frames
+        r0, h0, e0, c0 = P.get_secondary_structure_DSSP()
+        r1, h1, e1, c1 = P.get_secondary_structure_DSSP(weights=_uniform(n))
+        assert r0 == r1
+        assert np.allclose(h0, h1, rtol=1e-5, atol=1e-6)
+        assert np.allclose(e0, e1, rtol=1e-5, atol=1e-6)
+        assert np.allclose(c0, c1, rtol=1e-5, atol=1e-6)
+        # one-hot -> the fractions are exactly that frame's 0/1 masks
+        _, hk, ek, ck = P.get_secondary_structure_DSSP(weights=_one_hot(n, 0))
+        for arr in (hk, ek, ck):
+            assert set(np.unique(arr)).issubset({0.0, 1.0})
+
+    def test_dssp_per_frame_with_weights_raises(self, GS6_CP):
+        P = GS6_CP
+        with pytest.raises(SSException):
+            P.get_secondary_structure_DSSP(return_per_frame=True,
+                                           weights=_uniform(P.n_frames))
+
+    def test_bbseg_uniform(self, NTL9_CP):
+        P = NTL9_CP
+        n = P.n_frames
+        r0, cls0 = P.get_secondary_structure_BBSEG()
+        r1, cls1 = P.get_secondary_structure_BBSEG(weights=_uniform(n))
+        assert r0 == r1
+        for c in range(9):
+            assert np.allclose(cls0[c], cls1[c], rtol=1e-5, atol=1e-6), c
+
+    def test_bbseg_per_frame_with_weights_raises(self, GS6_CP):
+        P = GS6_CP
+        with pytest.raises(SSException):
+            P.get_secondary_structure_BBSEG(return_per_frame=True,
+                                            weights=_uniform(P.n_frames))
+
+    def test_invalid_weights_raise(self, GS6_CP):
+        P = GS6_CP
+        n = P.n_frames
+        with pytest.raises(SSException):
+            P.get_inter_residue_COM_distance(1, 5, weights=_uniform(n - 1))
+        with pytest.raises(SSException):
+            P.get_inter_residue_atomic_distance(1, 5, weights=np.full(n, 0.5 / n))
+        with pytest.raises(SSException):
+            P.get_t(weights=np.full(n, 2.0 / n))

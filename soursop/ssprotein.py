@@ -1072,8 +1072,6 @@ class SSProtein:
                 return [x.split('-')[0] for x in self.__amino_acids_3LTR]
 
 
-
-
     # ........................................................................
     #
     def get_CA_index(self, resid):
@@ -1728,7 +1726,6 @@ class SSProtein:
                 "Call without weights."
             )
 
-
         meanData = []
         stdData  = []
         histo    = []
@@ -1839,7 +1836,6 @@ class SSProtein:
         D_vector = []
         for A in range(0, n_frames):
             ssio.status_message(f"Running PHI calculation on frame {A} of {n_frames}", verbose)
-
 
             for B in range(A+1, n_frames):
 
@@ -2385,7 +2381,6 @@ class SSProtein:
         return (normalized_contact_map, normalized_contact_order)
 
 
-
     # ........................................................................
     #
     #
@@ -2537,7 +2532,7 @@ class SSProtein:
     # ........................................................................
     #
     #
-    def get_inter_residue_COM_distance(self, R1, R2, stride=1):
+    def get_inter_residue_COM_distance(self, R1, R2, stride=1, weights=False, etol=0.0000001):
         """Per-frame distance between two residues' centres of mass.
 
         Distances are in Angstroms.
@@ -2550,12 +2545,24 @@ class SSProtein:
             Resid of the second residue.
         stride : int, optional
             Use every ``stride``-th frame. Default is 1.
+        weights : array_like or False, optional
+            Per-frame re-weighting vector, one entry per trajectory frame
+            (``len == n_frames``), validated by
+            :func:`soursop.ssutils.validate_weights` (stride-subsampled and
+            renormalised to align with the strided frames). ``False``
+            (default) returns the per-frame array; if supplied the frame
+            axis is collapsed and the scalar deterministic weighted-mean
+            distance is returned.
+        etol : float, optional
+            Tolerance on ``|sum(weights) - 1|``. Default ``1e-7``.
 
         Returns
         -------
-        np.ndarray
-            1D array of length ``ceil(n_frames / stride)`` with the
-            inter-residue COM distance for each (strided) frame, in Angstroms.
+        np.ndarray or float
+            If ``weights is False``: 1D array of length
+            ``ceil(n_frames / stride)`` with the inter-residue COM distance
+            for each (strided) frame. If ``weights`` is supplied: the
+            scalar weighted-mean distance. Angstroms.
 
         Example
         -------
@@ -2569,16 +2576,19 @@ class SSProtein:
         COM_2 = self.get_residue_COM(R2)[::stride]
 
 
-            
+
         # calculate distance
         # note 10* to get angstroms was done at the get_residue_COM level
         distances = np.linalg.norm(COM_1 - COM_2, axis=1)
-        
+
         # old way
         #d = np.sqrt(np.square(np.transpose(COM_1)[0] - np.transpose(COM_2)[0]) + np.square(np.transpose(COM_1)[1] - np.transpose(COM_2)[1])+np.square(np.transpose(COM_1)[2] - np.transpose(COM_2)[2]))
 
-
-        return distances
+        # optional deterministic frame re-weighting (collapses frame axis)
+        weights = self.__check_weights(weights, stride, etol)
+        if weights is False:
+            return distances
+        return ssutils.weighted_mean(distances, weights)
 
 
 
@@ -2626,7 +2636,7 @@ class SSProtein:
     # ........................................................................
     #
     #
-    def get_inter_residue_atomic_distance(self, R1, R2, A1='CA', A2='CA', mode='atom', stride=1):
+    def get_inter_residue_atomic_distance(self, R1, R2, A1='CA', A2='CA', mode='atom', stride=1, weights=False, etol=0.0000001):
         """Per-frame distance between two residues, with mode-dependent semantics.
 
         For ``mode='atom'`` the distance is between the named atoms ``A1`` of
@@ -2662,15 +2672,28 @@ class SSProtein:
 
         Returns
         -------
-        np.ndarray
-            1D array of length ``ceil(n_frames / stride)`` with the
-            inter-residue distance for each (strided) frame, in Angstroms.
+        np.ndarray or float
+            If ``weights is False``: 1D array of length
+            ``ceil(n_frames / stride)`` with the inter-residue distance for
+            each (strided) frame. If ``weights`` is supplied: the scalar
+            deterministic weighted-mean distance. Angstroms.
+
+        Other Parameters
+        ----------------
+        weights : array_like or False, optional
+            Per-frame re-weighting vector, one entry per trajectory frame
+            (``len == n_frames``), validated by
+            :func:`soursop.ssutils.validate_weights` and stride-aligned.
+            ``False`` (default) returns the per-frame array; if supplied
+            the frame axis is collapsed to the scalar weighted mean.
+        etol : float, optional
+            Tolerance on ``|sum(weights) - 1|``. Default ``1e-7``.
 
         Raises
         ------
         SSException
-            If ``mode`` is invalid or if an atom name cannot be found in the
-            corresponding residue.
+            If ``mode`` is invalid, an atom name cannot be found in the
+            corresponding residue, or the weight vector fails validation.
 
         Example
         -------
@@ -2719,8 +2742,11 @@ class SSProtein:
             subtraj = self.__get_subtrajectory(self.traj, stride)
             distances = 10*md.compute_contacts(subtraj, [[R1,R2]], scheme=mode, periodic=False)[0].ravel()
 
-
-        return distances
+        # optional deterministic frame re-weighting (collapses frame axis)
+        weights = self.__check_weights(weights, stride, etol)
+        if weights is False:
+            return distances
+        return ssutils.weighted_mean(distances, weights)
 
 
 
@@ -3236,7 +3262,7 @@ class SSProtein:
     # ........................................................................
     #
     #
-    def get_t(self, R1=None, R2=None):
+    def get_t(self, R1=None, R2=None, weights=False, etol=0.0000001):
         r"""Per-frame dimensionless size parameter :math:`\langle t \rangle`.
 
         :math:`\langle t \rangle` is the Vitalis-thesis size parameter
@@ -3252,12 +3278,20 @@ class SSProtein:
         R2 : int, optional
             Last residue of the region. ``None`` (default) means the last
             residue.
+        weights : array_like or False, optional
+            Per-frame re-weighting vector (``len == n_frames``), validated
+            by :func:`soursop.ssutils.validate_weights`. ``False``
+            (default) returns the per-frame array; if supplied the frame
+            axis is collapsed and the scalar deterministic weighted-mean
+            :math:`\langle t \rangle` is returned.
+        etol : float, optional
+            Tolerance on ``|sum(weights) - 1|``. Default ``1e-7``.
 
         Returns
         -------
-        np.ndarray
-            1D array of length ``n_frames`` with the per-frame
-            :math:`\langle t \rangle`.
+        np.ndarray or float
+            Per-frame :math:`\langle t \rangle` (length ``n_frames``), or
+            the scalar weighted mean if ``weights`` is supplied.
 
         Example
         -------
@@ -3289,8 +3323,14 @@ class SSProtein:
         # compile into a vectorized version
         K = np.vectorize(inst_t)
 
-        # run over all rg
-        return K(rg)
+        # per-frame t
+        t = K(rg)
+
+        # optional deterministic frame re-weighting (collapses frame axis)
+        weights = self.__check_weights(weights, 1, etol)
+        if weights is False:
+            return t
+        return ssutils.weighted_mean(t, weights)
 
 
     # ........................................................................
@@ -4785,7 +4825,7 @@ class SSProtein:
     # ........................................................................
     #
     #
-    def get_secondary_structure_DSSP(self, R1=None, R2=None, return_per_frame=False):
+    def get_secondary_structure_DSSP(self, R1=None, R2=None, return_per_frame=False, weights=False, etol=0.0000001):
         """Per-residue secondary structure (helix / extended / coil) via DSSP.
 
         Calls ``mdtraj.compute_dssp`` on the chosen residue range and
@@ -4806,6 +4846,16 @@ class SSProtein:
         return_per_frame : bool, optional
             * False (default): return per-residue fractional occupancies.
             * True: return per-frame binary 1/0 masks.
+        weights : array_like or False, optional
+            Per-frame re-weighting vector (``len == n_frames``), validated
+            by :func:`soursop.ssutils.validate_weights`. Only valid with
+            ``return_per_frame=False``: the per-residue fractional
+            occupancies become the deterministic frame-weighted fractions.
+            Supplying ``weights`` with ``return_per_frame=True`` raises an
+            ``SSException`` (a per-frame mask is not an ensemble average).
+            Default ``False`` (unweighted).
+        etol : float, optional
+            Tolerance on ``|sum(weights) - 1|``. Default ``1e-7``.
 
         Returns
         -------
@@ -4835,6 +4885,17 @@ class SSProtein:
         # select the relevant subtrajectory (out[2] is the 'resid %i to %i' where %i and %i are R1 and R2)
         ats = self.traj.atom_slice(self.topology.select(f'{out[2]}'))
 
+        # validate optional per-frame re-weighting (only meaningful for the
+        # collapsed per-residue fractions; a per-frame mask is not an
+        # ensemble average)
+        wv = self.__check_weights(weights, 1, etol)
+        if wv is not False and return_per_frame is True:
+            raise SSException(
+                "get_secondary_structure_DSSP(): weights are only valid "
+                "with return_per_frame=False (a per-frame binary mask is "
+                "not a re-weighted ensemble average)."
+            )
+
         # compute DSSP over the selected subtrajectory
         dssp_data = md.compute_dssp(ats)
         reslist    = list(range(R1_real, R2_real+1))
@@ -4857,9 +4918,15 @@ class SSProtein:
             n_frames   = self.n_frames
 
             for i in range(len(reslist)):
-                C_vector.append(float(sum(dssp_data.transpose()[i] == 'C'))/n_frames)
-                E_vector.append(float(sum(dssp_data.transpose()[i] == 'E'))/n_frames)
-                H_vector.append(float(sum(dssp_data.transpose()[i] == 'H'))/n_frames)
+                if wv is False:
+                    C_vector.append(float(sum(dssp_data.transpose()[i] == 'C'))/n_frames)
+                    E_vector.append(float(sum(dssp_data.transpose()[i] == 'E'))/n_frames)
+                    H_vector.append(float(sum(dssp_data.transpose()[i] == 'H'))/n_frames)
+                else:
+                    col = dssp_data.transpose()[i]
+                    C_vector.append(ssutils.weighted_mean((col == 'C').astype(float), wv))
+                    E_vector.append(ssutils.weighted_mean((col == 'E').astype(float), wv))
+                    H_vector.append(ssutils.weighted_mean((col == 'H').astype(float), wv))
 
 
             return (reslist, np.array(H_vector), np.array(E_vector), np.array(C_vector))
@@ -4868,7 +4935,7 @@ class SSProtein:
     # ........................................................................
     #
     #
-    def get_secondary_structure_BBSEG(self, R1=None, R2=None, return_per_frame=False):
+    def get_secondary_structure_BBSEG(self, R1=None, R2=None, return_per_frame=False, weights=False, etol=0.0000001):
         """Per-residue secondary structure via the BBSEG2 phi/psi classification.
 
         Classifies each (phi, psi) pair into one of 9 BBSEG2 bins using a
@@ -4898,6 +4965,15 @@ class SSProtein:
         return_per_frame : bool, optional
             * False (default): return per-residue fractional occupancies.
             * True: return per-frame binary masks.
+        weights : array_like or False, optional
+            Per-frame re-weighting vector (``len == n_frames``), validated
+            by :func:`soursop.ssutils.validate_weights`. Only valid with
+            ``return_per_frame=False``: the per-class per-residue fractional
+            occupancies become the deterministic frame-weighted fractions.
+            Supplying ``weights`` with ``return_per_frame=True`` raises an
+            ``SSException``. Default ``False`` (unweighted).
+        etol : float, optional
+            Tolerance on ``|sum(weights) - 1|``. Default ``1e-7``.
 
         Returns
         -------
@@ -4951,6 +5027,16 @@ class SSProtein:
         all_classes = np.array(all_classes)
         return_bbseg = {}
 
+        # validate optional per-frame re-weighting (only meaningful for the
+        # collapsed per-residue fractions)
+        wv = self.__check_weights(weights, 1, etol)
+        if wv is not False and return_per_frame:
+            raise SSException(
+                "get_secondary_structure_BBSEG(): weights are only valid "
+                "with return_per_frame=False (a per-frame binary mask is "
+                "not a re-weighted ensemble average)."
+            )
+
         # if we want per-frame BBSEG secondary structure info
         if return_per_frame:
 
@@ -4974,7 +5060,10 @@ class SSProtein:
             # over each frame (shape_info[0] is number of frames)
 
             for c in range(0,9):
-                return_bbseg[c] = np.sum((all_classes == c)*1,0)/shape_info[0]
+                if wv is False:
+                    return_bbseg[c] = np.sum((all_classes == c)*1,0)/shape_info[0]
+                else:
+                    return_bbseg[c] = ssutils.weighted_mean((all_classes == c).astype(float), wv, axis=0)
 
             return (reslist, return_bbseg)
 
