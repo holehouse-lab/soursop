@@ -2250,10 +2250,17 @@ class SSProtein:
             * ``'sidechain-heavy'`` - closest pair of sidechain heavy atoms
               (mdtraj >= 1.8). Raises if any residue is glycine.
         stride : int, optional
-            Use every ``stride``-th frame. Default is 1. Must be 1 if
-            ``weights`` is provided.
+            Use every ``stride``-th frame. Default is 1. May be combined
+            with ``weights`` (the weight vector is subsampled with the
+            same stride and renormalised internally so it aligns with the
+            strided frames).
         weights : list or np.ndarray, optional
-            Per-frame weights for re-weighted averaging. Default ``False``.
+            Per-frame weights for re-weighted averaging, one entry per
+            trajectory frame (``len(weights) == n_frames``), each in
+            ``[0, 1]`` and summing to 1. Validated by
+            :func:`soursop.ssutils.validate_weights`. When supplied the
+            contact map is the deterministic weighted mean of the per-frame
+            contact maps over the (strided) frames. Default ``False``.
 
         Returns
         -------
@@ -2270,7 +2277,8 @@ class SSProtein:
         ------
         SSException
             For ``mode='sidechain-heavy'`` when any glycine is present, or
-            if ``weights`` is given with ``stride != 1``.
+            if the weight vector fails validation (wrong length, out of
+            ``[0, 1]``, non-finite, or not summing to 1).
 
         Example
         -------
@@ -2281,11 +2289,12 @@ class SSProtein:
 
         ssutils.validate_keyword_option(mode, ['closest-heavy', 'ca', 'closest', 'sidechain', 'sidechain-heavy'] , 'mode')
 
-        if weights is not False:
-            if int(stride) != 1:
-                raise SSException("Cannot accomodate weights if stride is not set to 1")
-
-        # check weights are correct
+        # Validate the weight vector against the FULL trajectory (one
+        # weight per trajectory frame, len == n_frames). __check_weights
+        # delegates to ssutils.validate_weights, which - for stride > 1 -
+        # subsamples (weights[::stride]) and renormalises so the vector
+        # lines up 1:1 with the strided frames of `subtraj` below. stride
+        # != 1 and weights are now both supported together.
         weights = self.__check_weights(weights, stride)
 
         # set the distance threshold to a value in nm (we use A by default)
@@ -2344,7 +2353,11 @@ class SSProtein:
         # else, if weights...
         else:
 
-            # if we use weights then we multiply each frame's contact map by the weight and sum
+            # Deterministic weighted mean of the per-frame contact maps.
+            # `weights` has already been stride-subsampled + renormalised
+            # by __check_weights, so it aligns 1:1 with the strided frames
+            # of CMAP and sums to 1 - hence no division by a normalization
+            # factor here (cf. the unweighted branch above).
             n_frames = CMAP.shape[0]
             normalized_contact_map = np.zeros((CMAP.shape[1],CMAP.shape[1]))
             for fid in range(0,n_frames):

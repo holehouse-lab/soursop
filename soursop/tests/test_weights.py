@@ -504,3 +504,53 @@ class TestQWeightsAndStride:
             P.get_Q(protein_average=False, stride=2, weights=_uniform(n - 1))
         with pytest.raises(SSException):                # sum != 1
             P.get_Q(protein_average=False, weights=np.full(n, 0.5 / n))
+
+
+# --------------------------------------------------------------------------
+# get_contact_map: weights + stride != 1 must work together (the explicit
+# "stride must be 1 if weights given" hard-block was removed).
+# --------------------------------------------------------------------------
+class TestContactMapWeightsAndStride:
+
+    def test_full_length_weights_stride1(self, NTL9_CP):
+        P = NTL9_CP
+        uni = _uniform(P.n_frames)
+        base = P.get_contact_map(mode='ca')[0]
+        wtd = P.get_contact_map(mode='ca', weights=uni)[0]
+        assert wtd.shape == base.shape
+        assert np.allclose(base, wtd, rtol=1e-5, atol=1e-5)
+        assert wtd.min() >= -1e-9 and wtd.max() <= 1.0 + 1e-9
+
+    def test_stride_plus_weights_matches_unweighted_stride(self, NTL9_CP):
+        # the headline fix: stride != 1 + a full-length weight vector used
+        # to raise. With uniform weights it must now run AND reproduce the
+        # unweighted strided contact map (uniform weights over the strided
+        # frames == the plain strided mean).
+        P = NTL9_CP
+        uni = _uniform(P.n_frames)
+        base = P.get_contact_map(mode='ca', stride=2)[0]
+        wtd = P.get_contact_map(mode='ca', stride=2, weights=uni)[0]
+        assert wtd.shape == base.shape
+        assert np.allclose(base, wtd, rtol=1e-5, atol=1e-5)
+
+    def test_weights_actually_used(self, NTL9_CP):
+        P = NTL9_CP
+        n = P.n_frames
+        uni = _uniform(n)
+        nonuni = np.arange(1, n + 1, dtype=float)
+        nonuni = nonuni / nonuni.sum()
+        c_uni = P.get_contact_map(mode='ca', weights=uni)[0]
+        c_non = P.get_contact_map(mode='ca', weights=nonuni)[0]
+        c_non2 = P.get_contact_map(mode='ca', weights=nonuni)[0]
+        assert np.array_equal(c_non, c_non2)               # deterministic
+        assert not np.allclose(c_uni, c_non, rtol=1e-6, atol=1e-6)
+
+    def test_invalid_weights_raise(self, NTL9_CP):
+        P = NTL9_CP
+        n = P.n_frames
+        with pytest.raises(SSException):                   # wrong length
+            P.get_contact_map(mode='ca', weights=_uniform(n - 1))
+        with pytest.raises(SSException):                   # wrong length + stride
+            P.get_contact_map(mode='ca', stride=2, weights=_uniform(n - 1))
+        with pytest.raises(SSException):                   # sum != 1
+            P.get_contact_map(mode='ca', weights=np.full(n, 0.5 / n))
