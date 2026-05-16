@@ -2054,66 +2054,74 @@ class SSProtein:
         PNAS 2013. doi:10.1073/pnas.1311599110
         """
 
-        # SET        
+        # SET
         n_res = self.n_residues
 
-        # Validate the weight vector against the FULL trajectory (one
-        # weight per trajectory frame, len == n_frames). __check_weights
-        # delegates to ssutils.validate_weights, which - for stride > 1 -
-        # subsamples (weights[::stride]) and renormalises so the strided
-        # weighted average is still a proper expectation. stride != 1 and
-        # weights are now both supported together.
-        weights = self.__check_weights(weights, stride)
+        # =================================================================
+        # STEP 1 - extract the reference frame and define the native state
+        # FIRST, completely independent of stride / weights.
+        #
+        # The reference frame is sliced out of the FULL trajectory, so the
+        # native-contact definition and the reference distances r0 can
+        # never be perturbed by frame striding or re-weighting (those only
+        # ever touch the analysis ensemble built in STEP 2). This is the
+        # ONLY role the reference frame plays.
+        # =================================================================
 
-        # if we're using a subregion
-        # NOTE this is WAY more elegant than the previous way of doing this but there *used* to be problems with MDTraj doing
-        # things like this...
+        # atom selection (optionally restricted to a sub-region)
         selectionatoms = self.__get_selection_atoms(region, backbone=False, heavy=True)
 
-        # extract out the native state frame
+        # the reference structure (a single frame from the full trajectory)
         native = self.traj.slice(native_state_reference_frame)
-
-        # get the sub-trajectory to be used
-        target = self.__get_subtrajectory(self.traj, stride)
-
-        # now align the entire trajectory to the 'native' frame
-        target.superpose(target, frame=native_state_reference_frame, atom_indices=selectionatoms)
 
         try:
             BETA_CONST = float(beta_const)       # in reciprocal nm (1/nm)
             LAMBDA_CONST = float(lambda_const)    # For all-atom simulations
 
-            # Native contact threshold distance in nm (not param is passed in Angstroms but the calculation
+            # Native contact threshold distance in nm (note param is passed in Angstroms but the calculation
             # happens expecting nanometers so have to update (hence divide by 10). NB: This breaks standard
             # soursop convention and we probably should rescale the various parameters so this works in
             # A instead of bm
             NATIVE_CUTOFF = float(native_contact_threshold)/10
 
-
         except ValueError as e:
             raise SSException(f'Could not convert constant into float for setting constants in get_Q().\nSee below:\n\n{e}')
 
-
-        # use all pairs of atoms that are over 3 away in sequence space
+        # native contacts are heavy-atom pairs >3 residues apart and within
+        # NATIVE_CUTOFF in the reference structure; r0 is their reference
+        # distance. Both come purely from the extracted reference frame.
         heavy_pairs = np.array(
             [(i,j) for (i,j) in combinations(selectionatoms, 2)
              if abs(native.topology.atom(i).residue.index - \
                     native.topology.atom(j).residue.index) > 3])
 
-        # compute the distances between these pairs in the native state
         ## NB: This breaks soursop convention of converting nm->A at the site of
         ## where it's calculated.
         heavy_pairs_distances = md.compute_distances(native[0], heavy_pairs, periodic=False)[0]
-
-        # and get the pairs s.t. the distance is less than NATIVE_CUTOFF. This returns the
-        # set of interatomic residues that define the native contacts
         native_contacts = heavy_pairs[heavy_pairs_distances < NATIVE_CUTOFF]
-
-        # now compute these distances for the whole trajectory
-        r = md.compute_distances(target, native_contacts, periodic=False)
-
-        # and recompute them for just the native state
         r0 = md.compute_distances(native[0], native_contacts, periodic=False)
+
+        # =================================================================
+        # STEP 2 - now (and only now) resolve the analysis ensemble:
+        # apply the frame stride and validate the weights.
+        #
+        # The weight vector has one entry per trajectory frame
+        # (len == n_frames); __check_weights -> ssutils.validate_weights
+        # subsamples it with the same stride and renormalises, so it lines
+        # up 1:1 with the strided analysis frames. No frame is special-
+        # cased: the reference frame's job was done in STEP 1.
+        # =================================================================
+        weights = self.__check_weights(weights, stride)
+        target  = self.__get_subtrajectory(self.traj, stride)
+
+        # align the analysis frames onto the extracted reference. (This
+        # does not change the pairwise contact distances below, which are
+        # rotation/translation invariant, but keeps `target` in the
+        # reference frame.)
+        target.superpose(native, frame=0, atom_indices=selectionatoms)
+
+        # contact distances across the (strided) analysis ensemble
+        r = md.compute_distances(target, native_contacts, periodic=False)
 
         # If we're just computing the protein average then this returns the Q value for the whole protein on a per-frame basis
         if protein_average:
@@ -2126,39 +2134,18 @@ class SSProtein:
 
         else:
 
-            # if the analysis is to be re-weighted uses the weights here on a per-frame basis
+            # if the analysis is to be re-weighted use the weights here on
+            # a per-frame basis. `weights` is the validated, stride-
+            # subsampled, renormalised vector and aligns 1:1 with the
+            # strided analysis frames (one weight per frame). The reference
+            # frame's only role was defining native_contacts / r0 in
+            # STEP 1, so - unlike the old implementation - no frame is
+            # dropped here and the weighted average is taken over exactly
+            # the same frame set as the unweighted np.mean below.
             if weights is not False:
                 q_full = expit(-BETA_CONST * (r - LAMBDA_CONST * r0)).transpose()
-
-                # `weights` is the validated, stride-subsampled,
-                # renormalised vector of length len(target) (== the number
-                # of strided frames). The per-contact average below uses
-                # i[1:], which drops the first strided frame (the native
-                # reference frame, index 0). Align the weights the same
-                # way: drop the native-frame weight and renormalise so the
-                # remaining weights still sum to 1.
-                w_avg = np.asarray(weights)[1:]
-                w_sum = np.sum(w_avg)
-                if w_sum <= 0.0:
-                    raise SSException(
-                        'In get_Q(): after excluding the native reference '
-                        'frame the remaining frame weights sum to '
-                        f'{w_sum:g} (<= 0); cannot reweight'
-                    )
-                w_avg = w_avg / w_sum
-
-                q = []
-                for i in q_full:
-
-                    # note i[1:] means we ignore the first (native) frame
-                    q.append(np.average(i[1:], 0, w_avg))
-
-                q = np.array(q)
+                q = np.array([np.average(i, 0, weights) for i in q_full])
             else:
-
-                # check this makes sense - aboe we do i[1:] should probably correct this to remove
-                # the native state structure? Anyway, here we're averaging over every from for each
-                # residue
                 q = np.mean(expit(-BETA_CONST * (r - LAMBDA_CONST * r0)), axis=0)
 
             # get the set of unqiue atoms which are involved in native contacts
