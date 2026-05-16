@@ -445,3 +445,62 @@ class TestPreexistingDeterministicUniformInvariance:
         base = P.get_dihedral_mutual_information()
         wtd = P.get_dihedral_mutual_information(weights=uni)
         assert np.allclose(base, wtd, rtol=1e-4, atol=1e-4, equal_nan=True)
+
+
+# --------------------------------------------------------------------------
+# get_Q: the weighted (protein_average=False) breakdown must accept a
+# full-length (len == n_frames) weight vector AND work together with a
+# frame stride (previously stride != 1 + weights was hard-blocked).
+# --------------------------------------------------------------------------
+class TestQWeightsAndStride:
+
+    def _shape0(self, P, **kw):
+        out = P.get_Q(protein_average=False, **kw)
+        return np.asarray(out[0], dtype=float), np.asarray(out[1])
+
+    def test_full_length_weights_stride1(self, NTL9_CP):
+        P = NTL9_CP
+        w = _uniform(P.n_frames)                       # one weight per frame
+        frac, pairs = self._shape0(P, weights=w)
+        base_frac, base_pairs = self._shape0(P)        # unweighted breakdown
+        assert frac.shape == base_frac.shape == (len(base_pairs),)
+        assert np.all(np.isfinite(frac))
+        assert frac.min() >= -1e-9 and frac.max() <= 1.0 + 1e-9
+
+    def test_stride_plus_weights_now_supported(self, NTL9_CP):
+        # the headline fix: stride != 1 together with a full-length
+        # weights vector used to raise; it must now run and be well-formed.
+        P = NTL9_CP
+        w = _uniform(P.n_frames)
+        frac, pairs = self._shape0(P, stride=2, weights=w)
+        assert frac.shape == (len(pairs),)
+        assert np.all(np.isfinite(frac))
+        assert frac.min() >= -1e-9 and frac.max() <= 1.0 + 1e-9
+
+    def test_weights_actually_used(self, NTL9_CP):
+        # a non-uniform weight must change the per-contact breakdown
+        # (guards against the weights being silently ignored), and the
+        # result must be deterministic.
+        P = NTL9_CP
+        n = P.n_frames
+        uni = _uniform(n)
+        nonuni = np.arange(1, n + 1, dtype=float)
+        nonuni = nonuni / nonuni.sum()
+        f_uni, _ = self._shape0(P, weights=uni)
+        f_non, _ = self._shape0(P, weights=nonuni)
+        f_non2, _ = self._shape0(P, weights=nonuni)
+        # get_Q is not bit-reproducible (mdtraj superpose alignment is
+        # stable only to ~1e-6 relative); the key assertion is that a
+        # non-uniform weight visibly changes the per-contact breakdown.
+        assert np.allclose(f_non, f_non2, rtol=1e-4, atol=1e-6)
+        assert not np.allclose(f_uni, f_non, rtol=1e-3, atol=1e-3)
+
+    def test_invalid_weights_raise(self, NTL9_CP):
+        P = NTL9_CP
+        n = P.n_frames
+        with pytest.raises(SSException):                # wrong length
+            P.get_Q(protein_average=False, weights=_uniform(n - 1))
+        with pytest.raises(SSException):                # wrong length + stride
+            P.get_Q(protein_average=False, stride=2, weights=_uniform(n - 1))
+        with pytest.raises(SSException):                # sum != 1
+            P.get_Q(protein_average=False, weights=np.full(n, 0.5 / n))

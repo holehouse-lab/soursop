@@ -1991,13 +1991,24 @@ class SSProtein:
             Distance cutoff (Angstroms) that defines a contact in the
             reference frame. Default is 4.5.
         stride : int, optional
-            Use every ``stride``-th frame. Default is 1. Must be 1 if
-            ``weights`` is given.
+            Use every ``stride``-th frame. Default is 1. May be combined
+            with ``weights`` (the weight vector is subsampled with the
+            same stride and renormalised internally).
         native_state_reference_frame : int, optional
             Currently ignored — the reference frame is always frame 0. Kept
             in the signature for backward compatibility.
         weights : list or np.ndarray, optional
-            Per-frame weights for re-weighted analysis. Default ``False``.
+            Per-frame weights for re-weighted analysis, one entry per
+            trajectory frame (``len(weights) == n_frames``), each in
+            ``[0, 1]`` and summing to 1. Validated by
+            :func:`soursop.ssutils.validate_weights`. Only used when
+            ``protein_average=False`` (the per-contact / per-residue
+            breakdown); for ``protein_average=True`` see *Raises*. When a
+            ``stride`` is given the vector is strided and renormalised, and
+            the native reference frame (frame 0) is excluded and the
+            remainder renormalised so the weighted average is a proper
+            expectation over the non-native (strided) frames. Default
+            ``False``.
 
         Returns
         -------
@@ -2022,8 +2033,12 @@ class SSProtein:
         Raises
         ------
         SSException
-            If ``weights`` is given with ``stride != 1``, or any constant
-            cannot be coerced to float.
+            If ``weights`` is given with ``protein_average=True``
+            (frame-averaged Q must be reweighted outside SOURSOP); if the
+            weight vector fails validation (wrong length, out of ``[0, 1]``,
+            non-finite, or not summing to 1); if excluding the native
+            reference frame leaves a zero-sum weight vector; or if any
+            constant cannot be coerced to float.
 
         Example
         -------
@@ -2039,16 +2054,16 @@ class SSProtein:
         PNAS 2013. doi:10.1073/pnas.1311599110
         """
 
-        # SET
-        native_state_frame = 0
+        # SET        
         n_res = self.n_residues
 
-        # less stringent weights test cos trajectory is one frame too long because we probably loaded the PDB file
-        # as a frame
-        #weights = self.__check_weights(weights, stride)
-
-        if weights is not False and stride != 1:
-            raise SSException('For get_Q() weights must be set for EACH frame and stride=1')
+        # Validate the weight vector against the FULL trajectory (one
+        # weight per trajectory frame, len == n_frames). __check_weights
+        # delegates to ssutils.validate_weights, which - for stride > 1 -
+        # subsamples (weights[::stride]) and renormalises so the strided
+        # weighted average is still a proper expectation. stride != 1 and
+        # weights are now both supported together.
+        weights = self.__check_weights(weights, stride)
 
         # if we're using a subregion
         # NOTE this is WAY more elegant than the previous way of doing this but there *used* to be problems with MDTraj doing
@@ -2056,13 +2071,13 @@ class SSProtein:
         selectionatoms = self.__get_selection_atoms(region, backbone=False, heavy=True)
 
         # extract out the native state frame
-        native = self.traj.slice(native_state_frame)
+        native = self.traj.slice(native_state_reference_frame)
 
         # get the sub-trajectory to be used
         target = self.__get_subtrajectory(self.traj, stride)
 
         # now align the entire trajectory to the 'native' frame
-        target.superpose(target, frame=native_state_frame, atom_indices=selectionatoms)
+        target.superpose(target, frame=native_state_reference_frame, atom_indices=selectionatoms)
 
         try:
             BETA_CONST = float(beta_const)       # in reciprocal nm (1/nm)
@@ -2115,11 +2130,28 @@ class SSProtein:
             if weights is not False:
                 q_full = expit(-BETA_CONST * (r - LAMBDA_CONST * r0)).transpose()
 
+                # `weights` is the validated, stride-subsampled,
+                # renormalised vector of length len(target) (== the number
+                # of strided frames). The per-contact average below uses
+                # i[1:], which drops the first strided frame (the native
+                # reference frame, index 0). Align the weights the same
+                # way: drop the native-frame weight and renormalise so the
+                # remaining weights still sum to 1.
+                w_avg = np.asarray(weights)[1:]
+                w_sum = np.sum(w_avg)
+                if w_sum <= 0.0:
+                    raise SSException(
+                        'In get_Q(): after excluding the native reference '
+                        'frame the remaining frame weights sum to '
+                        f'{w_sum:g} (<= 0); cannot reweight'
+                    )
+                w_avg = w_avg / w_sum
+
                 q = []
                 for i in q_full:
 
                     # note i[1:] means we ignore the first (native) frame
-                    q.append(np.average(i[1:], 0, weights))
+                    q.append(np.average(i[1:], 0, w_avg))
 
                 q = np.array(q)
             else:
