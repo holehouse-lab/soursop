@@ -3289,6 +3289,38 @@ class SSProtein:
     # ........................................................................
     #
     #
+    def __ca_position_cache(self, stride):
+        """Return a closure ``r -> 10*COM`` of residue ``r``'s CA atom over
+        the strided frames, computed once per residue (per-call cache).
+
+        This reproduces, byte-for-byte, the CA branch of
+        ``get_inter_residue_atomic_distance`` (mode='atom', A1=A2='CA'):
+        the same ``__residue_atom_lookup`` -> ``atom_slice`` ->
+        ``__get_subtrajectory`` -> ``10*md.compute_center_of_mass``
+        sequence. The only difference is the per-residue result is cached,
+        so an O(n^2) pair loop performs O(n) CA-COM computations instead
+        of O(n^2). Lazy caching also preserves the exact first-error
+        location and message for a residue lacking a CA atom.
+        """
+        cache = {}
+
+        def _ca(r):
+            if r not in cache:
+                atom = self.__residue_atom_lookup(r, 'CA')
+                if len(atom) == 0:
+                    raise SSException(f'Unable to find atom [CA] in residue R1 ({r})')
+                TRJ = self.traj.atom_slice(atom)
+                TRJ = self.__get_subtrajectory(TRJ, stride)
+                cache[r] = 10 * md.compute_center_of_mass(TRJ)
+            return cache[r]
+
+        return _ca
+
+
+
+    # ........................................................................
+    #
+    #
     def get_internal_scaling(self, R1=None, R2=None, mode='COM', mean_vals=False, stride=1, weights=False, etol=0.0000001, verbose=True):
         """Internal scaling profile: sequence separation vs. inter-residue distance.
 
@@ -3391,6 +3423,13 @@ class SSProtein:
         seq_sep_distances = []
         seq_sep_vals = []
 
+        # Hoist the per-residue CA position out of the O(n^2) pair loop.
+        # get_inter_residue_atomic_distance recomputes each residue's CA
+        # center-of-mass from scratch on every call; caching it per
+        # residue is byte-identical but O(n) rather than O(n^2).
+        if mode == 'CA':
+            _ca = self.__ca_position_cache(stride)
+
         for seq_sep in range(0, max_seq_sep):
             ssio.status_message(f"Internal Scaling - on sequence separation {seq_sep} of {max_seq_sep-1}", verbose)
 
@@ -3405,7 +3444,8 @@ class SSProtein:
                 # get the distance for every stride-th frame between those two positions using either the CA
                 # mode or the COM mode
                 if mode == 'CA':
-                    distance = self.get_inter_residue_atomic_distance(A, B, stride=stride)
+                    # byte-identical to get_inter_residue_atomic_distance(A, B, stride=stride)
+                    distance = np.linalg.norm(_ca(A) - _ca(B), axis=1)
 
                 elif mode == 'COM':
                     distance = self.get_inter_residue_COM_distance(A, B, stride=stride)
@@ -3639,6 +3679,15 @@ class SSProtein:
         seq_sep_RSTDS_distance   = []
         seq_sep_subsampled_distances  = []
 
+        # Hoist the per-residue CA position out of the O(n^2) pair loop.
+        # get_inter_residue_atomic_distance recomputes each residue's CA
+        # center-of-mass from scratch on every call; caching it per
+        # residue is byte-identical but O(n) rather than O(n^2). The
+        # hoist consumes no RNG, so the np.random error-bootstrap below
+        # sees an identical stream and its output is unchanged.
+        if mode == 'CA':
+            _ca = self.__ca_position_cache(stride)
+
         # for each possible sequence separation  (|i-j| value)
         for seq_sep in range(1, max_separation):
 
@@ -3656,7 +3705,8 @@ class SSProtein:
 
 
                 if mode == 'CA':
-                    distance = self.get_inter_residue_atomic_distance(A, B, stride=stride)
+                    # byte-identical to get_inter_residue_atomic_distance(A, B, stride=stride)
+                    distance = np.linalg.norm(_ca(A) - _ca(B), axis=1)
 
                 elif mode == 'COM':
                     distance = self.get_inter_residue_COM_distance(A, B, stride=stride)
@@ -4367,6 +4417,15 @@ class SSProtein:
 
         FIRST_CHECK = True
 
+        # Hoist the per-residue CA position out of the O(n^2) pair loop.
+        # get_inter_residue_atomic_distance recomputes each residue's CA
+        # center-of-mass from scratch on every call; caching it per
+        # residue is byte-identical but O(n) rather than O(n^2). The
+        # hoist consumes no RNG, so the downstream pair-resampling sees
+        # an identical stream and its output is unchanged.
+        if mode == 'CA':
+            _ca = self.__ca_position_cache(stride)
+
         # start with a sequence separation of 1
         for seq_sep in range(1, self.n_residues):
             ssio.status_message(f"On sequence separation {seq_sep}", verbose)
@@ -4380,7 +4439,8 @@ class SSProtein:
                 # get the distance for every stride-th frame between those two positions using either the CA
                 # mode or the COM mode
                 if mode == 'CA':
-                    distance = self.get_inter_residue_atomic_distance(A, B, stride=stride)
+                    # byte-identical to get_inter_residue_atomic_distance(A, B, stride=stride)
+                    distance = np.linalg.norm(_ca(A) - _ca(B), axis=1)
 
                 elif mode == 'COM':
                     distance = self.get_inter_residue_COM_distance(A, B, stride=stride)

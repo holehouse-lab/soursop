@@ -6,15 +6,13 @@
 Welcome to the SOURSOP Documentation!
 =========================================================
 
-*Last updated: November 2024*
+*Last updated: May 2026*
 
 **SOURSOP** (**S**\imulation analysis **O**\f **U**\nfolded **R**\egion\ **S** **O**\f **P**\roteins) is a Python package for the analysis of all-atom and coarse-grained simulations of unfolded and disordered proteins. It provides a wide range of functionalities that may not be of use for folded proteins, but provide important insight into simulations of intrinsically disordered proteins. **SOURSOP** was formerly *CAMPARITraj*, which was formerly *CTraj*, and includes all the original functionality therein. 
 
 The **SOURSOP** GitHub page can be accessed here: `https://github.com/holehouse-lab/soursop <https://github.com/holehouse-lab/soursop/>`_.
 
-**SOURSOP** was built for the analysis of simulations with the CAMPARI simulation engine in mind. However, it has been successfully tested on a wide range of trajectories generated from different software packages. It utilizes the ``mdtraj`` (`http://mdtraj.org <http://mdtraj.org/>`_.) backend for trajectory reading and representation, but focusses on providing analysis routines relevant for characterizing ensembles of disordered and unfolded proteins through the lens of polymer physics.
-
-This documentation is currently being generated as we finalize **SOURSOP**. 
+**SOURSOP** was built for the analysis of simulations with the CAMPARI simulation engine in mind. However, it has been successfully tested on a wide range of trajectories generated from different software packages. It utilizes the ``mdtraj`` (`http://mdtraj.org <http://mdtraj.org/>`_.) backend for trajectory reading and representation, but focusses on providing analysis routines relevant for characterizing ensembles of disordered and unfolded proteins through the lens of polymer physics. It also works for coarse-grained (one-bead-per-residue) and all-atom ensembles.
 
 .. toctree::
    :maxdepth: 1
