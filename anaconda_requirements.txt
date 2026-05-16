@@ -1,15 +1,20 @@
+# Conda-installable dependency list consumed by the GitHub Actions CI
+# (`conda install --file anaconda_requirements.txt`). Kept consistent
+# with pyproject.toml [project.dependencies] plus the test tooling.
+
+# Runtime
+numpy
+scipy
+cython
+mdtraj>=1.9.5
+pandas
+threadpoolctl
+natsort
+matplotlib
+
+# Build / test tooling
 wheel
 pytest
 pytest-cov
 pytest-forked
 pytest-xdist
-mdtraj==1.9.7
-numpy
-natsort
-cx_Freeze
-PyYAML
-ruamel_yaml
-threadpoolctl
-pandas
-scipy
-matplotlib

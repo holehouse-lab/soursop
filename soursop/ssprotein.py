@@ -130,43 +130,14 @@ class SSProtein:
         # initialze various protein-centric data
         self.__num_residues       = sum( 1 for _ in self.topology.residues)
 
-        
+        # remember the constructor's CG-detection preference so that
+        # reset_cache() can reproduce an identical initialization later
+        self.__check_one_bead_per_residue = check_one_bead_per_residue
+
         ## DEVELOPMENT NOTES
-        # Anything below this lines should be reset by the delete_cache() function
-
-        # initialize some empty values that are populated on demand by functions that drive local
-        # memoization.
-        self.__amino_acids_3LTR   = None
-        self.__amino_acids_1LTR   = None
-        self.__residue_index_list = None
-        self.__CA_residue_atom    = {}
-        self.__residue_atom_table = {}
-        self.__residue_COM        = {}
-        self.__residue_atom_COM   = {}
-        self.__SASA_saved         = {}
-        self.__all_angles         = {} # will be used to store different dihedral (backbone and sidechain) angles
-
-        # deterine if we can set the __sg_onechain to true or not. This ONLY serves to dramatically speed up initialization
-        # of the SSProtein object but should have no effects beyond that.         
-        if check_one_bead_per_residue is True:
-            self.__cg_onechain        = self.__check_cg_onebead()
-        else:
-            self.__cg_onechain = False
-
-        # this is the slow step in initialization        
-        self.__resid_with_CA = self.__get_resid_with_CA()
-        
-
-        # define if caps are present or not - specifically, if the resid 0 is in the CA-containing
-        if 0 in self.resid_with_CA:
-            self.__ncap = False
-        else:
-            self.__ncap = True
-
-        if (self.n_residues - 1) in self.resid_with_CA:
-            self.__ccap = False
-        else:
-            self.__ccap = True
+        # Everything set up by __initialize_memoization_and_topology() is the
+        # state that reset_cache() discards and rebuilds.
+        self.__initialize_memoization_and_topology()
 
         
         
@@ -196,8 +167,27 @@ class SSProtein:
         >>> protein.get_radius_of_gyration()    # cold-cache call again
         """
 
-        # initialize some empty values that are populated on demand by functions that drive local
-        # memoization.
+        self.__initialize_memoization_and_topology()
+
+
+    # <><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><>
+    #
+    def __initialize_memoization_and_topology(self):
+        """Initialize (or re-initialize) every memoised lookup table and the
+        topology-derived CA / cap state.
+
+        Called once from ``__init__`` and again by ``reset_cache()``; routing
+        both through this single method guarantees a freshly-constructed
+        object and a reset object are in an identical state (previously
+        ``reset_cache`` forced ``__cg_onechain`` to False, silently changing
+        behaviour for coarse-grained chains).
+
+        Returns
+        -------
+        None
+        """
+
+        # empty values populated on demand by functions that drive local memoization
         self.__amino_acids_3LTR   = None
         self.__amino_acids_1LTR   = None
         self.__residue_index_list = None
@@ -206,21 +196,21 @@ class SSProtein:
         self.__residue_COM        = {}
         self.__residue_atom_COM   = {}
         self.__SASA_saved         = {}
-        self.__all_angles         = {} # will be used to store different dihedral (backbone and sidechain) angles
-        self.__cg_onechain = False # if we reset the cache we force _cg_onechain to be False which forces detailed CA_assigmnet
+        self.__all_angles         = {} # different dihedral (backbone and sidechain) angles
 
+        # determine whether __cg_onechain can be set True. This ONLY serves to
+        # dramatically speed up initialization but has no effect beyond that.
+        if self.__check_one_bead_per_residue is True:
+            self.__cg_onechain = self.__check_cg_onebead()
+        else:
+            self.__cg_onechain = False
+
+        # build the list of resids that have a CA atom
         self.__resid_with_CA = self.__get_resid_with_CA()
 
-        # define if caps are present or not - specifically, if the resid 0 is in the CA-containing
-        if 0 in self.resid_with_CA:
-            self.__ncap = False
-        else:
-            self.__ncap = True
-
-        if (self.n_residues - 1) in self.resid_with_CA:
-            self.__ccap = False
-        else:
-            self.__ccap = True
+        # caps are inferred from resid 0 / the last resid lacking a CA
+        self.__ncap = 0 not in self.resid_with_CA
+        self.__ccap = (self.n_residues - 1) not in self.resid_with_CA
 
 
 
@@ -343,7 +333,7 @@ class SSProtein:
         [0, 1, 2, 3, 4]
         """
 
-        if self.__residue_index_list == None:
+        if self.__residue_index_list is None:
             reslist = []
             for res in self.topology.residues:
                 reslist.append(res.index)
@@ -608,11 +598,11 @@ class SSProtein:
         """
 
         # the only condition in which we have a single chain and coarse grained
-        # is if the number of residues is equal to the number of atoms
-        if self.traj.n_atoms == len(self.get_amino_acid_sequence(oneletter=True)):
-            return True
-        else:
-            return False
+        # is if the number of residues is equal to the number of atoms.
+        # Use the already-computed residue count rather than building the
+        # one-letter sequence: the latter raises KeyError on non-standard
+        # residue names and would crash construction of CG/non-standard chains.
+        return self.traj.n_atoms == self.__num_residues
 
 
 
@@ -673,7 +663,7 @@ class SSProtein:
         if stride == 1:
             return traj
         else:
-            return traj.slice(list(range(0, self.n_frames, stride)))
+            return traj[::stride]
 
 
     # ........................................................................
@@ -695,38 +685,53 @@ class SSProtein:
 
         Returns
         -----------
-        tuple
-            A 2-tuple that is comprised of lists:
-
-            * `[0]` : The list of residue indices which contain C-alpha atoms selected from the topology.
-            * `[1]` : The list of zero-indexed residue indices which contain C-alpha atoms.
+        list of int
+            Ascending list of resids that have exactly one C-alpha atom
+            (cap / non-standard residues without a unique CA are excluded).
 
         See also
         ------------
         resid_with_CA
-        idx_with_CA
         """
 
-        # initialize empty lists
-        resid_with_CA = []
-
-        # if this is a one chain we initialize both the CA and 'all atoms' for each residue
-        # here, which then mean the code that follows just looks these precomputed values up
+        # if this is a one-bead-per-residue coarse-grained chain we initialize
+        # both the CA and 'all atoms' tables for every residue here. Every
+        # residue is then its own CA, so resid_with_CA is simply 0..n-1.
         if self.__cg_onechain:
             self.__initialize_cg_atoms()
+            return list(range(self.__num_residues))
 
-        # for each residue in the topology
+        # All-atom path: a single pass over the topology atoms is dramatically
+        # faster than one topology.select() per residue (the historical
+        # initialization bottleneck). We then reproduce *exactly* the cache
+        # side effects the old per-residue get_CA_index()/__residue_atom_lookup()
+        # path produced, so downstream behaviour is byte-for-byte identical:
+        #   * every residue gets a __residue_atom_table[ridx] dict whose 'CA'
+        #     entry is the same array topology.select(...) would have returned
+        #     (length-1 for a single CA, empty for caps, length-N otherwise);
+        #   * __CA_residue_atom[ridx] is set only for residues with exactly
+        #     one CA, to that array's [0] element (a numpy integer scalar,
+        #     not a Python int - several callers/tests depend on the dtype);
+        #   * resid_with_CA keeps residues with exactly one CA, in ascending
+        #     topology order.
+        ca_atoms_for_resid = {}
+        for atom in self.topology.atoms:
+            if atom.name == 'CA':
+                ca_atoms_for_resid.setdefault(atom.residue.index, []).append(atom.index)
+
+        resid_with_CA = []
         for res in self.topology.residues:
+            ridx = res.index
+            ca_atoms = ca_atoms_for_resid.get(ridx, [])
 
-            # try and get the CA atomic index
-            try:
-                self.get_CA_index(res.index)
+            if ridx not in self.__residue_atom_table:
+                self.__residue_atom_table[ridx] = {}
+            ca_array = np.array(ca_atoms, dtype=np.int64)
+            self.__residue_atom_table[ridx]['CA'] = ca_array
 
-                # if we could get a CA then append this residue index
-                resid_with_CA.append(res.index)
-
-            except SSException:
-                continue
+            if len(ca_array) == 1:
+                resid_with_CA.append(ridx)
+                self.__CA_residue_atom[ridx] = ca_array[0]
 
         return resid_with_CA
     
@@ -1062,7 +1067,7 @@ class SSProtein:
 
         if oneletter:
 
-            if self.__amino_acids_1LTR == None:
+            if self.__amino_acids_1LTR is None:
                 res = []
                 for i in self.topology.residues:
                     res.append(THREE_TO_ONE[str(i)[0:3].upper()])
@@ -1070,7 +1075,7 @@ class SSProtein:
 
         else:
 
-            if self.__amino_acids_3LTR == None:
+            if self.__amino_acids_3LTR is None:
                 res = []
                 for i in self.topology.residues:
                     res.append(str(i)[0:3]+"-"+str(i)[3:])

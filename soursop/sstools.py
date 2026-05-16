@@ -11,8 +11,13 @@
 ##
 
 """
-sstools contains misc. numerical python functions which provide some useful functionality 
+sstools - miscellaneous numerical helper functions used across SOURSOP.
 
+This module collects small, dependency-light utility routines (list
+chunking, residue-name normalisation, nearest-value search, the polymer
+power-law model, minimum-image distances and trajectory-file discovery)
+that are shared by the higher-level analysis modules. None of these
+functions hold state; they operate purely on their arguments.
 """
 
 
@@ -27,16 +32,31 @@ import pathlib
 # ........................................................................
 #
 def chunks(l, n):
-    """Yield successive n-sized chunks from l.
+    """Yield successive ``n``-sized chunks from a list.
+
+    Splits ``l`` into consecutive, non-overlapping sublists of length
+    ``n``. If ``len(l)`` is not an exact multiple of ``n`` the trailing
+    remainder (fewer than ``n`` elements) is discarded, so every yielded
+    chunk is guaranteed to contain exactly ``n`` elements. The list is
+    consumed lazily as the generator is iterated.
 
     Parameters
     ----------
-
     l : list
-        The list from which chunks of size `n` will be selected.
+        The list to be divided into chunks.
 
     n : int
-        The size of the chunks to select from an input list, `l`.
+        The size of each chunk. Must be a positive integer.
+
+    Yields
+    ------
+    list
+        Successive length-``n`` sublists of ``l``, in order.
+
+    Example
+    -------
+    >>> list(chunks([1, 2, 3, 4, 5], 2))
+    [[1, 2], [3, 4]]
     """
 
 
@@ -49,19 +69,33 @@ def chunks(l, n):
 # ........................................................................
 #
 def fix_histadine_name(name):
-    """
-    Corrects the histadine residue name which can be HIE, HID 
-    or HIP and unifies all of these to HIS.
+    """Normalise protonation-specific histidine names to ``'HIS'``.
+
+    Molecular dynamics force fields commonly encode the protonation state
+    of histidine in the residue name (``HIE``, ``HID`` or ``HIP``). For
+    sequence- and identity-based analysis these should all be treated as a
+    single residue type. This function maps any of those three variants
+    onto the canonical ``'HIS'`` and returns every other residue name
+    unchanged.
 
     Parameters
     ----------
-
     name : str
-        The input residue name (3-letter code) that may be transformed if it is Histidine-related.
+        A three-letter residue name. May be a histidine protonation
+        variant (``'HIE'``, ``'HID'``, ``'HIP'``) or any other code.
 
     Returns
     -------
-    The transformed name of the Histidine residue, otherwise the input residue is returned.
+    str
+        ``'HIS'`` if ``name`` is a histidine protonation variant,
+        otherwise ``name`` returned unmodified.
+
+    Example
+    -------
+    >>> fix_histadine_name('HIE')
+    'HIS'
+    >>> fix_histadine_name('ALA')
+    'ALA'
     """
     
     if name == 'HIE' or name == 'HID' or name == 'HIP':
@@ -73,24 +107,36 @@ def fix_histadine_name(name):
 # ........................................................................
 #
 def find_nearest(array, target):
-    """
-    Find the value nearest to a target in an array, returns a tuple
-    with the value and the tuple.
+    """Find the array element closest in value to a target.
+
+    Performs a brute-force search for the element of ``array`` whose
+    absolute difference from ``target`` is smallest, returning both the
+    index of that element and the element itself. If several elements are
+    equidistant from ``target`` the first (lowest-index) match is
+    returned.
 
     Parameters
     ----------
+    array : np.ndarray
+        Numeric array to be searched. Must support element-wise
+        subtraction with ``target``.
 
-    array : np.array
-        The array that will be searched for a target value.
-
-    target: a value with dtype of `array`
-        The search value to locate within `array`.
+    target : scalar
+        The value to locate. Should share a comparable dtype with
+        ``array``.
 
     Returns
     -------
+    tuple of (int, scalar)
+        A 2-tuple ``(index, value)`` where ``index`` is the position of
+        the nearest element within ``array`` and ``value`` is that
+        element.
 
-    The first index and value of the target located within the input array.
-
+    Example
+    -------
+    >>> import numpy as np
+    >>> find_nearest(np.array([0.0, 1.0, 2.0, 3.0]), 2.2)
+    (2, 2.0)
     """
     idx = (np.abs(array-target)).argmin()
     return (idx,array[idx])
@@ -99,25 +145,34 @@ def find_nearest(array, target):
 # ........................................................................
 #
 def powermodel(X, nu, R0):            
-    """
-    Function that computes the resulting power-model values.
+    """Evaluate the polymer-scaling power law ``R0 * X**nu``.
+
+    Implements the standard polymer-physics scaling relationship used
+    throughout SOURSOP - for example relating an inter-residue distance to
+    sequence separation via ``R = R0 * |i - j|**nu``. This is a thin
+    wrapper around ``numpy.power`` and broadcasts over array input.
 
     Parameters
     ----------
-
-    X : array or numeric value
-        An array or value whose power-model will be calculated.
+    X : np.ndarray or float
+        Independent variable(s), typically a sequence separation. May be a
+        scalar or any array-like accepted by ``numpy.power``.
 
     nu : int or float
-        The exponent which the input array is raised to.
+        The scaling exponent (e.g. the apparent Flory scaling exponent).
 
-    R0: int or float
-        A scaling constant.
+    R0 : int or float
+        The scaling prefactor.
 
     Returns
     -------
-    array or numeric value
+    np.ndarray or float
+        ``R0 * X**nu``, with the same shape as ``X``.
 
+    Example
+    -------
+    >>> powermodel(4, 0.5, 5.5)
+    11.0
     """
     return R0*np.power(X,nu)
 
@@ -125,38 +180,55 @@ def powermodel(X, nu, R0):
 # ------------------------------------------------------------------
 #
 def get_distance_periodic(distance1, distance2, box_size, box_shape='cube'):
-    """
-    Function that returns the set of distances between pairs of points over two arrays 
-    using the minimum image convention. This is not the fastest way to do this and could/
-    should be improved for performance.
+    """Pairwise point distances under the minimum-image convention.
+
+    Computes, for two equal-length arrays of 3D coordinates, the distance
+    between each corresponding pair of points using the minimum-image
+    convention for a cubic periodic box. This corrects distances for
+    particles that are nearest across a periodic boundary. The
+    implementation is a straightforward per-pair Python loop and is not
+    performance-optimised; for a non-periodic system the result is
+    identical to the naive Euclidean distance.
 
     Parameters
-    ----------------
-    distance1 : np.array
-        An array of length n, where each element has x/y/z positions of a particle/atom/bead.
+    ----------
+    distance1 : np.ndarray
+        Array of length ``n`` in which each element is the x/y/z position
+        of a particle / atom / bead.
 
-    distance1 : np.array
-        An array of length n, where each element has x/y/z positions of a particle/atom/bead.
+    distance2 : np.ndarray
+        Array of length ``n`` in which each element is the x/y/z position
+        of a particle / atom / bead. Must be the same length as
+        ``distance1``.
 
-    box_size : int
-        Dimensions of the cubic box.
+    box_size : int or float
+        Edge length of the cubic periodic box (in the same units as the
+        coordinates).
 
-    box_shape : str
-        Selector which right now can only be 'cubic'. Defines the geometry of the minimum image
-        convention being used.
+    box_shape : {'cube'}, optional
+        Geometry of the periodic cell used for the minimum-image
+        convention. Currently only ``'cube'`` is supported. Default
+        ``'cube'``.
 
     Returns
-    ------------
-    np.array
-       Returns an array of inter-position distances under the minimum image convention. Note that
-       in a non-periodic system this should be identical to distances obtained from the niave
-       distance calculation.
+    -------
+    list of float
+        Inter-position distances (length ``n``) under the minimum-image
+        convention.
 
     Raises
-    ----------
+    ------
     soursop.ssexceptions.SSException
-        If distance arrays are not the same length, or an invalid box_shape is passed.
+        If ``distance1`` and ``distance2`` differ in length, or if an
+        unsupported ``box_shape`` is passed.
 
+    Example
+    -------
+    >>> import numpy as np
+    >>> a = np.array([[0.1, 0.1, 0.1]])
+    >>> b = np.array([[9.9, 9.9, 9.9]])
+    >>> get_distance_periodic(a, b, 10.0)        # nearest across the boundary
+    [0.34641016151377546]
     """
 
     if len(distance1) != len(distance2):
@@ -193,23 +265,51 @@ def find_trajectory_files(
     exclude_dirs: Union[None, List] = ["eq", "FULL"],
     traj_name: str = "__traj.xtc",
     top_name: str = "__START.pdb"):
-    """
-    This function assembles the list of trajectory and topology paths
-    for a set of simulations in a given directory tree.
+    """Discover matching trajectory/topology file pairs in a directory tree.
+
+    Walks ``root_dir`` recursively and collects paired trajectory and
+    topology files for a set of replicate simulations. A directory is
+    treated as a replicate when its name ends in a digit in the range
+    ``[0, num_replicates]`` and it contains both a ``traj_name`` and a
+    ``top_name`` file. Results are grouped by parent-directory name and
+    returned in natural-sorted order so replicate ordering is stable and
+    human-intuitive (e.g. ``rep2`` before ``rep10``).
 
     Parameters
     ----------
-    root_dir : Union[str, pathlib.path]
-        Filepath or list of file paths
+    root_dir : str or pathlib.Path
+        Root of the directory tree to search.
+
     num_replicates : int
-        Number of replicas to gather trajectories from child directories [1,num_replicates+1]
-    exclude_dirs : Union[None,list], optional
-        List of directory names you want to exclude, by default ["eq", "FULL"]
-        Set to None to include "eq" and "FULL" or specify list.
+        Highest replicate index to gather; child directories whose name
+        ends in a digit in ``[0, num_replicates]`` are considered.
+
+    exclude_dirs : list or None, optional
+        Directory names to prune from the walk. Pass ``None`` to search
+        everything (including ``"eq"`` and ``"FULL"``). Default
+        ``["eq", "FULL"]``.
+
     traj_name : str, optional
-        trajectory filename, by default "__traj.xtc"
+        Trajectory filename to look for in each replicate directory.
+        Default ``"__traj.xtc"``.
+
     top_name : str, optional
-        topology filename, by default "__START.pdb"
+        Topology filename to look for in each replicate directory.
+        Default ``"__START.pdb"``.
+
+    Returns
+    -------
+    tuple of (list of str, list of str)
+        A 2-tuple ``(traj_files, start_files)`` of equal length, where
+        ``traj_files[i]`` and ``start_files[i]`` are the absolute paths to
+        a matched trajectory and its topology, ordered by natural-sorted
+        parent-directory name then natural-sorted file path.
+
+    Example
+    -------
+    >>> trajs, tops = find_trajectory_files('/data/sim_set', num_replicates=5)
+    >>> len(trajs) == len(tops)
+    True
     """
     if exclude_dirs is None:
         exclude_dirs = []
