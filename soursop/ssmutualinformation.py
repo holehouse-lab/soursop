@@ -92,7 +92,7 @@ def calc_MI(X, Y, bins, weights=False, normalize=False):
     if np.max(bins) < np.max(X) or np.max(bins) < np.max(Y):
         raise SSException(f'Error: Bins passed to calc_MI in ssmutualinformation() do not straddle the full data range. Bin max {np.max(bins)} is smaller than one/both of data maxima: X={np.max(X)}, Y={np.max(Y)}')
    
-    if weights:
+    if weights is not False and weights is not None:
         c_XY = np.histogram2d(X,Y,bins,weights=weights)[0]
         c_X = np.histogram(X,bins,weights=weights)[0]
         c_Y = np.histogram(Y,bins,weights=weights)[0]

@@ -262,3 +262,186 @@ class TestDeterministicEdgeCases:
         uni = np.full(P.n_frames, 1.0 / P.n_frames)
         with pytest.raises(SSException):
             P.get_local_heterogeneity(fragment_size=3, stride=1, verbose=False, weights=uni)
+
+
+def _uniform(n):
+    return np.full(n, 1.0 / n)
+
+
+def _one_hot(n, k):
+    w = np.zeros(n)
+    w[k] = 1.0
+    return w
+
+
+# --------------------------------------------------------------------------
+# get_local_to_global_correlation: this is the function whose latent
+# "weights silently discarded" bug was fixed - so we explicitly assert
+# (a) uniform weights reproduce the unweighted result and (b) non-uniform
+# weights actually CHANGE the result (i.e. the weights are now used).
+# --------------------------------------------------------------------------
+class TestLocalToGlobalCorrelationWeights:
+
+    @staticmethod
+    def _l2g(P, **kw):
+        # seed so the stochastic pair selection is identical across calls
+        np.random.seed(0)
+        return P.get_local_to_global_correlation(
+            n_cycles=15, max_num_pairs=4, stride=20, verbose=False, **kw
+        )
+
+    def test_uniform_matches_unweighted(self, CTL9_CP):
+        P = CTL9_CP
+        uni = _uniform(P.n_frames)
+        base = self._l2g(P)
+        w = self._l2g(P, weights=uni)
+        assert np.allclose(base[2], w[2], rtol=1e-5, atol=1e-6)   # mean_corr
+        assert np.allclose(base[3], w[3], rtol=1e-5, atol=1e-6)   # std_corr
+
+    def test_nonuniform_changes_result(self, CTL9_CP):
+        # regression guard for the fixed bug: a non-uniform weight MUST
+        # change the correlation (previously the weights were discarded
+        # and overwritten with a uniform vector).
+        P = CTL9_CP
+        n = P.n_frames
+        w = np.arange(1, n + 1, dtype=float)
+        w = w / w.sum()
+        base = self._l2g(P)
+        wt = self._l2g(P, weights=w)
+        assert not np.allclose(base[2], wt[2], rtol=1e-4, atol=1e-4)
+
+
+# --------------------------------------------------------------------------
+# SASA summaries + the method-level stride+weights renormalisation path
+# --------------------------------------------------------------------------
+class TestSASASummariesWeights:
+
+    def test_site_accessibility_uniform(self, NTL9_CP):
+        P = NTL9_CP
+        uni = _uniform(P.n_frames)
+        base = P.get_site_accessibility([1, 2, 3], mode='resid', stride=1)
+        wtd = P.get_site_accessibility([1, 2, 3], mode='resid', stride=1, weights=uni)
+        for key in base:
+            assert np.allclose(base[key], wtd[key], rtol=1e-5, atol=1e-6), key
+
+    def test_site_accessibility_one_hot(self, GS6_CP):
+        P = GS6_CP
+        n = P.n_frames
+        per_res = np.transpose(P.get_all_SASA(mode='residue', stride=1))  # (n_res, n_frames)
+        lookup = P.get_amino_acid_sequence()
+        for k in range(n):
+            wtd = P.get_site_accessibility([1, 2], mode='resid', stride=1,
+                                           weights=_one_hot(n, k))
+            for i in (1, 2):
+                mean_k, std_k = wtd[lookup[i]]
+                assert np.isclose(mean_k, per_res[i][k], rtol=1e-9, atol=1e-9)
+                assert np.isclose(std_k, 0.0, atol=1e-9)
+
+    def test_regional_SASA_uniform_and_one_hot(self, GS6_CP):
+        P = GS6_CP
+        n = P.n_frames
+        total = np.transpose(P.get_all_SASA(stride=1))      # (n_res, n_frames)
+        base = P.get_regional_SASA(1, 5, stride=1)
+        assert np.isclose(base, P.get_regional_SASA(1, 5, stride=1, weights=_uniform(n)),
+                          rtol=1e-5, atol=1e-6)
+        for k in range(n):
+            expected = sum(float(total[i][k]) for i in range(1, 5))
+            got = P.get_regional_SASA(1, 5, stride=1, weights=_one_hot(n, k))
+            # SASA arrays are float32 (mdtraj); allow float32 round-off
+            assert np.isclose(got, expected, rtol=1e-5, atol=1e-3)
+
+    def test_all_SASA_mode_all_uniform_and_one_hot(self, GS6_CP):
+        P = GS6_CP
+        n = P.n_frames
+        base = P.get_all_SASA(mode='all', stride=1)          # 3-tuple, each (n_frames, n_res)
+        wtd_uni = P.get_all_SASA(mode='all', stride=1, weights=_uniform(n))
+        assert isinstance(wtd_uni, tuple) and len(wtd_uni) == 3
+        for b, w in zip(base, wtd_uni):
+            assert np.allclose(w, np.asarray(b).mean(axis=0), rtol=1e-5, atol=1e-6)
+        for k in range(n):
+            wtd_k = P.get_all_SASA(mode='all', stride=1, weights=_one_hot(n, k))
+            for b, w in zip(base, wtd_k):
+                assert np.allclose(w, np.asarray(b)[k], rtol=1e-9, atol=1e-9)
+
+    def test_all_SASA_stride_plus_weights_renormalises(self, NTL9_CP):
+        # end-to-end check of the stride -> subsample -> renormalise path
+        # through a real public method (not just the validator).
+        P = NTL9_CP
+        n = P.n_frames
+        stride = 2
+        full = np.arange(1, n + 1, dtype=float)
+        full = full / full.sum()                       # valid full-length vector
+        per_frame = np.asarray(P.get_all_SASA(mode='residue', stride=stride))  # (n_str, n_res)
+        sub = full[::stride]
+        sub = sub / sub.sum()
+        expected = np.average(per_frame, axis=0, weights=sub)
+        got = P.get_all_SASA(mode='residue', stride=stride, weights=full)
+        assert np.allclose(got, expected, rtol=1e-6, atol=1e-8)
+
+
+# --------------------------------------------------------------------------
+# SSTrajectory.get_overall_* delegating getters
+# --------------------------------------------------------------------------
+class TestOverallTrajectoryWeights:
+
+    def _getters(self, T):
+        return {
+            'rg':   T.get_overall_radius_of_gyration,
+            'asph': T.get_overall_asphericity,
+            'Rh':   T.get_overall_hydrodynamic_radius,
+        }
+
+    def test_uniform_equals_unweighted_mean(self, NTL9_CO):
+        T = NTL9_CO
+        n = T.proteinTrajectoryList[0].n_frames
+        uni = _uniform(n)
+        for name, fn in self._getters(T).items():
+            base = np.asarray(fn())
+            assert np.allclose(fn(weights=uni), base.mean(), rtol=1e-5, atol=1e-6), name
+
+    def test_one_hot_equals_single_frame(self, GS6_CO):
+        T = GS6_CO
+        n = T.proteinTrajectoryList[0].n_frames
+        for name, fn in self._getters(T).items():
+            base = np.asarray(fn())
+            for k in range(n):
+                assert np.isclose(fn(weights=_one_hot(n, k)), base[k],
+                                  rtol=1e-9, atol=1e-9), (name, k)
+
+
+# --------------------------------------------------------------------------
+# Pre-existing deterministically-weighted methods: confirm the routed
+# validation did not change behaviour and uniform == unweighted.
+# --------------------------------------------------------------------------
+class TestPreexistingDeterministicUniformInvariance:
+
+    def test_distance_map_uniform(self, NTL9_CP):
+        P = NTL9_CP
+        uni = _uniform(P.n_frames)
+        for mode in ('CA', 'COM'):
+            base = P.get_distance_map(mode=mode, verbose=False)[0]
+            wtd = P.get_distance_map(mode=mode, weights=uni, verbose=False)[0]
+            assert np.allclose(base, wtd, rtol=1e-5, atol=1e-5), mode
+
+    def test_contact_map_uniform(self, NTL9_CP):
+        P = NTL9_CP
+        uni = _uniform(P.n_frames)
+        base = P.get_contact_map(mode='ca')[0]
+        wtd = P.get_contact_map(mode='ca', weights=uni)[0]
+        assert np.allclose(base, wtd, rtol=1e-5, atol=1e-5)
+
+    def test_Q_protein_average_with_weights_raises(self, NTL9_CP):
+        # get_Q(protein_average=True) intentionally refuses weights:
+        # frame-averaged Q must be reweighted outside SOURSOP. This is a
+        # documented guard - lock it in.
+        P = NTL9_CP
+        uni = _uniform(P.n_frames)
+        with pytest.raises(SSException):
+            P.get_Q(protein_average=True, weights=uni)
+
+    def test_dihedral_mutual_information_uniform(self, NTL9_CP):
+        P = NTL9_CP
+        uni = _uniform(P.n_frames)
+        base = P.get_dihedral_mutual_information()
+        wtd = P.get_dihedral_mutual_information(weights=uni)
+        assert np.allclose(base, wtd, rtol=1e-4, atol=1e-4, equal_nan=True)
