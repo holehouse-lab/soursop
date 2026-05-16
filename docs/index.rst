@@ -21,6 +21,7 @@ The **SOURSOP** GitHub page can be accessed here: `https://github.com/holehouse-
    usage/overview
    usage/installation
    usage/examples
+   usage/weights
    modules/sstrajectory
    modules/ssprotein
    modules/ssnmr

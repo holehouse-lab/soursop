@@ -685,7 +685,7 @@ class SSTrajectory:
     #
     #
     @lazy_loading_single_protein_trajectory
-    def get_overall_radius_of_gyration(self):
+    def get_overall_radius_of_gyration(self, weights=False, etol=0.0000001):
         """Per-frame radius of gyration computed across every protein chain.
 
         For multi-chain systems the chains are combined into a single
@@ -697,24 +697,34 @@ class SSTrajectory:
             This does NOT apply periodic-boundary corrections. If your
             chains are split across PBC images, centre the molecule first.
 
+        Parameters
+        ----------
+        weights : array_like or False, optional
+            Per-frame re-weighting vector forwarded to
+            :meth:`SSProtein.get_radius_of_gyration`. ``False`` (default)
+            returns the per-frame array; if supplied the scalar
+            deterministic weighted-mean :math:`R_g` is returned.
+        etol : float, optional
+            Tolerance on ``|sum(weights) - 1|``. Default ``1e-7``.
+
         Returns
         -------
-        np.ndarray
-            1D array of length ``n_frames`` with per-frame :math:`R_g` in
-            Angstroms.
+        np.ndarray or float
+            Per-frame :math:`R_g` (length ``n_frames``), or the scalar
+            weighted mean if ``weights`` is supplied. Angstroms.
 
         Example
         -------
         >>> rg_all = traj.get_overall_radius_of_gyration()
         """
 
-        return self.__single_protein_traj.get_radius_of_gyration()
+        return self.__single_protein_traj.get_radius_of_gyration(weights=weights, etol=etol)
 
     #oxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxo
     #
     #
     @lazy_loading_single_protein_trajectory
-    def get_overall_asphericity(self):
+    def get_overall_asphericity(self, weights=False, etol=0.0000001):
         """Per-frame asphericity computed across every protein chain.
 
         For multi-chain systems the chains are combined into a single
@@ -725,23 +735,34 @@ class SSTrajectory:
         .. warning::
             This does NOT apply periodic-boundary corrections.
 
+        Parameters
+        ----------
+        weights : array_like or False, optional
+            Per-frame re-weighting vector forwarded to
+            :meth:`SSProtein.get_asphericity`. ``False`` (default) returns
+            the per-frame array; if supplied the scalar deterministic
+            weighted-mean asphericity is returned.
+        etol : float, optional
+            Tolerance on ``|sum(weights) - 1|``. Default ``1e-7``.
+
         Returns
         -------
-        np.ndarray
-            1D array of length ``n_frames`` with per-frame asphericity.
+        np.ndarray or float
+            Per-frame asphericity (length ``n_frames``), or the scalar
+            weighted mean if ``weights`` is supplied.
 
         Example
         -------
         >>> asph_all = traj.get_overall_asphericity()
         """
 
-        return self.__single_protein_traj.get_asphericity()
+        return self.__single_protein_traj.get_asphericity(weights=weights, etol=etol)
 
     #oxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxo
     #
     #
     @lazy_loading_single_protein_trajectory
-    def get_overall_hydrodynamic_radius(self):
+    def get_overall_hydrodynamic_radius(self, weights=False, etol=0.0000001):
         """Per-frame hydrodynamic radius computed across every protein chain.
 
         For multi-chain systems the chains are combined into a single
@@ -749,24 +770,34 @@ class SSTrajectory:
         Nygaard-et-al estimator. For single-chain systems the result equals
         ``self.proteinTrajectoryList[0].get_hydrodynamic_radius()``.
 
+        Parameters
+        ----------
+        weights : array_like or False, optional
+            Per-frame re-weighting vector forwarded to
+            :meth:`SSProtein.get_hydrodynamic_radius`. ``False`` (default)
+            returns the per-frame array; if supplied the scalar
+            deterministic weighted-mean :math:`R_h` is returned.
+        etol : float, optional
+            Tolerance on ``|sum(weights) - 1|``. Default ``1e-7``.
+
         Returns
         -------
-        np.ndarray
-            1D array of length ``n_frames`` with per-frame :math:`R_h` in
-            Angstroms.
+        np.ndarray or float
+            Per-frame :math:`R_h` (length ``n_frames``), or the scalar
+            weighted mean if ``weights`` is supplied. Angstroms.
 
         Example
         -------
         >>> rh_all = traj.get_overall_hydrodynamic_radius()
         """
 
-        return self.__single_protein_traj.get_hydrodynamic_radius()
+        return self.__single_protein_traj.get_hydrodynamic_radius(weights=weights, etol=etol)
 
 
     #oxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxo
     #
     #
-    def get_interchain_distance_map(self, proteinID1, proteinID2, mode='CA', periodic=False):
+    def get_interchain_distance_map(self, proteinID1, proteinID2, mode='CA', periodic=False, weights=False, etol=0.0000001):
         """Mean and std inter-chain distance map between two protein chains.
 
         Returns an ``(n_res_P1, n_res_P2)`` matrix of per-pair *mean*
@@ -792,6 +823,14 @@ class SSTrajectory:
             recorded periodic box and a cubic cell. Generally it is better
             to centre the molecule first and leave this False. Default
             False.
+        weights : array_like or False, optional
+            Per-frame re-weighting vector (validated against the shared
+            trajectory frame count). ``False`` (default) gives the
+            ordinary per-pair mean/std (byte-identical to before); if
+            supplied each pair's mean/std is the deterministic weighted
+            mean / weighted (population) std over frames.
+        etol : float, optional
+            Tolerance on ``|sum(weights) - 1|``. Default ``1e-7``.
 
         Returns
         -------
@@ -809,8 +848,12 @@ class SSTrajectory:
         ssutils.validate_keyword_option(mode, ['CA', 'COM'], 'mode')
         
         # get SSProtein objects for the two IDs passed (could be the same)
-        P1 = self.proteinTrajectoryList[proteinID1]        
+        P1 = self.proteinTrajectoryList[proteinID1]
         P2 = self.proteinTrajectoryList[proteinID2]
+
+        # optional deterministic per-frame re-weighting of every pair's
+        # mean/std (validated against the shared trajectory frame count).
+        wv = ssutils.validate_weights(weights, P1.n_frames, 1, etol)
 
         # create the empty distance maps
         p1_residues = P1.resid_with_CA
@@ -842,16 +885,25 @@ class SSTrajectory:
                 p1_index = p1_indices[i]
                 for j, COM_2 in enumerate(com2):
                     d = sstools.get_distance_periodic(COM_1, COM_2, self.unitcell[0], 'cube')
-                    distanceMap[p1_index, p2_indices[j]] = np.mean(d, 0)
-                    stdMap[p1_index, p2_indices[j]]      = np.std(d, 0)
+                    if wv is False:
+                        distanceMap[p1_index, p2_indices[j]] = np.mean(d, 0)
+                        stdMap[p1_index, p2_indices[j]]      = np.std(d, 0)
+                    else:
+                        d = np.asarray(d)
+                        distanceMap[p1_index, p2_indices[j]] = ssutils.weighted_mean(d, wv)
+                        stdMap[p1_index, p2_indices[j]]      = ssutils.weighted_std(d, wv)
         else:
             # com2 stacked once -> (n2, F, 3); broadcasting COM_1 (F, 3)
             # against it reproduces the per-pair np.linalg.norm exactly.
             com2_stack = np.stack(com2, axis=0)
             for i, COM_1 in enumerate(com1):
                 d = np.linalg.norm(COM_1 - com2_stack, axis=-1)   # (n2, F)
-                row_mean = np.mean(d, axis=1)
-                row_std  = np.std(d, axis=1)
+                if wv is False:
+                    row_mean = np.mean(d, axis=1)
+                    row_std  = np.std(d, axis=1)
+                else:
+                    row_mean = ssutils.weighted_mean(d, wv, axis=1)
+                    row_std  = ssutils.weighted_std(d, wv, axis=1)
                 p1_index = p1_indices[i]
                 for j, p2_index in enumerate(p2_indices):
                     distanceMap[p1_index, p2_index] = row_mean[j]

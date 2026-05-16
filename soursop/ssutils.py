@@ -247,3 +247,254 @@ def validate_keyword_option(keyword, allowed_vals, keyword_name, error_message=N
                 raise RuntimeError('Invalid error message type: "{}". The error message must be a string.'.format(error_type))
             message = error_message[:]
         raise SSException(message)
+
+
+def validate_weights(weights, n_frames, stride=1, etol=1e-7):
+    """Validate (and stride-normalise) a per-frame re-weighting vector.
+
+    This is the single, shared entry point used by every SOURSOP function
+    that accepts a ``weights`` keyword. It enforces that the weights form
+    a proper per-frame probability vector so that all downstream
+    deterministic weighted averages (:func:`weighted_mean`,
+    :func:`weighted_std`, :func:`weighted_rms`, :func:`weighted_corr`) are
+    well defined and consistent.
+
+    The literal ``False`` (or ``None``) is the "no weighting" sentinel and
+    is passed straight through, so a default of ``weights=False`` is a
+    strict no-op.
+
+    Validation (each failure raises :class:`SSException`):
+
+    1. ``False`` / ``None`` -> returned unchanged (no-op).
+    2. castable to a 1-D ``numpy.float64`` array.
+    3. all elements finite (no ``nan`` / ``inf``).
+    4. exactly one weight per frame (``len == n_frames``).
+    5. every element in the closed interval ``[0, 1]``.
+    6. if ``stride > 1``: the vector is subsampled (``weights[::stride]``)
+       and **renormalised to sum to 1** so the strided weighted average is
+       still a proper expectation (this fixes the historical behaviour
+       where strided weights silently no longer summed to 1).
+    7. ``|sum(weights) - 1| < etol`` (checked after any stride/renormalise).
+
+    Parameters
+    ----------
+    weights : array_like, False or None
+        Per-frame weights, or the ``False``/``None`` no-op sentinel.
+    n_frames : int
+        Number of frames the (unstrided) weight vector must match.
+    stride : int, optional
+        Frame stride that will be applied to the trajectory. Default 1.
+    etol : float, optional
+        Tolerance on ``|sum(weights) - 1|``. Default ``1e-7``.
+
+    Returns
+    -------
+    numpy.ndarray or False
+        ``False`` if the input was ``False``/``None``; otherwise a
+        ``numpy.float64`` array of length ``ceil(n_frames / stride)`` that
+        sums to 1 within ``etol``.
+
+    Raises
+    ------
+    SSException
+        If any of the validation conditions above fail.
+
+    Example
+    -------
+    >>> import numpy as np
+    >>> from soursop.ssutils import validate_weights
+    >>> validate_weights(False, 10) is False
+    True
+    >>> w = validate_weights(np.full(10, 0.1), 10)
+    >>> float(w.sum())
+    1.0
+    """
+
+    if weights is False or weights is None:
+        return False
+
+    try:
+        w = numpy.asarray(weights, dtype=numpy.float64)
+    except (ValueError, TypeError) as e:
+        raise SSException(
+            "Unable to convert the passed weights to a numeric "
+            f"numpy.float64 array (likely non-numerical input):\n{weights}\n{e}"
+        )
+
+    if w.ndim != 1:
+        raise SSException(
+            f"Frame weights must be a 1-D vector, got an array with shape {w.shape}"
+        )
+
+    if not numpy.all(numpy.isfinite(w)):
+        raise SSException("Frame weights contain non-finite values (nan/inf)")
+
+    if len(w) != n_frames:
+        raise SSException(
+            f"Passed frame weights array is {len(w)} in length, while there "
+            f"are actually {n_frames} frames - these must match"
+        )
+
+    if numpy.any(w < 0.0) or numpy.any(w > 1.0):
+        raise SSException(
+            "Every frame weight must lie in the closed interval [0, 1] "
+            f"(min={w.min():g}, max={w.max():g})"
+        )
+
+    if stride > 1:
+        from soursop import ssio
+        ssio.warning_message(
+            "WARNING: Using stride with weights is ALMOST certainly not a good "
+            "idea unless the weights are\ncalculated for every stride-th frame. "
+            "The strided weights will be renormalised to sum to 1.",
+            with_frills=True,
+        )
+        w = w[::stride]
+        wsum = numpy.sum(w)
+        if wsum <= 0.0:
+            raise SSException(
+                "After applying the frame stride the remaining weights sum to "
+                f"{wsum:g} (<= 0); cannot renormalise"
+            )
+        w = w / wsum
+
+    abs_diff = abs(numpy.sum(w) - 1.0)
+    if abs_diff >= etol:
+        raise SSException(
+            "The passed weights do not sum to 1 within the specified floating "
+            f"point tolerance (etol={etol:g}). | sum(weights) - 1 | = {abs_diff:g}"
+        )
+
+    return w
+
+
+def weighted_mean(x, weights, axis=0):
+    """Deterministic frame-weighted mean (``sum(w * x)`` along ``axis``).
+
+    Thin wrapper around :func:`numpy.average`. Because ``weights`` is a
+    validated probability vector (``sum == 1``) this is exactly the
+    re-weighted ensemble expectation and is numerically identical to the
+    ``numpy.average(x, axis, weights=weights)`` calls already used
+    elsewhere in SOURSOP.
+
+    Parameters
+    ----------
+    x : array_like
+        Per-frame data; the frame axis is ``axis``.
+    weights : numpy.ndarray
+        Validated per-frame weights (see :func:`validate_weights`).
+    axis : int, optional
+        Axis to average over (the frame axis). Default 0.
+
+    Returns
+    -------
+    numpy.ndarray or float
+        ``x`` averaged over ``axis`` with the given weights.
+
+    Example
+    -------
+    >>> import numpy as np
+    >>> weighted_mean(np.array([1.0, 3.0]), np.array([0.25, 0.75]))
+    2.5
+    """
+    return numpy.average(x, axis=axis, weights=weights)
+
+
+def weighted_rms(x, weights, axis=0):
+    """Deterministic frame-weighted root-mean-square (``sqrt(sum(w*x^2))``).
+
+    The polymer-physics order parameter used by the internal-scaling and
+    scaling-exponent routines is an RMS distance, so this is the weighted
+    analogue of ``sqrt(mean(x**2))``.
+
+    Parameters
+    ----------
+    x : array_like
+        Per-frame data; the frame axis is ``axis``.
+    weights : numpy.ndarray
+        Validated per-frame weights (see :func:`validate_weights`).
+    axis : int, optional
+        Axis to reduce over. Default 0.
+
+    Returns
+    -------
+    numpy.ndarray or float
+        The weighted RMS of ``x`` over ``axis``.
+
+    Example
+    -------
+    >>> import numpy as np
+    >>> float(weighted_rms(np.array([3.0, 4.0]), np.array([0.5, 0.5])))
+    3.5355339059327378
+    """
+    return numpy.sqrt(numpy.average(numpy.square(x), axis=axis, weights=weights))
+
+
+def weighted_std(x, weights, axis=0):
+    """Deterministic frame-weighted (population) standard deviation.
+
+    Uses the reliability-weighted **population** estimator
+    ``sqrt(sum(w * (x - mean)**2))``. Frame weights here are probability
+    weights with no associated sample size, so there is no well-defined
+    ``ddof`` (Bessel-style) correction; the population estimator is the
+    unambiguous, reproducible choice and the de-facto standard for
+    re-weighted molecular-dynamics ensembles.
+
+    Parameters
+    ----------
+    x : array_like
+        Per-frame data; the frame axis is ``axis``.
+    weights : numpy.ndarray
+        Validated per-frame weights (see :func:`validate_weights`).
+    axis : int, optional
+        Axis to reduce over. Default 0.
+
+    Returns
+    -------
+    numpy.ndarray or float
+        The weighted population standard deviation of ``x`` over ``axis``.
+
+    Example
+    -------
+    >>> import numpy as np
+    >>> float(weighted_std(np.array([1.0, 1.0]), np.array([0.5, 0.5])))
+    0.0
+    """
+    x = numpy.asarray(x, dtype=numpy.float64)
+    m = numpy.average(x, axis=axis, weights=weights)
+    # keep the reduced axis so (x - m) broadcasts for any axis
+    m_b = numpy.expand_dims(m, axis) if x.ndim > 1 else m
+    var = numpy.average(numpy.square(x - m_b), axis=axis, weights=weights)
+    return numpy.sqrt(var)
+
+
+def weighted_corr(a, b, weights):
+    """Deterministic frame-weighted Pearson correlation between two vectors.
+
+    Computed from the weighted covariance matrix
+    (``numpy.cov(..., ddof=0, aweights=weights)``), matching the
+    ``ddof=0`` / ``aweights`` convention already used by
+    ``get_local_to_global_correlation``.
+
+    Parameters
+    ----------
+    a, b : array_like
+        Equal-length per-frame vectors.
+    weights : numpy.ndarray
+        Validated per-frame weights (see :func:`validate_weights`).
+
+    Returns
+    -------
+    float
+        The weighted Pearson correlation coefficient of ``a`` and ``b``.
+
+    Example
+    -------
+    >>> import numpy as np
+    >>> w = np.full(4, 0.25)
+    >>> round(float(weighted_corr(np.array([1.,2,3,4]), np.array([2.,4,6,8]), w)), 6)
+    1.0
+    """
+    cov = numpy.cov(numpy.vstack((a, b)), ddof=0, aweights=weights)
+    denom = numpy.sqrt(cov[0, 0] * cov[1, 1])
+    return cov[0, 1] / denom
