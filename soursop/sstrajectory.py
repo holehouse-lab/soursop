@@ -7,7 +7,7 @@
 
 ## Alex Holehouse (Pappu Lab and Holehouse Lab) and Jared Lalmansingh (Pappu lab)
 ## Simulation analysis package
-## Copyright 2014 - 2024
+## Copyright 2014 - 2026
 ##
 
 import time
@@ -28,7 +28,7 @@ from . import sstools
 ## 3. verbose
 
 from copy import copy
-from functools import partial
+from functools import partial, wraps
 from multiprocessing import Pool, cpu_count
 
 def lazy_loading_single_protein_trajectory(func):
@@ -51,6 +51,7 @@ def lazy_loading_single_protein_trajectory(func):
         if it's not already loaded.
     """
     
+    @wraps(func)
     def wrapper(self, *args, **kwargs):
         if self._SSTrajectory__single_protein_traj is None:
             self._SSTrajectory__single_protein_traj = self._SSTrajectory__get_all_proteins(self.traj, self._SSTrajectory__explicit_residue_checking)
@@ -246,32 +247,76 @@ class SSTrajectory:
 
     @property
     def n_frames(self):
-        """
-        :property: Returns the number of frames in the trajectory.
+        """Number of frames in the underlying mdtraj trajectory.
 
+        Returns
+        -------
+        int
+
+        Example
+        -------
+        >>> traj.n_frames
+        1000
         """
         return len(self.traj)
 
     @property
     def n_proteins(self):
-        """
-        :property: Returns the number of individual proteins found.
+        """Number of distinct protein chains identified during loading.
+
+        For a single-chain PDB this is 1; for multi-chain inputs (or when a
+        manual ``protein_grouping`` list was provided to ``SSTrajectory``)
+        the value matches the number of chains.
+
+        Returns
+        -------
+        int
+
+        Example
+        -------
+        >>> two_chain_traj.n_proteins
+        2
         """
         return len(self.proteinTrajectoryList)
 
     @property
     def length(self):
+        """Convenience ``(n_proteins, n_frames)`` summary tuple.
+
+        Preserves the historic behaviour of ``__len__`` from before
+        SOURSOP switched its ``len(traj)`` semantics to match mdtraj
+        (frame count only).
+
+        Returns
+        -------
+        tuple of (int, int)
+            ``(n_proteins, n_frames)``.
+
+        Example
+        -------
+        >>> traj.length
+        (2, 1000)
         """
-        :property: Returns a tuple with number of proteins and number of frames.
-        """
-        # Implemented a method that encapsulates the data output by the original `__len__` method.
         return (self.n_proteins, self.n_frames)
 
     @property
     def unitcell(self):
-        """
-        :property: Returns a list with unit cell information in Angstroms (assuming base units
-        of trajectory are in nanometers)
+        """Unit-cell box lengths of the first frame, in Angstroms.
+
+        SOURSOP reports distances in Angstroms, so the values stored in
+        nanometres by mdtraj are multiplied by 10 here. Raises
+        ``TypeError`` if the trajectory has no periodic box (some
+        coarse-grained or vacuum simulations).
+
+        Returns
+        -------
+        np.ndarray
+            Array of shape ``(3,)`` with box lengths in Angstroms.
+
+        Example
+        -------
+        >>> traj.unitcell
+        array([60.0, 60.0, 60.0])
         """
         return self.traj.unitcell_lengths[0]*10
         
@@ -664,26 +709,26 @@ class SSTrajectory:
     #
     @lazy_loading_single_protein_trajectory
     def get_overall_radius_of_gyration(self):
-        """
-        Function which returns the per-frame OVERALL radius of gyration for 
-        every  protein residue in the trajectory. For systems with multiple 
-        protein chains,  all chains are combined together. For systems with 
-        a single protein chain, this function offers no advantage over 
-        interacting directly with the SSProtein object in the 
-        ``.proteinTrajectoryList``.
+        """Per-frame radius of gyration computed across every protein chain.
 
-        WARNING: This DOES NOT perform any PBC correction.
+        For multi-chain systems the chains are combined into a single
+        "pseudo-chain" before computing :math:`R_g`. For single-chain
+        systems the result is identical to
+        ``self.proteinTrajectoryList[0].get_radius_of_gyration()``.
 
-        Parameters
-        -------------
-        None
+        .. warning::
+            This does NOT apply periodic-boundary corrections. If your
+            chains are split across PBC images, centre the molecule first.
 
         Returns
-        ----------
-        np.ndarray 
-            Returns a numpy array with per-frame instantaneous radius of 
-            gyration
-        
+        -------
+        np.ndarray
+            1D array of length ``n_frames`` with per-frame :math:`R_g` in
+            Angstroms.
+
+        Example
+        -------
+        >>> rg_all = traj.get_overall_radius_of_gyration()
         """
 
         return self.__single_protein_traj.get_radius_of_gyration()
@@ -693,24 +738,24 @@ class SSTrajectory:
     #
     @lazy_loading_single_protein_trajectory
     def get_overall_asphericity(self):
-        """
-        Function which returns the per-frame OVERALL asphericity for every
-        protein residue in the trajectory. For systems with multiple protein 
-        chains,  all chains are combined together. For systems with a single 
-        protein chain, this function offers no advantage over interacting 
-        directly with the SSProtein object in the underlying 
-        ``.proteinTrajectoryList`` object.
+        """Per-frame asphericity computed across every protein chain.
 
-        WARNING: This DOES NOT perform any PBC correction.
+        For multi-chain systems the chains are combined into a single
+        "pseudo-chain" before computing the asphericity. For single-chain
+        systems the result equals
+        ``self.proteinTrajectoryList[0].get_asphericity()``.
 
-        Parameters
-        -------------
-        None
+        .. warning::
+            This does NOT apply periodic-boundary corrections.
 
         Returns
-        ----------
-        np.ndarray 
-            Returns a numpy array with per-frame instantaneous asphericity
+        -------
+        np.ndarray
+            1D array of length ``n_frames`` with per-frame asphericity.
+
+        Example
+        -------
+        >>> asph_all = traj.get_overall_asphericity()
         """
 
         return self.__single_protein_traj.get_asphericity()
@@ -720,23 +765,22 @@ class SSTrajectory:
     #
     @lazy_loading_single_protein_trajectory
     def get_overall_hydrodynamic_radius(self):
-        """
-        Function which returns the per-frame OVERALL hydrodynamic radius for 
-        everyprotein residue in the trajectory. For systems with multiple 
-        protein chains,  all chains are combined together. For systems with 
-        a single protein chain, this function offers no advantage over 
-        interacting directly with the SSProtein object in the underlying 
-        ``.proteinTrajectoryList`` object.
+        """Per-frame hydrodynamic radius computed across every protein chain.
 
-        Parameters
-        -------------
-        None
+        For multi-chain systems the chains are combined into a single
+        "pseudo-chain" before computing :math:`R_h`. Uses the default
+        Nygaard-et-al estimator. For single-chain systems the result equals
+        ``self.proteinTrajectoryList[0].get_hydrodynamic_radius()``.
 
         Returns
-        ----------
-        np.ndarray 
-            Returns a numpy array with per-frame instantaneous asphericity
+        -------
+        np.ndarray
+            1D array of length ``n_frames`` with per-frame :math:`R_h` in
+            Angstroms.
 
+        Example
+        -------
+        >>> rh_all = traj.get_overall_hydrodynamic_radius()
         """
 
         return self.__single_protein_traj.get_hydrodynamic_radius()
@@ -746,64 +790,43 @@ class SSTrajectory:
     #
     #
     def get_interchain_distance_map(self, proteinID1, proteinID2, mode='CA', periodic=False):
-        """        
-        Function which returns two matrices with the mean and standard 
-        deviation distances between the residues in resID1 from 
-        proteinID1 and resID2 from proteinID2.
-        
-        This computes the (full) intramolecular distance map, where the 
-        "distancemap" function computes the intermolecular distance map.
+        """Mean and std inter-chain distance map between two protein chains.
 
-        Specifically, this allows the user to define two distinct chains
-        (i.e.  an "interchain" distance map).        
+        Returns an ``(n_res_P1, n_res_P2)`` matrix of per-pair *mean*
+        inter-residue distances along with the matching per-pair standard
+        deviations. Distances are in Angstroms.
 
-        Obviously, this only makes sense if your system has two separate 
-        protein objects defined, but in principle the output from::        
+        Calling ``get_interchain_distance_map(i, i)`` produces the
+        intra-chain distance map of protein ``i``, which is the same as
+        ``self.proteinTrajectoryList[i].get_distance_map()`` and makes a
+        useful sanity check.
 
-            TrajObj # TrajOb is an SSTrajectory object
-
-            TrajObj.get_interchain_distance_map(0,0)
-
-        would be the same as::
-
-            TrajObj # TrajOb is an SSTrajectory object
-        
-            TrajObj.proteinTrajectoryList[0].get_distance_map()
-
-        This is actually a useful sanity check!
-        
         Parameters
-        ------------
-
+        ----------
         proteinID1 : int
-            The ID of the first protein of the two being considered, where
-            the  ID is the proteins position in the 
-            ``self.proteinTrajectoryList``  list.             
-
+            Index of the first protein in ``self.proteinTrajectoryList``.
         proteinID2 : int
-            The ID of the second protein of the two being considered, where 
-            the ID is the proteins position in the 
-            ``self.proteinTrajectoryList`` list
-            
-        mode : str (default = 'CA')
-            String, must be one of either 'CA' or 'COM', where CA means alpha
-            carbon and COM means center of mass. 
-
-        periodic : bool (default = False)
-            Flag which if distances mode is passed as anything other than 'atom' 
-            then this determines if the minimum image convention should be used. 
-            Note that this is only available if pdb crystal dimensions are provided, 
-            and in general it's better to set this to false and center the molecule 
-            first. Default = False.
+            Index of the second protein in ``self.proteinTrajectoryList``.
+        mode : {'CA', 'COM'}, optional
+            * ``'CA'`` (default) - distances between alpha-carbon atoms.
+            * ``'COM'`` - distances between residue centres of mass.
+        periodic : bool, optional
+            If True, apply the minimum-image convention. Requires a
+            recorded periodic box and a cubic cell. Generally it is better
+            to centre the molecule first and leave this False. Default
+            False.
 
         Returns
-        ---------
+        -------
+        tuple of (np.ndarray, np.ndarray)
+            ``(distance_map, std_map)`` each of shape
+            ``(n_res_P1, n_res_P2)``, in Angstroms.
 
-            Tuple
-
-                - **distanceMap** is an [n x m] numpy matrix where n and m are the number of proteinID1 residues and proteinID2 residues. Each position  in the matrix corresponds to the mean distance between those two  residues over the course of the simulation.
-                - **stdMap** is an [n x m] numpy matrix where n and m are the number of proteinID1 residues and proteinID2 residues. Each position in the matrix corresponds to the standard deviation of the distances between those two residues.
-        
+        Example
+        -------
+        >>> dmap, smap = two_chain_traj.get_interchain_distance_map(0, 1)
+        >>> dmap.shape
+        (58, 58)
         """
 
         ssutils.validate_keyword_option(mode, ['CA', 'COM'], 'mode')
@@ -860,123 +883,150 @@ class SSTrajectory:
     #oxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxo
     #
     #
-    def get_interchain_contact_map(self, proteinID1, proteinID2, threshold=5.0, mode='atom', A1='CA', A2='CA', periodic=False, verbose=False):
+    def get_interchain_contact_map(self, proteinID1, proteinID2, threshold=5.0, mode='atom', A1='CA', A2='CA', periodic=False, stride=1, verbose=False):
         
-        """        
-        Function which returns a matrix with inter-residue contact fractions 
-        i.e., this returns the fraction of simulation that each residue from
-        one chain is in contact with each residue from the other chain, where
-        "contact" is defined as the inter-residue distance being below the
-        passed threshold.
+        """Inter-chain contact-fraction map between two protein chains.
 
-        By *default* the mode here is CA-CA distance, which, depending on the
-        question, may not be what you want. See the various options under
-        'mode' for alternatives.
+        Returns an ``(n_res_P1, n_res_P2)`` matrix where entry ``[i, j]`` is
+        the fraction of (strided) frames in which residue ``i`` of chain
+        ``proteinID1`` is within ``threshold`` Angstroms of residue ``j``
+        of chain ``proteinID2`` under the chosen distance mode. Calling
+        with ``proteinID1 == proteinID2`` produces the chain's intra-chain
+        contact map (caps and glycines contribute zero rows/columns for
+        modes that can't be evaluated for them).
 
-        Note that this analysis can take some time for large trajectories. If
-        this is an issue consider setting the verbose flag to True, and the
-        progress will be printed. By default this is off, but it can be 
-        reassuring to confirm things are running.
-                
         Parameters
-        ------------
-
+        ----------
         proteinID1 : int
-            The ID of the first protein of the two being considered, where the 
-            ID is the protein's index in the `self.proteinTrajectoryList` 
-            list.             
-
+            Index of the first protein in ``self.proteinTrajectoryList``.
         proteinID2 : int
-            The ID of the second protein of the two being considered, where 
-            the ID is the protein's inde in the 
-            `self.proteinTrajectoryList` list.
-
-        threshold : float 
-            Distance that is used as the distance cutoff to define something
-            as a contact or not
-
-        mode : str (default = 'atom')
-            Mode allows the user to define different modes for computing 
-            atomic distance.
-
-            The default is ``atom`` whereby a pair of atoms (A1 and A2) are 
-            provided. Other options are detailed below and are identical to 
-            those offered by mdtraj in compute_contacts.
-
-            Note that if modes other than ``atom`` are used the A1 and A2 
-            options are ignored.
-
-            + ``ca`` - same as setting ``atom`` and then defining atoms \
-                       1 and 2 (A1 and A2) as CA. 
-                      
-            + ``closest`` - closest atom associated with each of the \
-                            residues, i.e. the point of closest approach \
-                            between the two residues.
-                                                        
-            + ``closest-heavy`` - same as `'closest'`, except only non-\
-                                  hydrogen atoms are considered.
-                                  
-            + ``sidechain`` - closest atom where that atom is in the\
-                              sidechain.
-
-            + ``sidechain-heavy`` - closest atom where that atom is\
-                                    in the sidechain and is heavy.
-
-        A1 : str (default = 'CA')
-            Atom name of the atom in R1 we're looking at. 
-
-        A2 : str (default = 'CA')
-            Atom name of the atom in R2 we're looking at. 
-
-        periodic : bool (default = False)
-            Flag which if distances mode is passed as anything other than 'atom' 
-            then this determines if the minimum image convention should be used. 
-            Note that this is only available if pdb crystal dimensions are provided, 
-            and in general it's better to set this to false and  center the molecule 
-            first. Default = False. 
-
-        verbose : bool
-            Flag which, if set to true, will print each iteraction through the outer
-            loop of each residue in the protein as the distances are calculated.
-            Default = False.
+            Index of the second protein in ``self.proteinTrajectoryList``.
+        threshold : float, optional
+            Contact distance cutoff in Angstroms. Default 5.0.
+        mode : {'atom', 'ca', 'closest', 'closest-heavy', 'sidechain', 'sidechain-heavy'}, optional
+            How inter-residue distance is defined (see
+            :meth:`SSProtein.get_inter_residue_atomic_distance` for full
+            descriptions). For ``mode='atom'`` the ``A1`` / ``A2`` atom
+            names are used; for every other mode they are ignored.
+            Default ``'atom'``.
+        A1 : str, optional
+            Atom name in residue R1 when ``mode='atom'``. Default ``'CA'``.
+        A2 : str, optional
+            Atom name in residue R2 when ``mode='atom'``. Default ``'CA'``.
+        periodic : bool, optional
+            If True, apply the minimum-image convention to the
+            mdtraj-driven modes (closest, closest-heavy, sidechain,
+            sidechain-heavy). Default False.
+        stride : int, optional
+            Use every ``stride``-th frame when computing the per-pair
+            distances; the contact fraction is then
+            ``sum(distances < threshold) / n_strided_frames``. Default 1.
+        verbose : bool, optional
+            If True, print one status line per residue in the outer loop.
+            Default False.
 
         Returns
-        ---------
-        np.ndarray [n x m] 
-            Returns an matrix with inter-residue contact fractions reported at each
-            intersection.
-        
+        -------
+        np.ndarray
+            Array of shape ``(n_res_P1, n_res_P2)`` of contact fractions in
+            ``[0, 1]``.
+
+        Raises
+        ------
+        SSException
+            If either ``proteinID`` is out of range, ``mode`` is invalid,
+            ``stride`` is not a positive integer, or every per-residue
+            inner call failed (e.g. an invalid atom name was supplied).
+
+        Example
+        -------
+        >>> cmap = two_chain_traj.get_interchain_contact_map(0, 1, mode='closest-heavy')
+        >>> cmap.shape
+        (58, 58)
         """
+
+        # Eagerly validate proteinIDs so an out-of-range value raises
+        # SSException up front instead of an IndexError partway through.
+        n_proteins = len(self.proteinTrajectoryList)
+        for label, pid in (('proteinID1', proteinID1), ('proteinID2', proteinID2)):
+            if not (0 <= pid < n_proteins):
+                raise SSException(
+                    f"In get_interchain_contact_map(): {label}={pid} is out of "
+                    f"range; valid indices are 0..{n_proteins - 1}"
+                )
+
+        # Validate the mode keyword up front. Doing this here avoids the
+        # silent all-zero matrix that would otherwise be produced by the
+        # per-residue try/except below when every call raises with the
+        # same "bad mode" error.
+        allowed_modes = ['atom', 'ca', 'closest', 'closest-heavy', 'sidechain', 'sidechain-heavy']
+        if mode not in allowed_modes:
+            raise SSException(
+                f"In get_interchain_contact_map(): mode keyword must be one of "
+                f"{allowed_modes}. Provided keyword was [{mode}]"
+            )
+
+        if not (isinstance(stride, (int, np.integer)) and stride >= 1):
+            raise SSException(
+                f"In get_interchain_contact_map(): stride must be a positive "
+                f"integer, got {stride!r}"
+            )
 
         # get number of residues/bases for the two proteins
         n_res_P1 = self.proteinTrajectoryList[proteinID1].n_residues
         n_res_P2 = self.proteinTrajectoryList[proteinID2].n_residues
 
-        # 
         all_contact_fractions = []
+        # Track successful (R1, R2) computations. If zero pairs succeed (e.g.,
+        # mode='atom' with a non-existent atom name, or mode='sidechain' on a
+        # poly-glycine chain) we raise rather than return a silent zero matrix.
+        success_count = 0
 
         # cycle over each residue in protein 1
         for p1_res_idx in range(0, n_res_P1):
             if verbose:
                 print(f'On {p1_res_idx} of {n_res_P1}')
-    
+
             tmp = []
 
             # cycle over each residue in protein 2
             for p2_res_idx in range(0, n_res_P2):
 
-                # calculate distances between unique residues in P1 and P2
-                distances = self.get_interchain_distance(proteinID1, proteinID2, p1_res_idx, p2_res_idx, A1=A1, A2=A2, mode=mode, periodic=periodic)
+                # Per-residue computations can legitimately fail in two cases:
+                #   1. Cap residues (ACE / NME) lack a CA atom, so mode='atom'
+                #      with A1='CA' (default) and mode='ca' both raise.
+                #   2. Glycines lack a sidechain, so mode='sidechain' and
+                #      mode='sidechain-heavy' raise (and mdtraj's empty
+                #      sidechain selector emits a ValueError further down
+                #      the stack).
+                # In both cases the correct contact fraction is 0 — there is
+                # nothing to be in contact via the requested mode. Catch and
+                # zero-fill so the matrix shape (n_res_P1, n_res_P2) is
+                # preserved and the rest of the matrix still works.
+                try:
+                    distances = self.get_interchain_distance(
+                        proteinID1, proteinID2, p1_res_idx, p2_res_idx,
+                        A1=A1, A2=A2, mode=mode, periodic=periodic, stride=stride,
+                    )
+                except (SSException, ValueError):
+                    tmp.append(0.0)
+                    continue
 
-                
-                # find number of distances below the threshold and calculat as a 
-                # a fraction of all frames
-                contact_fraction = np.sum(distances<threshold)/self.n_frames
-
-                # add that fraction to the temporary 
+                # distances is already strided by get_interchain_distance, so
+                # len(distances) is the number of frames actually evaluated.
+                contact_fraction = np.sum(distances < threshold) / len(distances)
                 tmp.append(contact_fraction)
-    
-            all_contact_fractions.append(tmp)   
+                success_count += 1
+
+            all_contact_fractions.append(tmp)
+
+        if success_count == 0:
+            raise SSException(
+                f"In get_interchain_contact_map(): no residue pair could be "
+                f"computed for mode={mode!r} (A1={A1!r}, A2={A2!r}). Check that "
+                f"the mode/atom selections are valid for the residues in "
+                f"protein {proteinID1} and protein {proteinID2}."
+            )
 
         return np.array(all_contact_fractions)
 
@@ -985,93 +1035,60 @@ class SSTrajectory:
     #oxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxo
     #
     #
-    def get_interchain_distance(self, proteinID1, proteinID2, R1, R2, A1='CA', A2='CA', mode='atom', periodic=False):
-        """
-        Function which returns the distance between two specific atoms on 
-        two residues, or between two residues based on mdtraj's atom 
-        selection mode rules (discussed below). Required input are protein        
-        ID selectors and the resid being used. Resids should be used as 
-        would be normally used for the SSProtein objects associated with 
-        proteinID1 and proteinID2.
-        
-        For inter-atomic distances, atoms are selected from the passed 
-        residue and their 'name' field from the topology selection language 
-        (e.g. "CA", "CB" "NH" etc). By default CA atoms are used, but one can 
-        define any residue of interest. We do not perform any sanity checking 
-        on the atom name - this gets really hard - so have an explicit 
-        try/except block which will warn you that you've probably 
-        selected an illegal atom name from the residues.
+    def get_interchain_distance(self, proteinID1, proteinID2, R1, R2, A1='CA', A2='CA', mode='atom', periodic=False, stride=1):
+        """Per-frame distance between two residues, one in each chain.
 
-        For inter-residue distances the associated rules are defined by the 
-        'mode' selector. By default mode is set to 'atom', which means the 
-        variables A1 and A2 are used (with CA as default) to define inter-
-        residue distance. However, if one of the other modes are used the 
-        A1/A2 parameters are ignored and alternative rules for computing 
-        inter-residue distance are used. These modes are detailed below.
+        Resids are interpreted as they would be inside the corresponding
+        :class:`SSProtein` (so the same R1=5 means "residue 5 of chain
+        ``proteinID1``" rather than a global topology index).
+
+        For ``mode='atom'`` the distance is between the named atoms
+        ``A1`` of R1 in chain 1 and ``A2`` of R2 in chain 2. For every
+        other mode the ``A1`` / ``A2`` arguments are ignored and the
+        distance comes from ``mdtraj.compute_contacts``.
 
         Distance is returned in Angstroms.
 
         Parameters
         ----------
-
         proteinID1 : int
-            Index of the first protein of interest
-
+            Index of the first protein in ``self.proteinTrajectoryList``.
         proteinID2 : int
-            Index of the second protein of interest
-
-        R1 : int
-            Residue index of first residue
-
-        R2 : int
-            Residue index of second residue
-
-        A1 : str (default = 'CA')
-            Atom name of the atom in R1 we're looking at. 
-
-        A2 : str (default = 'CA')
-            Atom name of the atom in R2 we're looking at. 
-
-        mode : str (default = 'atom')
-            Mode allows the user to define different modes for computing atomic 
-            distance.
-
-            The default is ``atom`` whereby a pair of atoms (A1 and A2) are 
-            provided. Other options are detailed below and are identical to 
-            those offered by mdtraj in compute_contacts.
-
-            Note that if modes other than ``atom`` are used the A1 and A2 
-            options are ignored.
-
-            + ``ca`` - same as setting ``atom`` and then defining atoms \
-                       1 and 2 (A1 and A2) as CA. 
-                      
-            + ``closest`` - closest atom associated with each of the \
-                            residues, i.e. the point of closest approach \
-                            between the two residues.
-                                                        
-            + ``closest-heavy`` - same as `'closest'`, except only non-\
-                                  hydrogen atoms are considered.
-                                  
-            + ``sidechain`` - closest atom where that atom is in the\
-                              sidechain.
-
-            + ``sidechain-heavy`` - closest atom where that atom is\
-                                    in the sidechain and is heavy.
-                                    
-
-        periodic : bool (default = False)
-            Flag which if distances mode is passed as anything other than 'atom'
-            then this determines if the minimum image convention should be used.
-            Note that this is only available if pdb crystal dimensions are
-            provided, and in general it's better to set this to false and
-           center the molecule first. Default = False.
+            Index of the second protein.
+        R1, R2 : int
+            Resids to measure between (R1 in chain 1, R2 in chain 2).
+        A1, A2 : str, optional
+            For ``mode='atom'``, the atom names. Defaults ``'CA'``.
+        mode : {'atom', 'ca', 'closest', 'closest-heavy', 'sidechain', 'sidechain-heavy'}, optional
+            How the distance is defined. See
+            :meth:`SSProtein.get_inter_residue_atomic_distance` for full
+            descriptions. Default ``'atom'``.
+        periodic : bool, optional
+            If True, apply the minimum-image convention for the
+            mdtraj-driven modes. Default False.
+        stride : int, optional
+            Use every ``stride``-th frame. Returned array has length
+            ``ceil(n_frames / stride)``. Must be a positive integer.
+            Default 1.
 
         Returns
-        -----------
-        np.array
-            Returns a 1D numpy array with the distance-per-frame betwee the specified residues
+        -------
+        np.ndarray
+            1D array of length ``ceil(n_frames / stride)`` with the
+            inter-chain distance in each (strided) frame, in Angstroms.
 
+        Raises
+        ------
+        SSException
+            If ``mode`` is invalid, a protein ID is out of range, a resid
+            has no atoms, an atom name cannot be found, or ``stride`` is
+            not a positive integer.
+
+        Example
+        -------
+        >>> d = two_chain_traj.get_interchain_distance(0, 1, R1=10, R2=15)
+        >>> d.shape
+        (1000,)
         """
 
         # check mode keyword is valid
@@ -1100,7 +1117,19 @@ class SSTrajectory:
             
         subtraj_p1 = P1.traj.atom_slice(local_atoms1)
         subtraj_p2 = P2.traj.atom_slice(local_atoms2)
-        
+
+        # Apply frame stride before any expensive mdtraj compute so the
+        # downstream COM / compute_contacts / compute_distances calls operate
+        # on n_frames // stride frames rather than the full trajectory.
+        if not (isinstance(stride, (int, np.integer)) and stride >= 1):
+            raise SSException(
+                f"In get_interchain_distance(): stride must be a positive "
+                f"integer, got {stride!r}"
+            )
+        if stride > 1:
+            subtraj_p1 = subtraj_p1[::stride]
+            subtraj_p2 = subtraj_p2[::stride]
+
         # this is now a subtrajectory which in principle contains just two residues. We can check
         # this to ensure that the trajectory has exactly 2 residues
         full_subtraj = subtraj_p1.stack(subtraj_p2)

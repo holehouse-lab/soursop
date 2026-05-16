@@ -31,6 +31,38 @@ Lalmansingh, J. M., Keeley, A. T., Ruff, K. M., Pappu, R. V. & Holehouse, A. S. 
 Copyright (c) 2015-2024 under the GNU LESSER GENERAL PUBLIC LICENSE 
 
 # Changelog
+
+#### Update May 2026 (0.2.7)
+
+**Bug fixes**
+* `ssnmr`: Corrected three copy-paste errors in the propagation of Ser/Thr/Tyr neighbour-correction values to pSer/pThr/pTyr slots in the glycine-specific random-coil correction tables (`gly_ca_c`, `gly_co_c`, `gly_n_c`). Phospho-residues at the i+1 neighbour position of glycine now correctly apply the intended Kjaergaard correction; previously these slots were silently zeroed or used the wrong row, causing errors of up to ~2.7 ppm in rare Gly–phospho-Gly contexts.
+* `ssprotein.get_Q`: Replaced manual sigmoid with `scipy.special.expit` to avoid `np.exp` overflow for large positive arguments.
+* `ssprotein.get_Q`: Fixed a division-by-zero in residue–residue contact matrix normalisation when a pair had zero atomic contacts in all frames; affected entries are now safely set to zero rather than producing NaN.
+* `ssprotein.get_contact_map`: Added an explicit check for glycine residues before computing `sidechain-heavy` contact maps; an `SSException` is now raised consistently rather than producing mdtraj-version-dependent behaviour.
+* `ssprotein.get_clusters`: Fixed a division-by-zero in RMSD centroid selection when all pairwise distances within a cluster are identical (std == 0); the first frame is returned as the centroid in that degenerate case.
+* `ssutils.set_numpy_threads`: Raises a descriptive `SSException` when neither MKL nor OpenBLAS is detected (e.g. macOS Apple Accelerate) rather than silently failing.
+* `sstrajectory.get_interchain_contact_map` / `get_interchain_distance`: Fixed IndexError raised for terminal cap residues that lack a CA atom; added eager protein-ID and mode validation; wrapped per-residue computations in try/except so a single problematic residue no longer aborts the entire map.
+
+**New features and improvements**
+* `sstrajectory.get_interchain_contact_map` and `sstrajectory.get_interchain_distance`: Added a `stride` parameter that subsamples frames *before* the mdtraj distance computation, giving substantial speed-ups on large trajectories without any post-hoc loss of information.
+* `sstrajectory`: Applied `functools.wraps` to the `lazy_loading_single_protein_trajectory` decorator so that `get_overall_radius_of_gyration`, `get_overall_hydrodynamic_radius`, and `get_overall_asphericity` preserve their docstrings and signatures at runtime (this also fixes Sphinx autodoc rendering for these three methods).
+* `ssprotein`: Converted all legacy `%`-format strings to f-strings for consistency and readability.
+
+**Testing**
+* Renamed all test-data trajectory files to carry an explicit resolution suffix (`_AA` for all-atom, `_CG` for coarse-grained), e.g. `ctl9.pdb` → `ctl9_AA.pdb`. This makes the resolution unambiguous for both tests and build scripts.
+* Added two coarse-grained test trajectories (`sigA_CG`, `synth_1_CG`) to extend coverage of CG loading paths.
+* Added a pickle-based regression test suite (`test_reference_observables.py`, ~600+ parametrized tests) that recomputes every public `SSProtein` observable against stored reference values and asserts numerical agreement. Reference pickles are built by `tests/build_reference/build_references.py`.
+* Extended `test_sstrajectory.py` with systematic parametrized tests covering properties, consistency checks, contact-map correctness, and stride behaviour across all test trajectories.
+* Updated `conftest.py` with new module-scoped fixtures for the additional trajectories.
+* Fixed `test_trajectory_repr_string` which was inadvertently returning a tuple rather than asserting, so the test never validated the repr string.
+* `test_set_numpy_threads` now skips gracefully on platforms without a controllable BLAS backend rather than failing.
+
+**Documentation**
+* Rewrote all public docstrings in `ssprotein.py`, `sstrajectory.py`, `sssampling.py`, `ssutils.py`, `ssmutualinformation.py`, and `sspre.py` to follow the numpy docstring standard (one-line summary, extended description, typed Parameters, Returns with shapes, Raises, short Example).
+* Added detailed overview preambles to all five module RST pages (`ssprotein`, `sstrajectory`, `ssnmr`, `sspre`, `sssampling`), describing what each module does, how its classes relate, and what categories of analysis are available.
+* Rewrote `examples.rst` with nine worked IDP analysis examples covering trajectory loading, global dimensions, polymer scaling, secondary structure, contact maps, solvent accessibility, multi-chain systems, NMR comparison (PRE and random-coil chemical shifts), and sampling quality assessment with PENGUIN.
+* Fixed Sphinx build errors caused by duplicate `SSProtein` object descriptions and RST citation-label collisions (numeric `[1]_` / `.. [1]` footnotes shared across methods); resolved by adding `:no-index:` to the second autoclass block and converting all numeric footnotes to inline prose citations.
+
 #### Update November 2024 (0.2.6)
 * Major update to SOURSOP. 
 * Explicit support for single-chain one-bead-per-residue trajectory loading that dramatically improves load time (~30x improvement)
@@ -74,9 +106,6 @@ We are currently and systematically updating all of the CAMPARITraj codebase to 
 
 #### Update December 2020
 Release 0.1.2 includes updated support to ensure CAMPARITraj will continue to work with MDTraj 1.9.5, as well as numerous additional updated.
-
-#### Update May 2026 (0.2.7)
-* Bugfix: Corrected three copy-paste errors in the propagation of Ser/Thr/Tyr neighbor-correction values to pSer/pThr/pTyr slots in the glycine-specific random-coil correction tables (gly_ca_c, gly_co_c, gly_n_c) in ssnmr.py. This ensures that phospho-residues at the i+1 neighbor position of glycine now correctly use the Ser/Thr/Tyr _c-row corrections. Previously, these slots either pulled the _a-row value or stayed at zero, leading to errors of up to ~2.7 ppm in rare gly-phospho-gly contexts. All random-coil predictions are now consistent with the intended Kjaergaard parameterization.
 
 #### Update May 2019
 This is the *development* repository of CAMPARITraj and SHOULD NOT be used for production. Seriously, it is being modified constantly and with no building requirements during code pushes. If you want a building copy PLEASE contact Alex directly! [last touched June 24th 2019].

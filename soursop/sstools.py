@@ -7,7 +7,7 @@
 
 ## Alex Holehouse (Pappu Lab and Holehouse Lab) and Jared Lalmansingh (Pappu lab)
 ## Simulation analysis package
-## Copyright 2014 - 2022
+## Copyright 2014 - 2026
 ##
 
 """

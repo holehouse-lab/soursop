@@ -7,7 +7,7 @@
 
 ## Alex Holehouse (Pappu Lab and Holehouse Lab) and Jared Lalmansingh (Pappu lab)
 ## Simulation analysis package
-## Copyright 2014 - 2024
+## Copyright 2014 - 2026
 ##
 
 import time
@@ -16,6 +16,7 @@ import numpy as np
 from numpy import linalg as LA
 from itertools import combinations
 from scipy import stats
+from scipy.special import expit
 import scipy.optimize as SPO
 from scipy.spatial import ConvexHull
 from numpy.random import choice
@@ -121,7 +122,7 @@ class SSProtein:
             for r in self.topology.chain(0).residues:
                 residues_strings.append(str(r))
             r_string = '-'.join(residues_strings)
-            ssio.debug_message("Residue string from residues in self.topology.chain(0).residues: %s" % (r_string))
+            ssio.debug_message(f"Residue string from residues in self.topology.chain(0).residues: {r_string}")
 
             # delete the vaiable to avoid any possible introduction of this var into the namespace
             del r_string
@@ -174,20 +175,25 @@ class SSProtein:
     #
     # IMPORTANT FUNCTION - enables the user to manually override stored
     def reset_cache(self):
-        """Function that enables the user to manually delete data that the
-        SSProtein object has precomputed. In general this shouldn't be
-        necessary, but there could be some edge cases where resetting the
-        stored data cache is helpful.
+        """Clear every value the SSProtein has memoised so far.
 
-        No input or return type
-
-        Parameters
-        -----------
-        None
+        Many SSProtein methods cache their first-call result (sequences, atom
+        index tables, per-residue centres of mass, SASA results, dihedral
+        angles). This method discards those caches and re-initialises the
+        ``resid_with_CA`` / cap flags from the underlying topology. It is
+        rarely necessary in normal use; reach for it if you have mutated the
+        trajectory in-place and need the SSProtein to re-derive its tables,
+        or if you are profiling cold-vs-warm performance.
 
         Returns
-        ------------
+        -------
         None
+
+        Example
+        -------
+        >>> protein.get_radius_of_gyration()    # first call: populates caches
+        >>> protein.reset_cache()               # discard all cached values
+        >>> protein.get_radius_of_gyration()    # cold-cache call again
         """
 
         # initialize some empty values that are populated on demand by functions that drive local
@@ -225,86 +231,116 @@ class SSProtein:
 
     @property
     def resid_with_CA(self):
-        """Return a list of resids that have CA (alpha-carbon) atoms. The
-        values associated with this property are built using the internal
-        function ``__get_resid_with_CA()``.
+        """Resids of residues that have a CA (alpha-carbon) atom.
+
+        ACE and NME capping residues, water, ions, and any non-standard
+        residue without a CA are excluded. Use this whenever you need to
+        iterate over "real" residues and not the cap pseudo-residues.
 
         Returns
-        --------
-        list
-            Returns a list of integers where each int is the resid of a residue
-            that has a CA atom
+        -------
+        list of int
+            Resids (0-indexed) of residues with a CA atom, in ascending order.
 
-
-        See Also
-        ------------
-        idx_with_CA
+        Example
+        -------
+        >>> protein.resid_with_CA
+        [1, 2, 3, ..., 92]   # ctl9_AA has ACE at 0 and NME at 93
         """
         return self.__resid_with_CA
 
 
     @property
     def ncap(self):
-        """Flag that returns if an N-terminal capping residue is present (or
-        not).
+        """True if an N-terminal capping residue (e.g. ACE) is present.
+
+        Inferred from whether resid 0 has a CA atom: if it does not, a cap is
+        assumed to occupy resid 0.
 
         Returns
-        ----------
+        -------
         bool
-            True if N-teminal cap is present, False if not
+            True if an N-terminal cap is present, False otherwise.
+
+        Example
+        -------
+        >>> protein.ncap
+        True
         """
         return self.__ncap
 
     @property
     def ccap(self):
-        """Flag that returns if a C-terminal capping residue is present (or
-        not).
+        """True if a C-terminal capping residue (e.g. NME) is present.
+
+        Inferred from whether the last resid has a CA atom: if it does not, a
+        cap is assumed to occupy that resid.
 
         Returns
-        ----------
+        -------
         bool
-            True if C-teminal cap is present, False if not
+            True if a C-terminal cap is present, False otherwise.
+
+        Example
+        -------
+        >>> protein.ccap
+        True
         """
 
         return self.__ccap
 
     @property
     def n_frames(self):
-        """Returns the number of frames in the trajectory.
+        """Number of frames in the underlying mdtraj trajectory.
 
         Returns
-        ----------
+        -------
         int
-            Returns the number of frames in the simulation trajectory
+            Total frame count of the simulation trajectory.
+
+        Example
+        -------
+        >>> protein.n_frames
+        1000
         """
 
         return self.traj.n_frames
 
     @property
     def n_residues(self):
-        """Returns the number of residues in the protein (including caps)
+        """Number of residues in the protein, including any cap residues.
 
         Returns
-        ----------
+        -------
         int
-            Returns the number of frames in the protein
+            Total residue count, counting ACE / NME caps if present.
+
+        Example
+        -------
+        >>> protein.n_residues
+        94
         """
 
         return self.__num_residues
 
     @property
     def residue_index_list(self):
-        """Returns the list of resids associated with this protein. These will
-        always start from 0 and increment (as of version 0.1.3) but these are
-        extracted here EXPLICITLY from the underlying mdtraj.topology object,
-        which can be useful for debugging.
+        """All resids associated with this protein, extracted from the topology.
+
+        As of v0.1.3 the list always starts at 0 and increments by one up to
+        ``n_residues - 1``. It is extracted live from the underlying
+        ``mdtraj.topology`` (and then cached) so it is useful as a
+        ground-truth reference when debugging residue-index issues.
 
         Returns
-        ---------
-        list
-            Returns a list of resid values which should be a uniformly
-            incrementing list of numbers starting at 0 and incrementing
-            to self.n_residues-1.
+        -------
+        list of int
+            Resids in ascending order; length equals ``n_residues``.
+
+        Example
+        -------
+        >>> protein.residue_index_list[:5]
+        [0, 1, 2, 3, 4]
         """
 
         if self.__residue_index_list == None:
@@ -318,10 +354,23 @@ class SSProtein:
 
     @property
     def unitcell(self):
-        """
-        :property: Returns a list with unit cell information in Angstroms 
-        (assuming base unitsof trajectory are in nanometers)
-        
+        """Unit cell box lengths of the first frame, in Angstroms.
+
+        SOURSOP follows the convention of reporting distances in Angstroms, so
+        the values stored by mdtraj (which are in nanometres) are multiplied
+        by 10 here. Raises ``TypeError`` if the trajectory has no recorded
+        periodic box (some coarse-grained runs).
+
+        Returns
+        -------
+        np.ndarray
+            Array of shape (3,) giving the box lengths along x, y, z in
+            Angstroms.
+
+        Example
+        -------
+        >>> protein.unitcell
+        array([60.0, 60.0, 60.0])
         """
         return self.traj.unitcell_lengths[0]*10
     
@@ -329,7 +378,7 @@ class SSProtein:
 
 
     def  __repr__(self):
-        return "SSProtein (%s): %i res and %i frames" % (hex(id(self)), self.n_residues, self.n_frames)
+        return f"SSProtein ({hex(id(self))}): {self.n_residues} res and {self.n_frames} frames"
 
 
     def __len__(self):
@@ -339,7 +388,23 @@ class SSProtein:
 
 
     def length(self):
-        # Implemented a method that encapsulates the data output by the original `__len__` method.
+        """Return a ``(n_residues, n_frames)`` tuple summarising the protein.
+
+        Convenience method that preserves the historic behaviour of
+        ``__len__`` from before SOURSOP switched its ``len(protein)``
+        semantics to match mdtraj (frame count only).
+
+        Returns
+        -------
+        tuple of (int, int)
+            ``(n_residues, n_frames)`` — number of residues including caps,
+            and number of trajectory frames.
+
+        Example
+        -------
+        >>> protein.length()
+        (94, 1000)
+        """
         return (self.n_residues, self.n_frames)
 
 
@@ -348,32 +413,34 @@ class SSProtein:
     # ........................................................................
     #
     def __check_weights(self, weights, stride=1, etol=0.0000001):
-        """Function that checks a passed weights-array is usable and matches
-        the number of frames (avoids a lot of heartache when something breaks
-        deep inside the code). This also checks that the weights sum to 1
-        (within some error, as defined by etol).
+        """Validate a frame-weights vector before it is used in averaging.
 
-        NOTE: This also typecasts weights to a `numpy.array` which allows them
-        to be indexed directly using a list of values.
+        Ensures the weights are a numeric numpy array, that there is one
+        weight per frame, and that they sum to 1 within ``etol`` (after
+        any stride subsampling). Type-casts to ``np.float64`` so the
+        result can be used as numpy indexing or weighting input
+        downstream.
 
         Parameters
         ----------
-        weights : array_like
-            An `numpy.array` object that corresponds to the number of frames
-            within an input trajectory.
-
-        stride : {int}, optional
-            The stepsize used when iterating across the frames.
-
-        etol : {0.0000001} float
-            Defines the error tollerance for the weight sums - i.e. if
-            abs(np.sum(weights) - 1) > etol an exception is raised.
+        weights : array_like or False
+            Per-frame weights. The literal value ``False`` is treated as
+            "no weights" and returned unchanged.
+        stride : int, optional
+            Stepsize used while iterating across frames. If ``> 1`` a
+            warning is emitted and the strided slice of the weights is
+            returned (since strided weighting is rarely what you want).
+            Default 1.
+        etol : float, optional
+            Tolerance for the ``|sum(weights) - 1| < etol`` check.
+            Default ``1e-7``.
 
         Returns
         -------
-        numpy.array
-            An `np.array` object containing trajectory frames selected per
-            `stride` number of frames.
+        np.ndarray or False
+            * ``False`` if the input was ``False`` (no weights).
+            * Otherwise a ``np.float64`` array of length
+              ``ceil(n_frames / stride)``.
         """
 
         if weights is not False:
@@ -381,11 +448,11 @@ class SSProtein:
             try:
                 weights = np.array(weights, dtype=np.float64)
             except ValueError as e:
-                ssio.exception_message("Unable to convert passed weights to a np.array(). Likely means the passed value is not numerical (printed below):\n\n%s"%(weights), e, with_frills=True, raise_exception=True)
+                ssio.exception_message(f"Unable to convert passed weights to a np.array(). Likely means the passed value is not numerical (printed below):\n\n{weights}", e, with_frills=True, raise_exception=True)
 
 
             if len(weights) != self.n_frames:
-                raise SSException('Passed frame weights array is %i in length, while there are actually %i frames - these must match' % (len(weights), self.n_frames))
+                raise SSException(f'Passed frame weights array is {len(weights)} in length, while there are actually {self.n_frames} frames - these must match')
 
 
             if stride > 1:
@@ -398,7 +465,7 @@ class SSProtein:
                 if abs(np.sum(weights) - 1.0) < etol:
                     return weights
                 else:
-                    ssio.exception_message("The passed weights are not within the specified floating point epsilon tolerance (etol=%f). | sum of weights - 1 | = %f\n\n" % (etol, abs_weights_difference), with_frills=True, raise_exception=True)
+                    ssio.exception_message(f"The passed weights are not within the specified floating point epsilon tolerance (etol={etol:f}). | sum of weights - 1 | = {abs_weights_difference:f}\n\n", with_frills=True, raise_exception=True)
 
 
         return False
@@ -407,37 +474,38 @@ class SSProtein:
     # ........................................................................
     #
     def __get_first_and_last(self, R1, R2, withCA=False):
-        """Internal helper function which returns first and last residue for a
-        range, which is able to identify residues that do or do not have CA.
+        """Resolve a possibly-``None`` ``(R1, R2)`` pair into a valid residue range.
 
-        Note that this sanity checks to make sure residues R1 and
-        R2 (if provided) fall within the possible residue indices.
+        Handles three things in one place:
+
+        * Defaults: ``R1=None`` becomes the first residue (or first CA
+          residue if ``withCA``); ``R2=None`` becomes the last.
+        * Cap-awareness: when ``withCA=True`` the range is shrunk by one
+          on each cap-bearing end.
+        * Validation: out-of-range or boolean inputs raise SSException;
+          ``R1 > R2`` is silently swapped.
 
         Parameters
         ----------
-        R1 : int or None
-            First residue in range - can be an integer (assumes first
-            residue in chain indexed at 0). If `None` assume we start
-            at 0.
-
-        R2 : int or None
-            Last residue in range - can be an integer (assumes first
-            residue in chain indexed at 0). If `None` assumes we're
-            using the whole chain.
-
-        withCA : bool {False}
-            Flag which, if `True` and R1 or R2 are `False`, selects
-            R1/R2 values that contain a CA, which basically means
-            caps are dealt with here if present.
+        R1, R2 : int or None
+            Inclusive endpoints of the residue range. ``None`` means
+            "use the chain endpoint".
+        withCA : bool, optional
+            If True, restrict default endpoints to CA-bearing residues
+            (i.e. exclude ACE / NME caps). Default False.
 
         Returns
         -------
-        tuple:
-            Returns a tuple with three positions:
+        tuple of (int, int, str)
+            ``(R1, R2, selection_string)`` where the third element is an
+            mdtraj-compatible ``"resid R1 to R2"`` string that can be
+            handed directly to ``topology.select``.
 
-            * [0] : R1 (first residue in region) (`int`).
-            * [1] : R2 (last residue in the region)  (`int`).
-            * [2] : String that can be passed directly to topology select to extract the atoms associated with these positions.
+        Raises
+        ------
+        SSException
+            If ``R1`` / ``R2`` are booleans (deprecated), if either is
+            negative, or if either exceeds ``n_residues - 1``.
         """
 
         # this is a defensive sanity check to revert a potentially bug-causing
@@ -493,10 +561,10 @@ class SSProtein:
             trajectory, or less than 1.
         """
         if stride > self.n_frames:
-            raise SSException('stride (%i) is larger than the number of frames (%i)' %(stride, self.n_frames))
+            raise SSException(f'stride ({stride}) is larger than the number of frames ({self.n_frames})')
 
         if stride < 1:
-            raise SSException('stride (%i) is less than 1' %(stride))
+            raise SSException(f'stride ({stride}) is less than 1')
 
 
 
@@ -521,10 +589,10 @@ class SSProtein:
         """
 
         if R1 < 0:
-            raise SSException("Trying to use a negative residue index [residue index = %i]"%R1)
+            raise SSException(f"Trying to use a negative residue index [residue index = {R1}]")
 
         if R1  >= self.n_residues:
-            raise SSException("Trying to use a residue ID greater than the chain length [residue index = %i, chain length = %i] " % (R1, self.n_residues))
+            raise SSException(f"Trying to use a residue ID greater than the chain length [residue index = {R1}, chain length = {self.n_residues}] ")
 
     # ........................................................................
     #
@@ -572,7 +640,7 @@ class SSProtein:
             is raised
         """
         if R1 not in self.resid_with_CA:
-            raise SSException("Resid %i lacks an alpha carbon atom" % (R1))
+            raise SSException(f"Resid {R1} lacks an alpha carbon atom")
 
         return None
 
@@ -727,7 +795,7 @@ class SSProtein:
 
             # if all_atoms not yet associated with this residue
             if 'all_atoms' not in self.__residue_atom_table[resid]:
-                self.__residue_atom_table[resid]['all_atoms'] = self.topology.select('resid %i'%(resid))
+                self.__residue_atom_table[resid]['all_atoms'] = self.topology.select(f'resid {resid}')
 
             # return set of all atoms
             return self.__residue_atom_table[resid]['all_atoms']
@@ -742,7 +810,7 @@ class SSProtein:
                 if atom_name != 'CA':
                     raise SSException("Trying to select a single atom for a coarse grained chain, but the atom name is not 'CA'. SOURSOP requires all bead atoms to be defined as 'CA'")
             
-            self.__residue_atom_table[resid][atom_name] = self.topology.select('resid %i and name "%s"'%(resid, atom_name))
+            self.__residue_atom_table[resid][atom_name] = self.topology.select(f'resid {resid} and name "{atom_name}"')
 
         # at this point we know the resid-atom_name pair is in the table
         # so goahead and look it up!
@@ -794,30 +862,30 @@ class SSProtein:
 
             if backbone:
                 if heavy:
-                    selectionatoms = self.topology.select('backbone and resid %i to %i and not type "H"' % (R1, R2))
+                    selectionatoms = self.topology.select(f'backbone and resid {R1} to {R2} and not type "H"')
                 else:
-                    selectionatoms = self.topology.select('backbone and resid %i to %i' % (R1, R2))
+                    selectionatoms = self.topology.select(f'backbone and resid {R1} to {R2}')
 
             else:
                 if heavy:
-                    selectionatoms = self.topology.select('resid %i to %i and not type "H"' % (R1, R2))
+                    selectionatoms = self.topology.select(f'resid {R1} to {R2} and not type "H"')
                 else:
-                    selectionatoms = self.topology.select('resid %i to %i' % (R1, R2))
+                    selectionatoms = self.topology.select(f'resid {R1} to {R2}')
 
         elif len(region) == 2:
             if backbone:
                 if heavy:
-                    selectionatoms = self.topology.select('backbone and resid %i to %i and not type "H"' % (region[0], region[1]))
+                    selectionatoms = self.topology.select(f'backbone and resid {region[0]} to {region[1]} and not type "H"')
                 else:
-                    selectionatoms = self.topology.select('backbone and resid %i to %i' % (region[0], region[1]))
+                    selectionatoms = self.topology.select(f'backbone and resid {region[0]} to {region[1]}')
             else:
                 if heavy:
-                    selectionatoms = self.topology.select('resid %i to %i and not type "H"' % (region[0], region[1]))
+                    selectionatoms = self.topology.select(f'resid {region[0]} to {region[1]} and not type "H"')
                 else:
-                    selectionatoms = self.topology.select('resid %i to %i' % (region[0], region[1]))
+                    selectionatoms = self.topology.select(f'resid {region[0]} to {region[1]}')
 
         else:
-            raise SSException("Trying to select a subsection of atoms, but the provided 'region' tuple/list is not of exactly length two [region=%s].\nCould indicate a problem, so be safe raising an exception" % (str(region)))
+            raise SSException(f"Trying to select a subsection of atoms, but the provided 'region' tuple/list is not of exactly length two [region={region}].\nCould indicate a problem, so be safe raising an exception")
 
         return selectionatoms
 
@@ -828,27 +896,27 @@ class SSProtein:
     # ........................................................................
     #
     def print_residues(self, verbose=True):
-        """Function to help determine the mapping of residue ID to PDB residue
-        value. Prints the mapping between resid and PDB residue, and returns
-        this information in a list.
+        """Map each zero-indexed residue position to its PDB resname-resid label.
 
-        Returns a list of lists, where each list element is itself
-        a list of two elements, index position and the resname-resid
-        from the PDB file.
+        Useful when debugging cap/non-cap offsets or aligning SOURSOP residue
+        indices against a published PDB numbering.
 
         Parameters
         ----------
-        verbose : bool {True}
-            If set to True, ``print_residues()`` will print out to screen
-            and also return a list. If set to False, means nothing is printed
-            to the screen.
+        verbose : bool, optional
+            If True (default), also prints each ``"<idx> --> <resname-resid>"``
+            line to stdout. If False, the list is returned silently.
 
         Returns
         -------
-        return_list
-            List containing a mapping of the zero-indexed residues and their
-            names.
+        list of [int, str]
+            One ``[index, resname-resid]`` pair per residue, in topology order.
 
+        Example
+        -------
+        >>> mapping = protein.print_residues(verbose=False)
+        >>> mapping[:3]
+        [[0, 'ACE-0'], [1, 'MET-1'], [2, 'ALA-2']]
         """
 
 
@@ -856,7 +924,7 @@ class SSProtein:
         return_list = []
         for i in range(0, len(AA)):
             if verbose is True:
-                print("%i --> %s" %(i, AA[i]))
+                print(f"{i} --> {AA[i]}")
             return_list.append([i,AA[i]])
         return return_list
 
@@ -865,60 +933,65 @@ class SSProtein:
     # ........................................................................
     #
     def get_residue_atom_indices(self, resid, atom_name=None):
-        """Function that looks up the atomic indices of a specific residue's
-        atom. This is a memoization function; i.e., when called it populates a
-        table so the computational cost here is only incurred once.
+        """Look up the atom indices that belong to a specific residue.
 
-        :note: This function used to be called ``residue_atom_com()``.
+        Results are memoised on first lookup so repeated calls for the same
+        ``(resid, atom_name)`` pair are essentially free. The previous name of
+        this method was ``residue_atom_com()``.
 
         Parameters
         ----------
-        resid: int
-            The residue index to lookup. If the residue has not been cached, it
-            will be added to the lookup table for later reuse.
-
-        atom_name: str or None
-            The name of the atom to lookup which will return the corresponding
-            residue ID. Like the previous parameter, if that residue does not
-            exist in the lookup table it will be added for later reuse.
-            Default = None
+        resid : int
+            Resid of the residue to look up.
+        atom_name : str, optional
+            If given, restrict the result to atoms whose name matches this
+            string (e.g. ``"CA"``, ``"CB"``, ``"N"``). If None (default), all
+            atoms of the residue are returned.
 
         Returns
         -------
-        list
-            A list containing all the atoms corresponding to a given residue ID
-            that match the input residue id (`resid`) or, the residue
-            corresponding to the atom name (`atom_name`).
+        list of int
+            Atom indices into the underlying mdtraj topology that satisfy the
+            ``resid`` / ``atom_name`` filter.
 
+        Example
+        -------
+        >>> ca_atoms = protein.get_residue_atom_indices(5, atom_name='CA')
+        >>> all_atoms = protein.get_residue_atom_indices(5)
         """
 
-        self.__residue_atom_lookup(resid, atom_name)
+        return self.__residue_atom_lookup(resid, atom_name)
 
 
 
     # ........................................................................
     #
     def get_residue_COM(self, resid, atom_name=None):
-        """Property that returns the 3 x n np.ndarray with the COM of the
-        residue in question for every frame in the simulation. The absolute
-        positions are returned in Angstroms.
+        """Per-frame centre of mass (COM) of a residue or a specific atom of it.
 
-        Computes it once and then looks up this data.
+        The COM is computed once and cached, so repeated calls for the same
+        ``(resid, atom_name)`` pair are essentially free. All positions are
+        returned in Angstroms.
 
         Parameters
-        -------------
+        ----------
         resid : int
-            Resid for residue of interest
-
-        atom_name : str
-            Lets you pass a specific atom names associated with the residue
-            of interest
+            Resid of the residue to extract.
+        atom_name : str, optional
+            If given, only the named atom contributes to the COM (a single-atom
+            COM is just the atom's position). If None (default), every atom of
+            the residue contributes.
 
         Returns
-        -------------
+        -------
         np.ndarray
-            Returns an [x,y,z] x n np.ndarray of x/y/z positions for this
-            residue COM for EVERY frame.
+            Array of shape ``(n_frames, 3)`` giving the COM ``(x, y, z)`` of
+            the residue in each frame.
+
+        Example
+        -------
+        >>> com = protein.get_residue_COM(5)              # full-residue COM
+        >>> ca  = protein.get_residue_COM(5, 'CA')        # CA atom position
         """
 
         # check its ok...
@@ -955,24 +1028,36 @@ class SSProtein:
     # ........................................................................
     #
     def get_amino_acid_sequence(self, oneletter=False, numbered=True):
-        """Returns the protein's amino acid sequence.
+        """Return the amino-acid sequence of the protein in several formats.
+
+        Caps (ACE / NME) and other non-standard residues are included in the
+        sequence using their three-letter or one-letter codes as recorded by
+        the topology.
 
         Parameters
         ----------
-        oneletter : bool {False}
-            If `True` returns a single sequence of one letter amino
-            acid codes. If `False` get a list of 3 letter codes with residue
-            number separated by a '-' character.
-
-        numbered : bool {True}
-            If `True` the return value is a list of RESNAME-RESID strings,
-            if `False` return value is a list of RESNAME in the correct order.
+        oneletter : bool, optional
+            If True, use single-letter amino-acid codes. If False (default),
+            use three-letter codes.
+        numbered : bool, optional
+            If True (default), include the resid in each entry as a
+            ``"RESNAME-RESID"`` string. If False, just the resname.
 
         Returns
         -------
-        list
-            A list comprised of the 1-letter or 3-letter names of the amino
-            acid sequence.
+        list of str OR str
+            * ``oneletter=False, numbered=True`` -> ``['MET-0', 'ALA-1', ...]``
+            * ``oneletter=False, numbered=False`` -> ``['MET', 'ALA', ...]``
+            * ``oneletter=True, numbered=True`` -> the full one-letter string,
+              e.g. ``"MA..."``
+            * ``oneletter=True, numbered=False`` -> ``['M', 'A', ...]``
+
+        Example
+        -------
+        >>> protein.get_amino_acid_sequence(oneletter=True, numbered=True)
+        'MAAEELANAK...'
+        >>> protein.get_amino_acid_sequence()[:3]
+        ['MET-0', 'ALA-1', 'ALA-2']
         """
 
         if oneletter:
@@ -1011,30 +1096,32 @@ class SSProtein:
     # ........................................................................
     #
     def get_CA_index(self, resid):
-        """Get the CA atom index for the residue defined by residueIndex.
-         Again does this.
+        """Return the atom index of the alpha-carbon (CA) for a residue.
 
-        via memoization - i.e. the first time a specific residue is requested
-        the function looks up the information and then stores it locally in
-        case its needed again.
-
-        Defensivly checks for errors.
+        Results are memoised on first lookup so repeated calls are essentially
+        free. Raises ``SSException`` if the residue does not have exactly one
+        CA atom (e.g. cap residues like ACE / NME have none).
 
         Parameters
         ----------
-
-        residueIndex: int
-            Defines the resid to select the CA from.
+        resid : int
+            Resid whose CA atom should be returned.
 
         Returns
         -------
-        list
-            A list of size 1 containing the CA atom index for the residue index, ``residueIndex``.
+        int
+            The mdtraj atom index of the CA atom of residue ``resid``.
 
         Raises
         ------
         SSException
-            When the number of CA atoms do not equal 1.
+            If the residue has no CA atom (caps, non-standard residues, or
+            coarse-grained beads named differently).
+
+        Example
+        -------
+        >>> protein.get_CA_index(5)
+        37
         """
 
         if resid not in self.__CA_residue_atom:
@@ -1043,7 +1130,7 @@ class SSProtein:
             if len(return_val) == 1:
                 self.__CA_residue_atom[resid] = return_val[0]
             else:
-                raise SSException("get_CA_index - unable to find residue %i" % resid)
+                raise SSException(f"get_CA_index - unable to find residue {resid}")
 
         return self.__CA_residue_atom[resid]
 
@@ -1051,30 +1138,26 @@ class SSProtein:
     # ........................................................................
     #
     def get_all_atomic_indices(self, resid):
-        """Get all the atomic indices for the residue defined by resid. This.
+        """Return every atom index that belongs to a residue.
 
-        via memoization - i.e. the first time a specific residue is requested
-        the function looks up the information and then stores it locally in
-        case its needed again.
-
-        Defensivly checks for errors.
+        Results are memoised on first lookup so repeated calls for the same
+        ``resid`` are essentially free.
 
         Parameters
         ----------
-
         resid : int
-            Defines the residue ID to select the atomic indices from
+            Resid whose atoms should be returned.
 
         Returns
         -------
-        list
-            A list of size 1 containing the CA atom index for the residue
-            index,``residueIndex``.
+        list of int
+            Atom indices (into the underlying mdtraj topology) for every atom
+            of residue ``resid``.
 
-        Raises
-        ------
-        SSException
-            When the number of CA atoms do not equal 1.
+        Example
+        -------
+        >>> protein.get_all_atomic_indices(5)
+        [35, 36, 37, ..., 49]
         """
 
         return self.__residue_atom_lookup(resid)
@@ -1083,24 +1166,32 @@ class SSProtein:
     # ........................................................................
     #
     def get_multiple_CA_index(self, resID_list=None):
-        """Returns the atom indices associated with the C-alpha (CA) atom for
-        the residues defined in the resID_list OR for all residues, if no list
-        is provided.
+        """Return CA atom indices for many residues at once.
+
+        Convenience wrapper around :meth:`get_CA_index` that handles three
+        input forms: a single integer, a list of integers, or ``None``
+        (meaning "every residue with a CA"). Residues without a CA are
+        silently skipped rather than raising.
 
         Parameters
         ----------
-
-        resID_list: list of int or None
-            Defines a list of residues for which the C-alpha atom index will
-            be retrieved. If no list is provided we simply select the list
-            of residues with C-alphas, whose indices have been corrected.
-            Default is None.
-
+        resID_list : int, list of int, or None, optional
+            * ``None`` (default) -> use :attr:`resid_with_CA` (every residue
+              that has a CA).
+            * A single ``int`` -> wrap in a list, return one-element list.
+            * A ``list[int]`` -> look up each in turn, skipping any that
+              raise.
 
         Returns
         -------
-        list
-            Returns a list C-Alpha indices of the input list of residue IDs.
+        list of int
+            CA atom indices, in the same order as the input residues.
+
+        Example
+        -------
+        >>> protein.get_multiple_CA_index([5, 10, 15])
+        [37, 86, 134]
+        >>> all_ca = protein.get_multiple_CA_index()   # every CA
         """
 
         # if we've just passed a single unlisted integer
@@ -1126,56 +1217,48 @@ class SSProtein:
 
     # ........................................................................
     #
-    def calculate_all_CA_distances(self, residueIndex,  mode='CA', only_C_terminal_residues=True, stride=1):
-        """Calculate the full set of distances between C-alpha atoms.
-        Specifically, from the residueIndex, this function will calculate
-        distances between that residue and all other residues that have CA-
-        atoms, either as CA-CA distance, or as COM-COM distance (as defined by
-        the mode keyword).
+    def calculate_all_CA_distances(self, residueIndex, mode='CA', only_C_terminal_residues=True, stride=1):
+        """Distances between a reference residue and every other CA residue.
 
-        Note that by default this explicitly works in a way to avoid computing
-        redundancy where we ONLY compute distances between residue `i` and
-        residues greater than `i` up to the final residue. This behaviour is
-        defined by the `only_C_terminal_residues` flag.
+        Computes either CA-CA or COM-COM distances from ``residueIndex`` to
+        all other residues in the chain that have a CA atom. By default only
+        residues C-terminal of the reference are considered, which is the
+        right choice when building an all-vs-all upper-triangular matrix.
 
         Distance is returned in Angstroms.
 
         Parameters
         ----------
-
-        residueIndex: int
-            Defines the residue index to select the CA from.
-
-        mode : str
-            String, must be one of either ``CA`` or ``COM``
-
-            * ``CA`` - alpha carbon.
-            * ``COM`` -  center of mass (associated withe the residue).
-
-            Default = 'CA'.
-
-        only_C_terminal_residues: bool
-            This variable means that only residues C-terminal of the
-            residueIndex value will be considered. This is useful when
-            performing an ALL vs. ALL matrix as it ensures that only the
-            upper triangle is calculated if we iterate over all residues,
-            but may  not be deseriable in other contexts. Default = True.
-
-        stride: int
-            Defines the spacing between frames to compare - i.e. if comparing
-            frame1  to a trajectory we'd compare frame 1 and every stride-th
-            frame.  Default = 1.
+        residueIndex : int
+            Reference residue. Must have a CA atom; if not, the function
+            returns ``-1`` rather than raising.
+        mode : {'CA', 'COM'}, optional
+            * ``'CA'`` (default) - distance between alpha-carbon atoms.
+            * ``'COM'`` - distance between residue centres of mass.
+        only_C_terminal_residues : bool, optional
+            If True (default) only consider residues with index strictly
+            greater than ``residueIndex``. If False, also include residues
+            N-terminal of the reference.
+        stride : int, optional
+            Use every ``stride``-th frame. Default is 1.
 
         Returns
         -------
-        numpy.array
-            Array containing the end-to-end distance measures based on the
-            input mode.
+        np.ndarray or int
+            * On success: array of shape ``(n_frames_after_stride, M)`` where
+              ``M`` is the number of other residues considered.
+            * If ``residueIndex`` has no CA: the integer ``-1``.
 
         Raises
         ------
         SSException
-            If the input mode is nether 'CA' or 'COM'.
+            If ``mode`` is not one of ``'CA'`` or ``'COM'``.
+
+        Example
+        -------
+        >>> d = protein.calculate_all_CA_distances(5)
+        >>> d.shape
+        (1000, 86)
         """
 
         # validate input
@@ -1249,69 +1332,54 @@ class SSProtein:
     # ........................................................................
     #
     def get_distance_map(self, mode='CA', RMS=False, stride=1, return_instantaneous_maps=False, weights=False, verbose=True):
-        """Function to calculate the CA defined distance map for a protein of
-        interest. Note this function doesn't take any arguments and instead
-        will just calculate the complete distance map.
+        """Inter-residue distance map (and its standard deviation).
 
-        NOTE that distance maps are calculated between all CA-CA distances and
-        NOT center of mass positions. This also means ACE/NME caps are EXCLUDED
-        from this anlysis.
-
-        Distance is described in Angstroms.
+        Builds the full N x N matrix of inter-residue distances where N is
+        the number of residues with a CA atom (ACE / NME caps are therefore
+        excluded). Distances are returned in Angstroms. The matrix is upper
+        triangular (entries below the diagonal are zero).
 
         Parameters
         ----------
+        mode : {'CA', 'COM'}, optional
+            * ``'CA'`` (default) - distances between alpha-carbon atoms.
+            * ``'COM'`` - distances between residue centres of mass.
+        RMS : bool, optional
+            If True, report root-mean-square distances
+            :math:`\\sqrt{\\langle r_{ij}^2 \\rangle}`, the polymer-physics
+            order parameter. If False (default), report the ensemble mean
+            :math:`\\langle r_{ij} \\rangle`.
+        stride : int, optional
+            Use every ``stride``-th frame. Default is 1 (every frame).
+        return_instantaneous_maps : bool, optional
+            If True, the first element of the returned tuple is a 3D array
+            ``(n_frames, N, N)`` of per-frame distance maps rather than the
+            2D ensemble-average map. Default is False.
+        weights : list or np.ndarray, optional
+            Per-frame weights for re-weighted averaging (e.g. T-WHAM output).
+            Default ``False`` means uniform weighting; in that case the
+            std-map is also returned, otherwise it is None.
+        verbose : bool, optional
+            If True (default), print one status line per row of the matrix.
+            This calculation can be slow on long trajectories.
 
-        mode : str
-            String, must be one of either 'CA' or 'COM'.
-            - 'CA' = alpha carbon.
-            - 'COM' = center of mass (associated withe the residue).
-            Default = 'CA'.
-
-        RMS : bool
-            If set to False, scaling map reports ensemble average distances
-            (this is the standard and default behaviour). If True, then the
-            distance reported is the root mean squared (RMS) = i.e.
-            SQRT(<r_ij^2>), which is the formal order parameter that should
-            be used for polymeric distance properties. Default = False.
-
-        stride : int
-            Defines the spacing between frames to compare - i.e. if comparing
-            frame1 to a trajectory we'd compare frame 1 and every stride-th
-            frame. Default = 1.
-
-        return_instantaneous_maps : bool
-            If set to True, then the function will return a list of distance
-            maps for each frame in the trajectory. This can be useful for
-            further analysis. Default = False.
-
-        weights : list or array of floats
-            Defines the frame-specific weights if re-weighted analysis is
-            required. This can be useful if an ensemble has been re-weighted
-            to better match experimental data, or in the case of analysing
-            replica exchange data that is re-combined using T-WHAM.
-
-        verbose : bool
-            Flag that by default is True determines if the function prints
-            status updates. This is relevant because this function can be
-            computationally expensive, so having some report on status can
-            be comforting!
-
-
+        Returns
         -------
-        tuple
-            A 2-tuple containing
-            * `[0]` : The distance map derived from the measurements between 
-                      residues. If return_instantaneous_maps is False (default
-                      then this returns the AVERAGE inter-residue distances. If
-                      return_instantaneous_maps is True, then this returns a
-                      3D array where the first dimension is the frame number,
-                      and then dimensions 2 and 3 reflect inter-residue distances
-                      in each frame
-                        
-            * `[1]` : The standard deviation corresponding to the distance map.
-                      Regardless of what is selected this returns the standard
-                      deviation of the distance map. If return_instantaneous_maps
+        tuple of (np.ndarray, np.ndarray)
+            ``(distance_map, std_distance_map)`` where:
+
+            * ``distance_map`` is ``(N, N)`` ensemble-mean distances (or
+              ``(n_frames, N, N)`` per-frame distances if
+              ``return_instantaneous_maps=True``).
+            * ``std_distance_map`` is ``(N, N)`` per-pair standard
+              deviations across frames; ``None`` if ``weights`` was given.
+
+        Example
+        -------
+        >>> mean_map, std_map = protein.get_distance_map(verbose=False)
+        >>> mean_map.shape
+        (92, 92)
+        >>> rms_map, _ = protein.get_distance_map(mode='COM', RMS=True, verbose=False)
         """
 
         ssutils.validate_keyword_option(mode, ['CA', 'COM'], 'mode')
@@ -1343,7 +1411,7 @@ class SSProtein:
         SM_index = 0
         for resIndex in self.resid_with_CA[0:-1]:
 
-            ssio.status_message("On protein residue %i (overall residue index = %i) of %i [distance calculations]"% (SM_index, resIndex, int(len(residuesWithCA))), verbose)
+            ssio.status_message(f"On protein residue {SM_index} (overall residue index = {resIndex}) of {int(len(residuesWithCA))} [distance calculations]", verbose)
 
             # get all CA-CA distances between the residue of index resIndex and every other residue.
             # Note this gives the non-redudant upper triangle.
@@ -1397,115 +1465,83 @@ class SSProtein:
     # ........................................................................
     #
     def get_polymer_scaled_distance_map(self, nu=None, A0=None, min_separation=10, mode='fractional-change', stride=1, weights=False, etol=0.0000001, verbose=True):
-        """
-        Function that allows for a global assesment of how well all `i-j`
-        distances conform to standard polymer scaling behaviour (i.e.
-        :math:`r_{(i,j)} = A_0|i-j|^{\\nu}`).
+        """Quantify how each inter-residue distance deviates from a homopolymer model.
 
-        Essentially, this generates a distance map (2D matrix of i vs. j
-        distances) where that distance is either normalized by the expected
-        distance for a provided homopolymer model, or quantifies the fractional
-        deviation from a homopolymer model fit to the data. These two modes are
-        explained in more detail below.
+        For a standard polymer the equilibrium distance scales as
+        :math:`\\langle r_{ij} \\rangle = A_0 |i-j|^{\\nu}`. This method
+        builds an N x N matrix where each entry quantifies how far the
+        observed mean distance is from that homopolymer prediction. The
+        deviation can be expressed in several ways (see ``mode``).
 
-        In this standard scaling relationship:
+        Note that :math:`A_0` here is the prefactor of the inter-residue
+        distance scaling and is NOT the same numerical value as the
+        :math:`R_0` prefactor that defines :math:`R_g = R_0 N^{\\nu}`. The
+        scaling exponent :math:`\\nu` should typically lie in
+        ``[0.33, 0.598]`` for real polymers.
 
-        * :math:`\langle r_{i,j} \\rangle` :  Average inter-residue distance of residue i and j
-
-        * :math:`A_0`: Scaling prefactor. Note this is NOT the same *numerical* value as the math:`R_0` prefactor that defines the relationship :math:`R_g = R_0 N^{\\nu}`.
-
-        * :math:`|i-j|` : Sequence separation between residues i and j
-
-        * :math:`{\\nu}` : The intrinsic polymer scaling exponent (in principle should be between 0.33 and 0.598).
-
-        This is the scaling behaviour expected for a standard homopolymer.
-        This function then assess how well this relationship holds for ALL
-        possible inter-residue distances.
-
-        This function returns a four position tuple.
-
-        Position one is an n x n numpy matrix (where n = sequence length),
-        where the element is either the default value OR quantifes the
-        deviation from a polymer model in  one of two ways.
-
-        Positions two and three are the nu and A0 values used, respectively.
-
-        Finally, position 4 will be the reduced chi-square fitting to the polymer
-        model for the internal scaling profile (i.e. how A0 and nu are originally
-        calculated).
-
-        NB: The reduced chi-squared value will be -1 if nu and A0 are provided
-        in the function call.
-
-        If no options are provided, the function calculates the best fit to a
-        homopolymer mode using the default parameters associated with the
-        ``get_scaling_exponent()`` function, and then uses this model to determine
-        pairwise deviations.
-
+        If ``nu`` and ``A0`` are not supplied, the homopolymer model is fit
+        automatically by :meth:`get_scaling_exponent` (with default settings)
+        and that fit is used as the reference model.
 
         Parameters
         ----------
+        nu : float, optional
+            Scaling exponent used as the homopolymer reference. If supplied,
+            ``A0`` must also be supplied. If ``None`` (default), both are
+            obtained by calling :meth:`get_scaling_exponent`.
+        A0 : float, optional
+            Scaling prefactor for the homopolymer reference; paired with
+            ``nu``.
+        min_separation : int, optional
+            Minimum sequence separation ``|i-j|`` for which a deviation is
+            computed. Entries with separations below this threshold are filled
+            with the mode-dependent default value (0 for the change modes,
+            1 for ``'scaled'``). Default is 10.
+        mode : {'fractional-change', 'signed-fractional-change', 'signed-absolute-change', 'scaled'}, optional
+            How to quantify the deviation between the observed mean distance
+            :math:`r_{ij}` and the homopolymer prediction :math:`p_{ij}`:
 
-        nu : float
-            Scaling exponent used (if provided). Note for a provided nu to be
-            used, both nu and A0 must be provided. Default is None
-
-        A0 : float
-            Scaling prefactor used (if provided). Note for a provided A0 to
-            be used, both A0 and nu must be provided. Default is None
-
-        min_separation : int
-            Minimum distance for which deviations are calculated. At close
-            distances, we expect local steric effects to cause deviations
-            from a polymer model, so this value defines the threshold minimum
-            distance to be used. Default is 10.
-
-        mode : str
-            Defines the mode in which deviation from a homopolymer model is
-            calculated. Options are: ``fractional-change``, ``signed-fractional-change``,
-            ``signed-absolute-change``, ``scaled``.
-
-            * ``fractional-change``: Each inter-residue deviation is calculated as :math:`d_{(i,j)} = (|r_{i,j} - p_{i,j}|) / p_{i,j}`, where :math:`r_{i,j}` is the mean distance from the simulation for residues i and j, while  :math:`p_{i,j}` is the expected distance between any two i,j residues in the polymer model.
-
-            * ``signed-fractional-change``: Each inter-residue deviation is calculated as :math:`d_{(i,j)} = (r_{i,j} - p_{i,j}) / p_{i,j}`, i.e. the same as the `fractional-change` mode except that a sign is now included. Positive values mean there is expansion with respect to the homopolymer behaviour, while negative values mean there is contraction with respect to the homopolymer model.
-
-            * ``signed-absolute-change``: Each inter-residue deviation is calculated as :math:`d_{(i,j)} = (r_{i,j} - p_{i,j})` i.e. the same as the signed-fractional-change, except now it is no longer fraction but in absolute distance units. This can be useful for getting a sense of by how-much the real behaviour deviates from the model in terms of Angstroms.
-            * ``scaled``: Each inter-residue deviation is calculated as :math:`d_{(i,j)} = (r_{i,j}/p_{i,j})`
-
-        weights : list
-            Defines the frame-specific weights if re-weighted analysis is
-            required. This can be useful if an ensemble has been re-weighted
-            to better match experimental data, or in the case of analysing
-            replica exchange data that is re-combined using T-WHAM. Can be
-            a list of any slicable element vector. Default = None.
-
-        etol : {0.0000001} float
-            Defines the error tollerance for the weight sums - i.e. if
-            abs(np.sum(weights) - 1) > etol an exception is raised.
-
-        verbose : bool
-            Flag that by default is True determines if the function prints
-            status updates. This is relevant because this function can be
-            computationally expensive, so having some report on status can
-            be comforting! Default = True.
-
+            * ``'fractional-change'`` (default): :math:`|r_{ij} - p_{ij}| / p_{ij}`.
+              Unsigned magnitude.
+            * ``'signed-fractional-change'``: :math:`(r_{ij} - p_{ij}) / p_{ij}`.
+              Positive => expansion vs. the homopolymer, negative => contraction.
+            * ``'signed-absolute-change'``: :math:`r_{ij} - p_{ij}` (Angstroms).
+            * ``'scaled'``: :math:`r_{ij} / p_{ij}` (default value 1 on near-diagonal).
+        stride : int, optional
+            Use every ``stride``-th frame for the distance map. Default is 1.
+        weights : list or np.ndarray, optional
+            Per-frame weights for re-weighted analysis (e.g. T-WHAM output).
+            Default ``False`` means uniform weighting.
+        etol : float, optional
+            Tolerance for the weights-sum-to-one check. Default ``1e-7``.
+        verbose : bool, optional
+            If True (default), print status updates during the distance map
+            and (when needed) the scaling-exponent fit.
 
         Returns
         -------
-        tuple (len = 4)
+        tuple of (np.ndarray, float, float, float)
+            ``(map, nu, A0, redchi)`` where:
 
-            * `[0]` : n x n numpy matrix (where n = sequence length), where the element is either the default value OR quantifes the deviation from a polymer model in one of two ways.
-            * `[1]` : float defining the scaling exponent nu
-
-            * `[2]` : float defining the A0 prefactor
-
-            * `[3]` : reduced chi-squared fitting to the polymer model (goodness of fit)
+            * ``map`` is an ``(N, N)`` numpy matrix of deviations (units
+              depend on ``mode``).
+            * ``nu`` is the homopolymer scaling exponent used.
+            * ``A0`` is the homopolymer scaling prefactor used.
+            * ``redchi`` is the reduced chi-squared of the homopolymer fit
+              (``-1`` if ``nu`` / ``A0`` were supplied rather than fit).
 
         Raises
         ------
-        soursop.ssexceptions.SSException
-            If inappropriate inputs are passed this function raises an SSException
+        SSException
+            If ``mode`` is not one of the four allowed values, if
+            ``min_separation < 1``, if exactly one of ``nu``/``A0`` is given,
+            or if the supplied ``nu``/``A0`` are out of physical range.
 
+        Example
+        -------
+        >>> m, nu, A0, chi2 = protein.get_polymer_scaled_distance_map(verbose=False)
+        >>> m.shape, round(nu, 2)
+        ((92, 92), 0.6)
         """
 
         # First validate keyword
@@ -1529,10 +1565,10 @@ class SSProtein:
             REDCHI = SE[7]
 
         elif nu is None:
-            raise SSException("A0 parameter provided [%1.5f] but nu was not. Must provide BOTH or neither (in which case fitting is done)" %( A0))
+            raise SSException(f"A0 parameter provided [{A0:.5f}] but nu was not. Must provide BOTH or neither (in which case fitting is done)")
 
         elif A0 is None:
-            raise SSException("nu parameter provided [%1.5f] but A0 was not. Must provide BOTH or neither (in which case fitting is done)" %( nu))
+            raise SSException(f"nu parameter provided [{nu:.5f}] but A0 was not. Must provide BOTH or neither (in which case fitting is done)")
 
         # else both were provided so we double check they're valid..
         else:
@@ -1607,59 +1643,58 @@ class SSProtein:
     # ........................................................................
     #
     def get_local_heterogeneity(self, fragment_size=10, bins=None, stride=20, verbose=True):
-        """Function to calculate the vector of D values used to calculate the
-        Phi parameter from Lyle et al[1]. The stride defines the spacing
-        between frames which are analyzed. This is just for practical purposes.
+        """Sliding-window heterogeneity: per-position distribution of intra-window RMSDs.
 
-        The Phi calulation computes a D value for each frame vs. frame
-        comparison - for a 2000 frame simulation this would be 4 million D
-        values if every value was calculated which is a bit much, so the
-        stride lets you define how many frames you should skip.
+        At each starting residue ``i`` (from 0 to ``n_residues - fragment_size``)
+        the method computes the RMSD of the local fragment ``[i, i+fragment_size]``
+        across every (strided) frame, then summarises that distribution by
+        its mean, standard deviation, and histogram. The Phi parameter of
+        Lyle, Das & Pappu (2013) is built from this same family of D-values.
 
-        For a 2000 frame trajectory of a 80 residue protein with a stride=20
-        allows the calculation to take about 5 seconds. However, as protein
-        size increases the computational cost of this process grows rapidly.
+        Computational cost scales with ``n_residues * (n_frames / stride)``;
+        the default ``stride=20`` keeps things tractable on long trajectories.
 
         Parameters
-        -----------
-
-        fragment_size : int
-            Size of local region that is considered to be a single unit over
-            which structural heterogeneity is examined. Should be between 2 and
-            the length of the sequence. Default = 10
-
-        bins : np.ndarray
-            Bins used to capture the heterogeneity at each position. If not
-            defined, the default is a set of bins from 0 to 1 with an interval
-            of 0.01 is used.
-
-        stride : int
-            Defines the spacing between frames to compare - i.e. if comparing
-            frame1 to a trajectory we'd compare frame 1 and every stride-th
-            frame. Default = 20
-
-        verbose : bool
-            Flag that by default is True determines if the function prints
-            status updates. This is relevant because this function can be
-            computationally expensive, so having some report on status can
-            be comforting! Default = True.
+        ----------
+        fragment_size : int, optional
+            Size of the sliding window (residues). Must be ``>= 2`` and
+            ``<= n_residues``. Default is 10.
+        bins : np.ndarray or list, optional
+            Histogram bin edges. If None (default), uses
+            ``np.arange(0, 10, 0.01)``. Must contain at least two evenly-
+            spaced floats.
+        stride : int, optional
+            Use every ``stride``-th frame in the inner RMSD pass. Default 20.
+        verbose : bool, optional
+            If True (default), print one status line per starting residue.
 
         Returns
         -------
-        tuple (len = 4)
+        tuple of (list, list, list, np.ndarray)
+            ``(mean, std, histo, bins)`` where:
 
-            * `[0]` : list of floats of len *n*, where each float reports on the mean RMSD-deviation at a specific position along the sequence as defined by the fragment_size
-
-            * `[1]` : list of floats of len *n*, where each float reports on the standard deviation of the RMSD-deviation  at a specific position along the sequence as defined by the fragment_size
-
-            * `[2]` : List of np.ndarrays of len *n*, where each sub-array reports on the histogram values associated with the full RMSD distribution at a given position along the sequence
-            * `[3]` : np.ndarray which corresponds to bin values for each of the histograms in return[2]
+            * ``mean`` (list of float, length ``n_residues - fragment_size``):
+              mean intra-window RMSD per starting residue.
+            * ``std`` (list of float, same length): standard deviation of the
+              same RMSD distribution.
+            * ``histo`` (list of np.ndarray, same length): histogram counts
+              per starting residue.
+            * ``bins`` (np.ndarray): the bin edges used (echoed back).
 
         Raises
         ------
-        soursop.ssexceptions.SSException
-            If inappropriate inputs are passed this function raises an SSException
+        SSException
+            If ``fragment_size`` is out of range, or ``bins`` is not a valid
+            evenly-spaced 1D vector.
 
+        Example
+        -------
+        >>> mean, std, hist, bins = protein.get_local_heterogeneity(fragment_size=8)
+
+        References
+        ----------
+        Lyle N, Das RK, Pappu RV. A quantitative measure for protein
+        conformational heterogeneity. J Chem Phys. 2013;139(12):121907.
         """
 
         # validate bins
@@ -1701,7 +1736,7 @@ class SSProtein:
         # untested - for loop used to be frag_idx in res_idx_list[0:-fragment_size]:
         for frag_idx in range(0, self.n_residues - fragment_size):
             tmp = []
-            ssio.status_message("On range %i" % frag_idx, verbose)
+            ssio.status_message(f"On range {frag_idx}", verbose)
 
             # for each frame in ensemble, calculate RMSD for that sub-region compared to
             # all other sub-regions (i.e. we're doing a 1-vs-all RMSD calculation for EACH
@@ -1723,53 +1758,42 @@ class SSProtein:
     # ........................................................................
     #
     def get_D_vector(self, stride=20, verbose=True):
-        """Function to calculate the vector of D values used to calculate the
-        Phi parameter from Lyle et al[1]. The stride parameter defines the
-        spacing between frames which are analyzed. This is just for practical
-        purposes.
+        """Pairwise frame-vs-frame conformational dissimilarity vector :math:`D`.
 
-        The Phi calulation computes a D value for each frame vs. frame
-        comparison - for a 2000 frame simulation this would be 4 million D
-        values if every value was calculated which is a bit much, so the
-        stride let's you define how many frames you should skip.
+        For every pair of (strided) frames :math:`(A, B)` the method
+        computes a single dissimilarity scalar
+        :math:`D_{AB} = 1 - V_A \\cdot V_B / (||V_A|| ||V_B||)`
+        where :math:`V` is the flattened upper-triangular CA-CA distance
+        vector for that frame. This is the input to the Phi parameter of
+        Lyle, Das, Pappu (2013).
 
-        Importantly, the DVector calculated here measures dij (see part
-        III A of the paper) as the CA-CA distance and NOT the average
-        inter-atomic distance. This has two effects:
-
-
-        1. Heterogeneity is now, formally, a measure over backbone heterogeneity and not full protein heterogeneity - this may be desirable (arguably it's a more interpratable measure of conformational change) but if the interatomic version is required this could be implemented.
-
-        2. It is *much* more efficient than the original version.
-
-        For a 2000 frame trajectory of a 80 residue protein with a
-        stride=20 allows the calculation to take about 5 seconds. However,
-        as protein size increases the computational cost of this process
-        grows rapidly.
+        Using CA-CA distances (rather than full inter-atomic distances)
+        makes the measure backbone-specific and *much* faster than the
+        original formulation.
 
         Parameters
-        ------------
-        stride : int {20}
-            Defines the spacing between frames to compare - i.e. if comparing
-            frame1 to a trajectory we'd compare frame 1 and every stride-th
-            frame
-
-        verbose : bool
-            Flag that by default is True determines if the function prints
-            status updates. This is relevant because this function can be
-            computationally expensive, so having some report on status can
-            be comforting!
+        ----------
+        stride : int, optional
+            Use every ``stride``-th frame. Default is 20.
+        verbose : bool, optional
+            If True (default), print one status line per outer-loop frame.
 
         Returns
-        ---------
+        -------
         np.ndarray
-            Returns a numpy array of D values (i.e. the D_vector)
+            1D array of length :math:`\\binom{n_{frames}/\\text{stride}}{2}`
+            containing the pairwise dissimilarity values.
+
+        Example
+        -------
+        >>> D = protein.get_D_vector(stride=20)
+        >>> D.mean()   # mean pairwise dissimilarity
+        0.27
 
         References
-        --------------
-        [1] Lyle, N., Das, R. K., & Pappu, R. V. (2013). A quantitative
-        measure for protein conformational heterogeneity. The Journal of
-        Chemical Physics, 139(12), 121907.
+        ----------
+        Lyle N, Das RK, Pappu RV. A quantitative measure for protein
+        conformational heterogeneity. J Chem Phys. 2013;139(12):121907.
         """
 
         # get the list of residues which have CA (typically this means we exlcude
@@ -1787,7 +1811,7 @@ class SSProtein:
         # so we stick with the upper traingle only)
         SM_index=0
         for resIndex in residuesWithCA[0:-1]:
-            ssio.status_message("Calculating non redundant distance for res. %i " % resIndex, verbose)
+            ssio.status_message(f"Calculating non redundant distance for res. {resIndex} ", verbose)
 
             vals = self.calculate_all_CA_distances(resIndex, stride=stride, only_C_terminal_residues=True)
 
@@ -1812,7 +1836,7 @@ class SSProtein:
         # calculate the D-vector of all frames
         D_vector = []
         for A in range(0, n_frames):
-            ssio.status_message("Running PHI calculation on frame %i of %i" % (A, n_frames), verbose)
+            ssio.status_message(f"Running PHI calculation on frame {A} of {n_frames}", verbose)
 
 
             for B in range(A+1, n_frames):
@@ -1857,42 +1881,43 @@ class SSProtein:
     # ........................................................................
     #
     def get_RMSD(self, frame1, frame2=-1, region=None, backbone=True, stride=1):
-        """Function which will calculate the aligned RMSD between two frames,
-        or between one frame and all frames in the trajectory. This can be done
-        over the entire protein but we can also specificy a local region to
-        perform this analysis over.
+        """Aligned root-mean-square deviation (RMSD) of one frame vs. another (or all).
 
-        Units are Angstroms.
+        Both modes superpose the target onto the reference before computing
+        the RMSD, so the result is rotation/translation invariant. Units are
+        Angstroms.
 
         Parameters
-        -------------
+        ----------
         frame1 : int
-            Defines the frame to be used as a reference
-
-        frame2 : int
-            Defines the frame to be used as a comparison, OR if left blank or
-            set to -1 means the entire trajectory. Default is -1
-
-        region : list/tuple of length 2
-            Defines the first and last residue (INCLUSIVE) for a region to be
-            examined. By default is set to None which means the entire protein
-            is used.
-
-        backbone : bool
-            Boolean flag for using either the full chain or just backbone.
-            Generally backbone alone is fine so default to True.
-
-        stride : int
-            Defines the spacing between frames to compare - i.e. if comparing
-            frame1 to a trajectory we'd compare frame 1 and every stride-th frame.
-            Default is 1.
+            Index of the reference frame.
+        frame2 : int, optional
+            Index of the comparison frame. ``-1`` (default) means "every
+            frame" — i.e. compute an RMSD trace of ``frame1`` against the
+            entire trajectory (subsampled by ``stride``).
+        region : list or tuple of length 2, optional
+            ``[first_resid, last_resid]`` (inclusive) restricting the atoms
+            used to compute and align the RMSD. ``None`` (default) uses the
+            full chain.
+        backbone : bool, optional
+            If True (default), use only the backbone heavy atoms (N, CA, C, O).
+            If False, use every atom in the selection.
+        stride : int, optional
+            Used only when ``frame2 == -1``. Compare ``frame1`` against every
+            ``stride``-th frame of the trajectory. Default is 1.
 
         Returns
-        ----------
+        -------
         np.ndarray
-            Returns a numpy array of either 1 (if two frames are passed) or nframes
-            length which corresponds to the RMSD difference either between two frames
-            or between one frame and ALL other frames
+            * 1-element array if ``frame2`` is a specific frame index.
+            * Length-``ceil(n_frames/stride)`` array if ``frame2 == -1``.
+
+            Values are in Angstroms.
+
+        Example
+        -------
+        >>> rmsd_traj = protein.get_RMSD(frame1=0)              # frame 0 vs all
+        >>> rmsd_pair = protein.get_RMSD(frame1=0, frame2=42)   # frame 0 vs 42
         """
 
         # get the selection atoms (perform correction if required)
@@ -1930,83 +1955,86 @@ class SSProtein:
               weights = False):
 
 
-        """Function which will calculate the fraction of native contacts in
-        each frame of the trajectory.
+        """Fraction-of-native-contacts order parameter :math:`Q` (Best et al.).
 
-        The "native" state is defined as a specific frame (1st frame
-        by default - note this means the native state frame = 0  as we index
-        from 0!). In earlier versions the 'native state frame' was a variable,
-        but this ends up being extremely messy when weights are considered,
-        so assume the native state frame is always frame 0.
+        Native contacts are defined from the reference frame (frame 0) as
+        heavy-atom pairs separated by at least 4 residues in sequence and
+        less than ``native_contact_threshold`` Angstroms in space. Each
+        frame's :math:`Q` is then a sigmoid-weighted fraction of those
+        contacts that remain "native-like" in that frame, per the Best,
+        Hummer, Eaton formula (Best et al. 2013).
 
-        Native contacts are defined using the definition from Best et al [1].
-        The implementation is according to the code helpfully
-        provided at http://mdtraj.org/latest/examples/native-contact.html
+        The reference frame is hard-coded to frame 0 because preserving a
+        variable reference frame became unwieldy with re-weighted ensembles.
 
         Parameters
-        -----------
-
-        protein_average : bool  {True}
-            This is the default mode, and means that the return vector is the
-            AVERAGE fraction of native contacts over the protein surface for
-            each frame (e.g. each value refers to a single frame). If set to
-            false the simulation-average value at native-contact resolution is
-            returned, instead returning $NATIVE_CONTACT number of values and
-            an additional list of native contact pairs. Default = True.
-
-        region : list/tuple of length 2
-            Defines the first and last residue (INCLUSIVE) for a region to be
-            examined. By default is set to None which means the entire protein
-            is used. Default is None.
-
-        beta_const : float
-            Constant used for computing Q in reciprocal nanometers. Default is
-            50 and probably should not be changed without good reason.
-
-        lambda_const : float
-            Constant value is 1.8 for all-atom simulations. Probably should not
-            be changed without good reason.
-
-        native_contact_threshold : float
-            Threshold in Angstroms typically used for all-atom simulations and
-            again probably should not be changed without good reason.
-            Default = 4.5.
-
-        stride : int
-            Defines the spacing between frames to compare - i.e. if comparing
-            frame1 to a trajectory we'd compare frame 1 and every stride-th
-            frame. Default = 1.
-
-        native_state_reference_frame : int
-
-        weights : list or array of floats
-            Defines the frame-specific weights if re-weighted analysis is
-            required.  This can be useful if an ensemble has been re-weighted
-            to better match experimental data, or in the case of analysing
-            replica exchange data that is re-combined using T-WHAM. Default
-            is False
+        ----------
+        protein_average : bool, optional
+            * If True (default), return one Q value per frame (the protein
+              average).
+            * If False, return per-native-contact and per-residue breakdowns
+              in a 5-tuple — useful for visualising which contacts are most
+              persistent.
+        region : list or tuple of length 2, optional
+            ``[first_resid, last_resid]`` (inclusive) restricting the
+            residues used to identify native contacts. ``None`` (default)
+            uses the full protein.
+        beta_const : float, optional
+            Steepness of the sigmoid weighting (1/nm). Default 50. Do not
+            change without strong justification.
+        lambda_const : float, optional
+            Sigmoid width factor (all-atom default 1.8). Do not change
+            without strong justification.
+        native_contact_threshold : float, optional
+            Distance cutoff (Angstroms) that defines a contact in the
+            reference frame. Default is 4.5.
+        stride : int, optional
+            Use every ``stride``-th frame. Default is 1. Must be 1 if
+            ``weights`` is given.
+        native_state_reference_frame : int, optional
+            Currently ignored — the reference frame is always frame 0. Kept
+            in the signature for backward compatibility.
+        weights : list or np.ndarray, optional
+            Per-frame weights for re-weighted analysis. Default ``False``.
 
         Returns
-        -----------
-        vector or tuple
+        -------
+        np.ndarray OR tuple of length 5
+            * If ``protein_average=True`` (default): 1D array of length
+              ``ceil(n_frames/stride)`` with the per-frame Q value.
+            * If ``protein_average=False``: a 5-tuple
 
-            If ``protein_average = True`` a single vector is returned with the
-            overall protein average fraction of native contacts associated with
-            each frame for each residue. If protein_average is set to False a
-            5-position tuple is returned, where each of the four positions has
-            the following identity.
+              0. ``per_contact_fraction`` - 1D array of length
+                 ``N_NATIVE_CONTACTS``; fraction of time each native
+                 contact was native-like over the trajectory.
+              1. ``native_contact_pairs`` - ``(N_NATIVE_CONTACTS, 2)`` int
+                 array; the atom-pair definitions of native contacts.
+              2. ``per_residue_contacts`` - dict keyed by ``"RESNAME-RESID"``;
+                 each value is a list of fractional-native-contact scores
+                 for atoms in that residue. Take the mean per key to get the
+                 per-residue Q.
+              3. ``ordered_residue_keys`` - the keys of (2) in residue order.
+              4. ``res_res_q_matrix`` - ``(n_residues, n_residues)`` array of
+                 inter-residue Q values (symmetric).
 
-            * 0 - The fraction of the time a contact is native for all each native contact (vector of length ``$N_NATIVE CONTACTS``).
-            * 1 - The native contact definition (same length as 1) where each element is a pair of atoms which are considered native.
-            * 2 - The residue-by-residue dictionary-native contacts dictionary. Keys are residue name-number and each key-associated value is the fractional native contacts for atoms associated with that residue. To get the residue-specific fraction of native contacts take the mean of the element values.
-            * 3 - The ordered list of keys from 2 for easy plotting in a residue-residue manner
-            * 4 - A nres x nres array showing a 2D contact map defining inter-residue specific Q values
+        Raises
+        ------
+        SSException
+            If ``weights`` is given with ``stride != 1``, or any constant
+            cannot be coerced to float.
+
+        Example
+        -------
+        >>> q = protein.get_Q()                          # per-frame Q
+        >>> q.mean()
+        0.85
+        >>> per_c, pairs, per_res, keys, res_res = protein.get_Q(protein_average=False)
 
         References
-        --------------
-        [1] Best, Hummer, and Eaton, Native contacts determine protein folding
-        mechanisms in atomistic simulations PNAS (2013) 10.1073/pnas.1311599110
-
+        ----------
+        Best RB, Hummer G, Eaton WA. Native contacts determine protein
+        folding mechanisms in atomistic simulations.
+        PNAS 2013. doi:10.1073/pnas.1311599110
         """
 
         # SET
@@ -2046,7 +2074,7 @@ class SSProtein:
 
 
         except ValueError as e:
-            raise SSException('Could not convert constant into float for setting constants in get_Q().\nSee below:\n\n%s' % (str(e)))
+            raise SSException(f'Could not convert constant into float for setting constants in get_Q().\nSee below:\n\n{e}')
 
 
         # use all pairs of atoms that are over 3 away in sequence space
@@ -2075,7 +2103,7 @@ class SSProtein:
             if weights is not False:
                 raise SSException('Reweighting for frame averaged should be done with trajectory weights OUTSIDE of SOURSOP')
 
-            q = np.mean(1.0 / (1 + np.exp(BETA_CONST * (r - LAMBDA_CONST * r0))), axis=1)
+            q = np.mean(expit(-BETA_CONST * (r - LAMBDA_CONST * r0)), axis=1)
 
             return q
 
@@ -2083,7 +2111,7 @@ class SSProtein:
 
             # if the analysis is to be re-weighted uses the weights here on a per-frame basis
             if weights is not False:
-                q_full = (1.0 / (1 + np.exp(BETA_CONST * (r - LAMBDA_CONST * r0)))).transpose()
+                q_full = expit(-BETA_CONST * (r - LAMBDA_CONST * r0)).transpose()
 
                 q = []
                 for i in q_full:
@@ -2097,7 +2125,7 @@ class SSProtein:
                 # check this makes sense - aboe we do i[1:] should probably correct this to remove
                 # the native state structure? Anyway, here we're averaging over every from for each
                 # residue
-                q = np.mean(1.0 / (1 + np.exp(BETA_CONST * (r - LAMBDA_CONST * r0))), axis=0)
+                q = np.mean(expit(-BETA_CONST * (r - LAMBDA_CONST * r0)), axis=0)
 
             # get the set of unqiue atoms which are involved in native contacts
             unique_native_contact_atoms = np.unique(np.hstack((np.transpose(native_contacts)[0],np.transpose(native_contacts)[1])))
@@ -2150,9 +2178,10 @@ class SSProtein:
                 res_res_matrix_count[R1,R2] = 1 + res_res_matrix_count[R1,R2]
                 res_res_matrix_count[R2,R1] = 1 + res_res_matrix_count[R2,R1]
 
-            # finaly, pairwise division accounts for the fact that some residues
-            # have more atoms than others
-            normalized_res_matrix = res_res_matrix / res_res_matrix_count
+            # pairwise division accounts for residues with more atoms; safe_count
+            # replaces zero entries with 1 to avoid 0/0, those positions are zeroed out by np.where
+            safe_count = np.where(res_res_matrix_count != 0, res_res_matrix_count, 1)
+            normalized_res_matrix = np.where(res_res_matrix_count != 0, res_res_matrix / safe_count, 0.0)
 
             # just as a convenience, build a sorted list of the residues which makes
             # the data a bit easier to play with going forward.
@@ -2172,61 +2201,61 @@ class SSProtein:
     #
     #
     def get_contact_map(self, distance_thresh=5.0, mode='closest-heavy', stride=1, weights=False):
+        """Inter-residue contact map and per-residue contact-order vector.
 
-        """get_contact_map() returns 2-position tuple with the  contact map (N
-        x N matrix) and a contact order.
+        For every pair of residues this returns the fraction of frames in
+        which the chosen inter-residue distance is below
+        ``distance_thresh``. The companion contact-order vector reduces the
+        2D map to a per-residue summary by averaging over the appropriate
+        neighbours-excluded denominator.
 
-        vector (N x 1) that describe the contacts (heavy atom - heavy atom
-        interactions) made by each of the residues over the simulation.
-
-        Each element is normalized such that it is between 0 and 1. i+1 and
-        i+2 elements are excluded, and the minimum distances is the distance
-        between the closest heavy atoms on each residue (backbone or
-        sidechain).
+        ``i to i``, ``i to i+1``, and ``i to i+2`` pairs are always excluded.
+        ACE / NME caps are excluded from the residue set.
 
         Parameters
-        -----------------
+        ----------
+        distance_thresh : float, optional
+            Contact threshold in Angstroms. A pair is "in contact" in a given
+            frame if its distance under the chosen ``mode`` is below this
+            value. Default is 5.0.
+        mode : {'closest-heavy', 'ca', 'closest', 'sidechain', 'sidechain-heavy'}, optional
+            How the inter-residue distance is defined (the schemes from
+            ``mdtraj.compute_contacts``):
 
-        distance_thresh : float
-            Distance threshold used to define a 'contact' in Angstroms.
-            Contacts are taken as frames in which the atoms defined by the
-            scheme are within $distance_thresh angstroms of one another.
-            Default is 5.0.
-
-        mode : string
-            Mode allows the user to define differnet modes for computing
-            contacts. Possible options are detailed below and are identical
-            to those offered by mdtraj in compute_contacts. Default is
-            closes-heavy.
-
-            * ``ca`` - same as setting 'atom' and A1='CA' and A2='CA', this uses the C-alpha atoms
-
-            * ``closest`` - closest atom associated with each of the residues, i.e. the is the point of closest approach between the two residues
-
-            * ``closest-heavy`` - same as closest, except only non-hydrogen atoms are considered
-
-            * ``sidechain`` - closest atom where that atom is in the sidechain. Note this requires mdtraj version 1.8.0 or higher.
-
-            * ``sidechain-heavy`` - closest atom where that atom is in the sidechain and is heavy. Note this requires mdtraj version 1.8.0 or higher.
-
-        stride : int
-            Defines the spacing between frames to compare - i.e. if comparing
-            frame1 to a trajectory we'd compare frame 1 and every stride-th frame.
-            Note this operation may scale poorly as protein length increases at
-            which point increasing the stride may become necessary. Defaultis 1.
-
-        weights [list or array of floats]
-            Defines the frame-specific weights if re-weighted analysis is required.
-            This can be useful if an ensemble has been re-weighted to better match
-            experimental data, or in the case of analysing replica exchange data
-            that is re-combined using T-WHAM. Default is None.
+            * ``'closest-heavy'`` (default) - closest pair of heavy atoms.
+            * ``'ca'`` - alpha-carbon distance.
+            * ``'closest'`` - closest pair of any atoms (incl. hydrogens).
+            * ``'sidechain'`` - closest pair of sidechain atoms (mdtraj >= 1.8).
+            * ``'sidechain-heavy'`` - closest pair of sidechain heavy atoms
+              (mdtraj >= 1.8). Raises if any residue is glycine.
+        stride : int, optional
+            Use every ``stride``-th frame. Default is 1. Must be 1 if
+            ``weights`` is provided.
+        weights : list or np.ndarray, optional
+            Per-frame weights for re-weighted averaging. Default ``False``.
 
         Returns
-        ---------------
-        tuple of size 2
-            Returns a tuple where:
-            0 - contact map
-            1 - contact order
+        -------
+        tuple of (np.ndarray, np.ndarray)
+            ``(contact_map, contact_order)`` where:
+
+            * ``contact_map`` is an ``(N, N)`` matrix of contact fractions
+              in ``[0, 1]``.
+            * ``contact_order`` is a 1D vector of length ``N`` giving the
+              mean fractional contact count per residue, normalised by the
+              number of valid partners for each residue.
+
+        Raises
+        ------
+        SSException
+            For ``mode='sidechain-heavy'`` when any glycine is present, or
+            if ``weights`` is given with ``stride != 1``.
+
+        Example
+        -------
+        >>> cmap, corder = protein.get_contact_map()
+        >>> cmap.shape
+        (92, 92)
         """
 
         ssutils.validate_keyword_option(mode, ['closest-heavy', 'ca', 'closest', 'sidechain', 'sidechain-heavy'] , 'mode')
@@ -2251,6 +2280,15 @@ class SSProtein:
 
         # compute the contactmap and square-form it (map per frame)
         # CMAP is a [N_FRAMES x N_RES x N_RES] array
+
+        # sidechain-heavy fails for GLY (no heavy sidechain atoms); check explicitly
+        # so the behavior is consistent regardless of mdtraj version (older versions
+        # raised ValueError; 1.11+ emits a warning and uses sidechain-H instead)
+        if mode == 'sidechain-heavy':
+            gly_atoms = self.topology.select('resname GLY and (not resname "NME") and (not resname "ACE")')
+            if len(gly_atoms) > 0:
+                msg = "Failed computing contacts. This is likely because one of the residues has a glycine and\nthere are no heavy sidechain residues in glycine. Raising exception..."
+                raise SSException(msg)
 
         try:
             CMAP_nonsquare = md.compute_contacts(subtraj.atom_slice(mainchain_atoms), scheme=mode)
@@ -2318,75 +2356,53 @@ class SSProtein:
     #
     #
     def get_clusters(self, region=None, n_clusters=10, backbone=True, stride=20):
-        """Function to determine the structural clusters associated with a
-        trajectory. This can be useful for identifying the most populated
-        clusters. This approach uses Ward's hiearchical clustering, which
-        means we must define the number of clusters we want a-priori.
+        """Ward hierarchical clustering of conformations by RMSD.
 
-        Clustering is done using RMSD - BUT the approach taken here would
-        be easy to re-implement in another function where you 'simiarity'
-        metric was something else.
-
-        Returns a 4-place tuple with the following sub-elements:
-
-        [0] - cluster_members:
-        A list of length n_clusters where each element corresponds to the
-        number of frames in each of the 1-n_clusters cluster. i.e. if I had
-        defined n_clusters=3 this would be a list of length 3
-
-
-        [1] - cluster_trajectories:
-        A list of n_cluster mdtraj trajectory objects of the conformations
-        in the cluster. This is particularly useful because it means you can
-        perform any arbitrary analaysis on the cluster members.
-
-
-        [2] - cluster distance_matrices:
-        A list of n_clusters where each member is a square matrix that
-        defines the structural distance between each of the members of each
-        cluster. In other words, this quantifies how similar (in terms of
-        RMSD, in units Angstroms) the the members of a given cluster are to
-        one another. Useful for computing cluster tightness.
-
-        [3] - cluster_centroids
-        A list of n_clusters where each element is the index associated with
-        each cluster trajectory that defines the cluster centroid (i.e. a
-        'representative' conformation). As an example - if we had 3 clusters
-        this might look like [4,1,6], which means the 4th, 1st, and 6th frame
-        from each of the respective mdtraj trajectories in the
-        cluster_trajectories  list would correspond to the centroid.
-
-        [4] - cluster frames:
-        List of lists, where each sublist contains the frame indices associated
-        with that cluster. Useful if clustering on a single chain and want to
-        use that information over an entire trajectory.
+        Builds a strided all-vs-all RMSD matrix and groups frames using
+        Ward's agglomerative clustering. The number of clusters
+        (``n_clusters``) must be specified up front. The chosen "centroid"
+        of each cluster is the member whose summed exponential RMSD weight
+        is largest (i.e. the most internally-connected frame).
 
         Parameters
-        -------------------
-        region : list of length 2
-            Allows the user to defines the first and last residue (INCLUSIVE)
-            for a region to be assessed by the cluster analysis. Default is
-            None (i.e. no region selected).
-
-        n_clusters : int
-            Number of clusters to be returned through Ward's clustering
-            algorithm. Default = 10
-
-        backbone : bool
-            Flag to determine if backbone atoms or full chain should be used.
-            By default the backbone is used mainly because this makes things
-            a lot computationally cheaper. Default is True
-
-        stride : int
-            Defines the spacing betwen frames to compare with - i.e. take
-            every $stride-th frame. Setting stride=1 would mean every frame
-            is used, which would mean you're doing an all vs. all comparions,
-            which would be ideal BUT may be slow. Default = 20.
+        ----------
+        region : list of length 2, optional
+            ``[first_resid, last_resid]`` (inclusive) restricting the atoms
+            used for the RMSD calculation. ``None`` (default) uses the full
+            chain.
+        n_clusters : int, optional
+            Target number of clusters. Default is 10. Note that the actual
+            number of clusters returned may be smaller if some labels are
+            never assigned.
+        backbone : bool, optional
+            If True (default), use only backbone heavy atoms for the RMSD
+            (much faster). If False, use every atom in the selection.
+        stride : int, optional
+            Use every ``stride``-th frame. Default is 20. ``stride=1`` does
+            an exact all-vs-all but can be very slow.
 
         Returns
-        ---------------
+        -------
         tuple of length 5
-            See description in main function signature.
+            ``(cluster_members, cluster_trajs, cluster_distance_matrices,
+            cluster_centroids, cluster_frames)`` where:
+
+            * ``cluster_members`` (list of int): number of frames in each
+              cluster.
+            * ``cluster_trajs`` (list of ``mdtraj.Trajectory``): one
+              sub-trajectory per cluster containing the assigned frames.
+            * ``cluster_distance_matrices`` (list of np.ndarray): per-cluster
+              all-vs-all RMSD submatrix (Angstroms).
+            * ``cluster_centroids`` (list of int): for each cluster, the
+              index *within that cluster* of the representative frame.
+            * ``cluster_frames`` (list of np.ndarray): frame indices in the
+              original trajectory that were assigned to each cluster.
+
+        Example
+        -------
+        >>> members, trajs, dmats, centroids, frames = protein.get_clusters(n_clusters=5)
+        >>> members
+        [120, 95, 80, 60, 45]
         """
 
         # build an empty distance matrix
@@ -2473,8 +2489,13 @@ class SSProtein:
             # to think about how well an RMSD cluster represents those structures
             cluster_distance_matricies.append(cluster_distances)
 
-            # we determine the frame closest to the centroid of the cluster
-            cluster_centroids.append(np.exp(-1*cluster_distances / cluster_distances.std()).sum(axis=1).argmax())
+            # find the frame closest to the cluster centroid; when std==0 all frames are
+            # equidistant (single-frame or all-identical cluster) so any index is valid
+            std = cluster_distances.std()
+            if std == 0:
+                cluster_centroids.append(0)
+            else:
+                cluster_centroids.append(np.exp(-1*cluster_distances / std).sum(axis=1).argmax())
 
         return (cluster_members, cluster_trajs, cluster_distance_matricies, cluster_centroids, cluster_frames)
 
@@ -2482,26 +2503,31 @@ class SSProtein:
     # ........................................................................
     #
     #
-    def get_inter_residue_COM_distance(self, R1, R2, stride = 1):
-        """Function which calculates the complete set of distances between two
-        residues' centers of mass (COM) and returns a vector of the distances.
+    def get_inter_residue_COM_distance(self, R1, R2, stride=1):
+        """Per-frame distance between two residues' centres of mass.
+
+        Distances are in Angstroms.
 
         Parameters
-        -------------
-        R1 :  int
-            Resid of the first residue
-
+        ----------
+        R1 : int
+            Resid of the first residue.
         R2 : int
-            Resid of the second residue
-
-        stride : int
-            Defines the spacing betwen frames to compare with - i.e. take every
-            $stride-th frame. Default = 1.
+            Resid of the second residue.
+        stride : int, optional
+            Use every ``stride``-th frame. Default is 1.
 
         Returns
-        ------------
+        -------
         np.ndarray
-           Returns an array of inter-residue distances in angstroms
+            1D array of length ``ceil(n_frames / stride)`` with the
+            inter-residue COM distance for each (strided) frame, in Angstroms.
+
+        Example
+        -------
+        >>> d = protein.get_inter_residue_COM_distance(5, 45)
+        >>> d.mean(), d.std()
+        (12.3, 1.1)
         """
 
         # get COM of the two residues for every stride-th frame
@@ -2526,30 +2552,34 @@ class SSProtein:
     #
     #
     def get_inter_residue_COM_vector(self, R1, R2):
-        """Function which calculates the complete set of distances between
-        two residues' centers of mass (COM) and returns the inter-residue
-        distance vector.
+        """Per-frame displacement *vector* ``COM(R1) - COM(R2)`` between residue COMs.
 
-        NOTE: This gives a VECTOR and not the distance between the two
-        centers of mass (which is calculated by get_inter_residue_COM_distance).
-        Note units for the relative positions in the vector are in Angstroms.
+        Unlike :meth:`get_inter_residue_COM_distance`, this returns the full
+        ``(dx, dy, dz)`` separation rather than its magnitude. The convention
+        is ``COM(R1) - COM(R2)``, i.e. the vector that points from residue
+        ``R2``'s COM to residue ``R1``'s COM. Units are Angstroms.
 
-        WARNING: This changed in 0.2.0, where in 0.1.9x the return units was
-        in nm).
+        .. note:: Units changed in v0.2.0; prior to that release the vector was
+            returned in nanometres.
 
         Parameters
-        ----------------
-
+        ----------
         R1 : int
-            Residue index of first residue
-
+            Resid of the first residue (the "head" of the vector).
         R2 : int
-            Residue index of second residue
+            Resid of the second residue (the "tail" of the vector).
 
         Returns
-        ------------
+        -------
         np.ndarray
-           Returns an array of inter-residue distances in angstroms
+            Array of shape ``(n_frames, 3)`` giving the displacement
+            ``COM(R1) - COM(R2)`` in each frame, in Angstroms.
+
+        Example
+        -------
+        >>> v = protein.get_inter_residue_COM_vector(5, 45)
+        >>> v.shape
+        (1000, 3)
         """
 
         COM_1 = self.get_residue_COM(R1)
@@ -2563,59 +2593,55 @@ class SSProtein:
     #
     #
     def get_inter_residue_atomic_distance(self, R1, R2, A1='CA', A2='CA', mode='atom', stride=1):
-        """Function which returns the distance between two specific atoms on
-        two residues. The atoms selected are based on the 'name' field from the
-        topology selection language. This defines a specific atom as defined by
-        the PDB file. By default A1 and A2 are CA (C-alpha) but one can define
-        any residue of interest.
+        """Per-frame distance between two residues, with mode-dependent semantics.
 
-        We do not perform any sanity checking on the atom name - this gets
-        really hard - so have an explicit try/except block which will warn you
-        that you've probably selected an illegal atom name from the residues.
+        For ``mode='atom'`` the distance is between the named atoms ``A1`` of
+        residue ``R1`` and ``A2`` of residue ``R2``. For all other modes the
+        ``A1``/``A2`` arguments are ignored and the distance is the one
+        returned by ``mdtraj.compute_contacts`` under the chosen scheme.
+
+        SOURSOP does no sanity checking on atom names — if a name is invalid,
+        an SSException is raised with a hint about likely mistypes.
 
         Distance is returned in Angstroms.
 
         Parameters
-        ---------------------
-        R1 : int
-            Residue index of first residue
-
-        R2 : int
-            Residue index of second residue
-
-        A1 : str
-            Atom name of the atom in R1 we're looking at. Default = CA.
-
-        A2 : str
-            Atom name of the atom in R2 we're looking at. Default = CA.
-
-        mode : str
-            Mode allows the user to define differnet modes for computing
-            atomic distance. The default is 'atom' whereby a pair of atoms
-            (A1 and A2) are provided. Other options are detailed below and
-            are identical to those offered by mdtraj in compute_contacts
-
-            * ``ca`` - same as setting 'atom' and A1='CA' and A2='CA', this uses the C-alpha atoms
-
-            * ``closest`` - closest atom associated with each of the residues, i.e. the is the point of closest approach between the two residues
-
-            * ``closest-heavy`` - same as closest, except only non-hydrogen atoms are considered
-
-            * ``sidechain`` - closest atom where that atom is in the sidechain. Note this requires mdtraj version 1.8.0 or higher.
-
-            * ``sidechain-heavy`` - closest atom where that atom is in the sidechain and is heavy. Note this requires mdtraj version 1.8.0 or higher.
-
-        stride : int
-            Defines the spacing between frames to compare - i.e. if comparing
-            frame1 to a trajectory we'd compare frame 1 and every stride-th
-            frame. Note this operation may scale poorly as protein length
-            increases at which point increasing the stride may become necessary.
-            Default = 1.
+        ----------
+        R1, R2 : int
+            Resids of the two residues to measure between.
+        A1, A2 : str, optional
+            For ``mode='atom'``, the atom names within ``R1`` and ``R2``.
+            Defaults are ``'CA'``. Ignored for all other modes.
+        mode : {'atom', 'ca', 'closest', 'closest-heavy', 'sidechain', 'sidechain-heavy'}, optional
+            * ``'atom'`` (default) - distance between atoms ``A1`` and ``A2``.
+            * ``'ca'`` - equivalent to ``mode='atom'``, ``A1=A2='CA'``.
+            * ``'closest'`` - closest approach between any atom of R1 and any
+              atom of R2 in each frame.
+            * ``'closest-heavy'`` - same as ``'closest'`` but ignoring
+              hydrogens.
+            * ``'sidechain'`` - closest sidechain atom of R1 to closest
+              sidechain atom of R2 (requires mdtraj >= 1.8.0).
+            * ``'sidechain-heavy'`` - sidechain heavy-atom version
+              (requires mdtraj >= 1.8.0). Raises for glycine residues.
+        stride : int, optional
+            Use every ``stride``-th frame. Default is 1.
 
         Returns
-        ---------
+        -------
         np.ndarray
-            Returns an array of inter-residue atomic distances
+            1D array of length ``ceil(n_frames / stride)`` with the
+            inter-residue distance for each (strided) frame, in Angstroms.
+
+        Raises
+        ------
+        SSException
+            If ``mode`` is invalid or if an atom name cannot be found in the
+            corresponding residue.
+
+        Example
+        -------
+        >>> d = protein.get_inter_residue_atomic_distance(5, 45)               # CA-CA by default
+        >>> d_min = protein.get_inter_residue_atomic_distance(5, 45, mode='closest-heavy')
         """
 
         # check mode keyword is valid
@@ -2628,7 +2654,7 @@ class SSProtein:
             try:
                 atom1 = self.__residue_atom_lookup(R1,A1)
                 if len(atom1) == 0:
-                    raise SSException('Unable to find atom [%s] in residue R1 (%i)' % (A1, R1))
+                    raise SSException(f'Unable to find atom [{A1}] in residue R1 ({R1})')
 
 
                 TRJ_1 = self.traj.atom_slice(atom1)
@@ -2636,7 +2662,7 @@ class SSProtein:
 
                 atom2 = self.__residue_atom_lookup(R2,A2)
                 if len(atom2) == 0:
-                    raise SSException('Unable to find atom [%s] in residue R1 (%i)' % (A2, R2))
+                    raise SSException(f'Unable to find atom [{A2}] in residue R1 ({R2})')
 
                 TRJ_2 = self.traj.atom_slice(atom2)
                 TRJ_2 = self.__get_subtrajectory(TRJ_2, stride)
@@ -2652,7 +2678,7 @@ class SSProtein:
                 #distances = np.sqrt(np.square(np.transpose(COM_1)[0] - np.transpose(COM_2)[0]) + np.square(np.transpose(COM_1)[1] - np.transpose(COM_2)[1])+np.square(np.transpose(COM_1)[2] - np.transpose(COM_2)[2]))
 
             except IndexError as e:
-                ssio.exception_message("This is likely because one of [%s] or [%s] is not a valid atom type for the residue in question. Full error printed below\n%s" %( A1,A2, str(e)), e, with_frills=True)
+                ssio.exception_message(f"This is likely because one of [{A1}] or [{A2}] is not a valid atom type for the residue in question. Full error printed below\n{e}", e, with_frills=True)
 
         # if ANY of the other modes are passed
         else:
@@ -2668,21 +2694,29 @@ class SSProtein:
     #
     #
     def get_residue_mass(self, R1):
-        """Returns the mass associated with a specific residue.
+        """Total mass of every atom belonging to a residue.
+
+        The mass is summed from each atom's ``element.mass`` as recorded in the
+        underlying mdtraj topology, in atomic mass units (g/mol).
 
         Parameters
-        --------------
+        ----------
         R1 : int
-            Resid to be examined
+            Resid whose mass should be summed.
 
         Returns
-        ----------
+        -------
         float
-            Returns the mass of the residue
+            Total mass of residue ``R1`` in atomic mass units.
+
+        Example
+        -------
+        >>> protein.get_residue_mass(5)   # e.g. leucine
+        113.16
         """
 
         # get the atoms associated with the resite of interest
-        res_atoms = self.topology.select('resid %i'%(R1))
+        res_atoms = self.topology.select(f'resid {R1}')
 
         totalMass = 0
 
@@ -2696,41 +2730,39 @@ class SSProtein:
     #
     #
     def get_asphericity(self, R1=None, R2=None, verbose=True):
-        """Returns the asphericity associated with the region defined by the
-        intervening stretch of residues between R1 and R2. This can be a
-        somewhat slow operation, so a status message is printed for the
-        impatient biophysicisit.
+        """Per-frame asphericity of the chain (or a sub-region).
 
-        Asphericity is defined in many places - for my personal favourite
-        explanation and definition see Page 65 of Andreas Vitalis' thesis
-        (Probing the Early Stages of Polyglutamine Aggregation with
-        Computational  Methods, 2009, Washington University in St. Louis).
+        Asphericity is a dimensionless shape descriptor computed from the
+        eigenvalues of the gyration tensor: it is 0 for a perfectly spherical
+        distribution of mass and approaches 1 as the chain becomes
+        increasingly extended/rod-like.
+
+        See p. 65 of Andreas Vitalis' thesis (*Probing the Early Stages of
+        Polyglutamine Aggregation with Computational Methods*, 2009, WashU)
+        for a canonical derivation.
 
         Parameters
-        --------------
-
-        R1 : int
-            Index value for first residue in the region of interest. If not
-            provided (None) then the first residue in the sequence is used
-            (including caps). Default = None.
-
-        R2 : int
-            Index value for second residue in the region of interest. If not
-            provided (None) then the first residue in the sequence is used
-            (including caps). Default = None.
-
-        verbose : bool
-            Flag that by default is True determines if the function prints
-            status updates. This is relevant because this function can be
-            computationally expensive, so having some report on status can
-            be comforting! Default = True.
+        ----------
+        R1 : int, optional
+            First residue of the region to consider. ``None`` (default) means
+            the first residue in the sequence (including caps).
+        R2 : int, optional
+            Last residue of the region to consider. ``None`` (default) means
+            the last residue in the sequence (including caps).
+        verbose : bool, optional
+            If True (default), print one status line every 500 frames during
+            the gyration-tensor computation.
 
         Returns
-        ----------
+        -------
         np.ndarray
-            Returns a numpy array with the asphericity for each frame of the
-            protein.
+            1D array of length ``n_frames`` with the per-frame asphericity.
 
+        Example
+        -------
+        >>> a = protein.get_asphericity(verbose=False)
+        >>> a.mean()
+        0.18
         """
 
         # compute the gyration tensor NOTE that R1 and R2 rationalization are done in
@@ -2756,34 +2788,40 @@ class SSProtein:
     #
     #
     def get_gyration_tensor(self, R1=None, R2=None, verbose=True):
-        """Returns the instantaneous gyration tensor associated with each
-        frame.
+        """Per-frame ``3 x 3`` gyration tensor of the chain (or a sub-region).
+
+        The gyration tensor :math:`T_{ab} = (1/N) \\sum_i (r_{i,a} - R_a)(r_{i,b} - R_b)`
+        is the second moment of mass about the centre of mass. Its
+        eigenvalues are the principal moments of inertia divided by mass and
+        underlie derived quantities like :meth:`get_radius_of_gyration` and
+        :meth:`get_asphericity`. Units are Angstroms^2.
 
         Parameters
-        ---------------
-        R1 : int
-            Index value for first residue in the region of interest. If not
-            provided (None) then first residue is used. Default = None
-
-        R2 : int
-            Index value for last residue in the region of interest. If not
-            provided (False) then last residue is used. Default = None
-
-        verbose : bool
-            Flag that by default is True determines if the function prints
-            status updates. This is relevant because this function can be
-            computationally expensive, so having some report on status can
-            be comforting! Default = True.
+        ----------
+        R1 : int, optional
+            First residue of the region to consider. ``None`` (default) means
+            the first residue (including caps).
+        R2 : int, optional
+            Last residue of the region to consider. ``None`` (default) means
+            the last residue (including caps).
+        verbose : bool, optional
+            If True (default), print one status line every 500 frames.
 
         Returns
-        -----------
+        -------
         np.ndarray
-            Returns a numpy array where each position is the frame-specific
-            gyration tensor value
+            Array of shape ``(n_frames, 3, 3)`` where ``[f]`` is the gyration
+            tensor for frame ``f``.
+
+        Example
+        -------
+        >>> T = protein.get_gyration_tensor(verbose=False)
+        >>> T.shape
+        (1000, 3, 3)
         """
         (R1,R2, _) = self.__get_first_and_last(R1,R2, withCA=False)
 
-        all_positions_all_frames = self.traj.atom_slice(self.topology.select('resid %i to %i'%(R1,R2)))
+        all_positions_all_frames = self.traj.atom_slice(self.topology.select(f'resid {R1} to {R2}'))
 
         gyration_tensor_vector = []
         count = 1
@@ -2792,7 +2830,7 @@ class SSProtein:
 
             # quick status update...
             if count % 500 == 0:
-                ssio.status_message("On frame %i of %i [computing gyration tensor]" % (count, len(all_positions_all_frames)), verbose)
+                ssio.status_message(f"On frame {count} of {len(all_positions_all_frames)} [computing gyration tensor]", verbose)
 
             count = count + 1
 
@@ -2833,25 +2871,31 @@ class SSProtein:
     #
     #
     def get_end_to_end_distance(self, mode='COM'):
-        """Returns an array of end-to-end distances for the conformations in
-        the simulation. Note that this is calculated between residues that have
-        CA atoms (i.e. not caps), which means the if mode COM or mode=CA will
-        be computing distances between the same residues.
+        """Per-frame end-to-end distance between the first and last CA residues.
 
-        End-to-end distance is returned in Angstroms
+        Caps (ACE / NME) are excluded — the "ends" are the first and last
+        residues with a CA atom, so the two modes operate on the same pair of
+        residues.
+
+        End-to-end distance is returned in Angstroms.
 
         Parameters
-        ---------------
-        mode : ['CA' or 'COM']
-            Defines the mode used to define the residue position, either the
-            residue center or mass or the residue CA atom. The provided mode
-            must be one of these two options. Default = 'COM'.
+        ----------
+        mode : {'CA', 'COM'}, optional
+            * ``'COM'`` (default) - distance between residue centres of mass.
+            * ``'CA'`` - distance between alpha-carbon atoms.
 
         Returns
-        ---------
+        -------
         np.ndarray
-            Returns an array of floats with the end-to-end distance of the
-            chain in Angstroms
+            1D array of length ``n_frames`` with the per-frame end-to-end
+            distance in Angstroms.
+
+        Example
+        -------
+        >>> ee = protein.get_end_to_end_distance(mode='CA')
+        >>> ee.mean(), ee.std()
+        (30.1, 4.4)
         """
 
         ssutils.validate_keyword_option(mode, ['CA', 'COM'], 'mode')
@@ -2873,33 +2917,34 @@ class SSProtein:
     #
     #
     def get_center_of_mass(self, R1=None, R2=None):
-        """Function that returns the center of mass of the protein (or a
-        subregion of the protein) for each frame in the trajectory.
+        """Per-frame centre of mass of the protein (or a sub-region).
 
-        The resulting [n x 3] matrix has absolute position of the
-        molecule in x,y,z in each frame given in Angstroms.
+        Returns absolute ``(x, y, z)`` positions in the trajectory's frame of
+        reference, in Angstroms.
 
-        WARNING: This changed in 0.2.0, where in 0.1.9x the return
-        units was in nm). This is a breaking change.
+        .. warning:: Units changed in v0.2.0; prior to that release the values
+            were returned in nanometres. This is a breaking change.
 
         Parameters
-        ----------------
-        R1 : int
-            First residue if a sub-region of the chain is to be
-            interrogated. Default = None (first residue of
-            molecule, including caps, if present).
-
-        R2 : int
-            Final residue if a sub-region of the chain is to be
-            interrogated. Default = None (last residue in
-            molecule, including caps, if present).
+        ----------
+        R1 : int, optional
+            First residue of the region. ``None`` (default) means the first
+            residue including caps.
+        R2 : int, optional
+            Last residue of the region. ``None`` (default) means the last
+            residue including caps.
 
         Returns
-        ------------
+        -------
         np.ndarray
-            Returns a [n x 3] array to give x,y,z positions
-            for each frame, where the absolute position is in
-            Angstroms.
+            Array of shape ``(n_frames, 3)`` giving the COM ``(x, y, z)`` for
+            each frame, in Angstroms.
+
+        Example
+        -------
+        >>> com = protein.get_center_of_mass()
+        >>> com.shape
+        (1000, 3)
         """
 
         (R1_new, R2_new, selection_string) = self.__get_first_and_last(R1, R2, withCA=False)
@@ -2911,27 +2956,33 @@ class SSProtein:
     #
     #
     def get_radius_of_gyration(self, R1=None, R2=None):
-        """Returns the radius of gyration associated with the region defined by
-        the intervening stretch of residues between R1 and R2. When residues
-        are not provided the full protein's radius of gyration (INCLUDING the
-        caps, if present) is calculated.
+        """Per-frame radius of gyration of the chain (or a sub-region).
 
-        Radius of gyration is returned in Angstroms.
+        :math:`R_g = \\sqrt{(1/N) \\sum_i (r_i - R)^2}` is the canonical
+        polymer-physics measure of overall chain size. It is computed by
+        ``mdtraj.compute_rg`` on every heavy/light atom in the selection and
+        returned in Angstroms.
 
         Parameters
-        ---------------
-        R1 : int
-            Index value for first residue in the region of interest. If not
-            provided (None) then first residue is used. Default = None
-
-        R2 : int
-            Index value for last residue in the region of interest. If not
-            provided (False) then last residue is used. Default = None
+        ----------
+        R1 : int, optional
+            First residue of the region. ``None`` (default) means the first
+            residue including caps.
+        R2 : int, optional
+            Last residue of the region. ``None`` (default) means the last
+            residue including caps.
 
         Returns
-        -----------
+        -------
         np.ndarray
-            Returns a numpy array with per-frame instantaneous radius of gyration
+            1D array of length ``n_frames`` with the per-frame :math:`R_g` in
+            Angstroms.
+
+        Example
+        -------
+        >>> rg = protein.get_radius_of_gyration()
+        >>> rg.mean()
+        33.4
         """
 
         (_, _, selection_string) = self.__get_first_and_last(R1,R2, withCA=False)
@@ -2944,83 +2995,63 @@ class SSProtein:
     #
     #
     def get_hydrodynamic_radius(self, R1=None, R2=None, mode='nygaard', alpha1=0.216, alpha2=4.06, alpha3=0.821, distance_mode='CA'):
-        """Returns the apparent hydrodynamic radius as calculated based on
-        either the approximation derived by Nygaard et al. [1], or the
-        Kirkwood-Riseman equation [2]. Which mode is used depends on the
-        'mode' keyword.
+        """Per-frame apparent hydrodynamic radius :math:`R_h` (in Angstroms).
 
-        The Kirkwood-Riseman equation may be more accurate when computing
-        the Rh for comparison with NMR-derived Rh values, as reported in
-        [3].
+        Two estimators are available:
 
-        For 'nygaard' mode, the arguments (alpha1/2/3) are used, and should
-        not be altered to recapitulate behaviour defined by Nygaard et al.
-        Default values here are alpha1=0.216, alpha2=4.06 and alpha3=0.821.
-        Note that `distance_mode` parameter is ignored, as this is only used
-        with the Kirkwood-Riseman implementation.
+        * ``mode='nygaard'`` - empirical Rg-to-Rh conversion of Nygaard et al.
+          (2017), using the three parameters ``alpha1``, ``alpha2``, ``alpha3``.
+        * ``mode='kr'`` - Kirkwood-Riseman equation (Kirkwood & Riseman 1948),
+          recommended for comparison with PFG-NMR-derived :math:`R_h` values
+          (Pesce et al. 2022).
 
-        For 'kr' (Kirkwood-Riseman mode), the Kirkwood-Riseman equation uses
-        the alpha carbon positions if `distance_mode` is set to `CA`, or the
-        center of mass dpositions if `distance_mode` is set to `COM`. If either
-        of these are not provided as options for `distance_mode` the function
-        will fail. Default is `CA`. Note that the alpha1/2/3 arguments are
-        ignored, as these are only used with the Nygaard mode.
-
-        NOTE that in both cases, these approximations hold for fully flexible
-        disordered proteins, but will likely become increasingly unreasonable
-        in the context of  larger and larger folded domains.
-
-        The hydrodyamic radii are returned in Angstroms.
+        Both approximations hold for fully flexible disordered proteins and
+        become less accurate for larger / more folded domains.
 
         Parameters
-        ---------------
-        R1 : int
-            Index value for first residue in the region of interest. If not
-            provided (None) then first residue is used. Default = None
-
-        R2 : int
-            Index value for last residue in the region of interest. If not
-            provided (None) then last residue is used. Default = None
-
-        mode : str
-            Selector that lets you choose the mode being used. The default
-            is an empirical conversion from Rg proposed by Nygaard et al
-            (mode='nygaard') but the alternative and possibly more accurate
-            approach when comparing against Rh values derived from pulse-field
-            gradient NMR experiments isthe Kirkwood-Riseman (mode = 'kr')
-            model. Must be one of these two selectors
-
-        alpha1 : float
-           First parameter in equation (7) from Nygaard et al. Default = 0.216
-
-        alpha2 : float
-           Second parameter in equation (7) from Nygaard et al. Default = 4.06
-
-        alpha3 : float
-           Third parameter in equation (7) from Nygaard et al. Default = 0.821
+        ----------
+        R1 : int, optional
+            First residue of the region. ``None`` (default) means the first
+            residue including caps.
+        R2 : int, optional
+            Last residue of the region. ``None`` (default) means the last
+            residue including caps.
+        mode : {'nygaard', 'kr'}, optional
+            Which estimator to use. Default is ``'nygaard'``.
+        alpha1, alpha2, alpha3 : float, optional
+            Parameters of equation (7) of Nygaard et al. Defaults reproduce
+            the published values (0.216, 4.06, 0.821). Ignored for ``mode='kr'``.
+        distance_mode : {'CA', 'COM'}, optional
+            For ``mode='kr'``, which inter-residue distance to feed into the
+            Kirkwood-Riseman sum. Default is ``'CA'``. Ignored for
+            ``mode='nygaard'``.
 
         Returns
-        -----------
+        -------
         np.ndarray
-            Returns a numpy array with per-frame instantaneous hydrodynamic radii
+            1D array of length ``n_frames`` with the per-frame :math:`R_h` in
+            Angstroms.
+
+        Example
+        -------
+        >>> rh_nyg = protein.get_hydrodynamic_radius()
+        >>> rh_kr  = protein.get_hydrodynamic_radius(mode='kr')
+        >>> rh_nyg.mean(), rh_kr.mean()
+        (24.1, 23.8)
 
         References
-        -------------
+        ----------
+        Nygaard M, Kragelund BB, Papaleo E, Lindorff-Larsen K.
+        An Efficient Method for Estimating the Hydrodynamic Radius of
+        Disordered Protein Conformations. Biophys J. 2017;113:550-557.
 
-        [1] Nygaard M, Kragelund BB, Papaleo E, Lindorff-Larsen K. An Efficient
-        Method for Estimating the Hydrodynamic Radius of Disordered Protein
-        Conformations. Biophys J. 2017;113: 550–557.
+        Kirkwood JG, Riseman J. The Intrinsic Viscosities and Diffusion
+        Constants of Flexible Macromolecules in Solution. J Chem Phys.
+        1948;16(6):565-573.
 
-        [2] Kirkwood, J. G., & Riseman, J. (1948). The Intrinsic Viscosities
-        and Diffusion Constants of Flexible Macromolecules in Solution.
-        The Journal of Chemical Physics, 16(6), 565–573.
-
-        [3] Pesce, F., Newcombe, E. A., Seiffert, P., Tranchant, E. E., Olsen,
-        J. G., Grace, C. R., Kragelund, B. B., & Lindorff-Larsen, K. (2022).
-        Assessment of models for calculating the hydrodynamic radius of
-        intrinsically disordered proteins. Biophysical Journal.
-        https://doi.org/10.1016/j.bpj.2022.12.013
-
+        Pesce F et al. Assessment of models for calculating the
+        hydrodynamic radius of intrinsically disordered proteins.
+        Biophysical Journal. 2022. doi:10.1016/j.bpj.2022.12.013
         """
 
         # check a valid mode was passed and FREAK OUT if not!
@@ -3076,22 +3107,27 @@ class SSProtein:
     #
     #
     def get_molecular_volume(self, **kwargs):
-        """Returns the molecular volume of a macromolecule at all frames in a
-        trajectory.
+        """Per-frame molecular volume from the convex hull of atomic positions.
 
-        Molecular volume is returned in Angstroms^3.
+        Computes the volume of ``scipy.spatial.ConvexHull(xyz)`` for each
+        frame's atomic coordinates and converts from nm^3 to Angstrom^3.
 
         Parameters
-        ---------------
-        kwargs : optional
-            Keyword arguments are passed into scipy's ConvexHull
-            function.
+        ----------
+        **kwargs : dict, optional
+            Forwarded to ``scipy.spatial.ConvexHull`` (e.g. ``qhull_options``).
 
         Returns
-        -----------
+        -------
         np.ndarray
-            Returns a numpy array with per-frame instantaneous
-            molecular volume in A^3
+            1D array of length ``n_frames`` with the per-frame convex-hull
+            volume in Angstrom^3.
+
+        Example
+        -------
+        >>> v = protein.get_molecular_volume()
+        >>> v.mean()
+        1.45e+05
         """
         NM_TO_ANGSTROM = 1000 # 1000 A^3 / nm^3
 
@@ -3105,30 +3141,38 @@ class SSProtein:
     #
     #
     def get_t(self, R1=None, R2=None):
-        """Returns the parameter <t>, a dimensionless parameter which
-        describes the size of the ensemble.
+        r"""Per-frame dimensionless size parameter :math:`\langle t \rangle`.
 
-        <t> is defined in [1]
+        :math:`\langle t \rangle` is the Vitalis-thesis size parameter
+        (Vitalis 2009) that scales the radius of gyration against the contour
+        length :math:`L = 3.6 N` (Angstroms). It is dimensionless and useful
+        for comparing chains of different lengths.
 
         Parameters
-        ---------------
-        R1 : int {None}
-            Index value for first residue in the region of interest.
-            If not provided (False) then first residue is used.
-
-        R2 : int {None}
-            Index value for last residue in the region of interest.
-            If not provided (False) then last residue is used.
+        ----------
+        R1 : int, optional
+            First residue of the region. ``None`` (default) means the first
+            residue.
+        R2 : int, optional
+            Last residue of the region. ``None`` (default) means the last
+            residue.
 
         Returns
-        -----------
+        -------
         np.ndarray
-            Returns a numpy array with per-frame instantaneous t-values
+            1D array of length ``n_frames`` with the per-frame
+            :math:`\langle t \rangle`.
+
+        Example
+        -------
+        >>> t = protein.get_t()
+        >>> t.mean()
+        2.4
 
         References
-        ------------
-        1. Vitalis, A. (2009). Probing the Early Stages of Polyglutamine
-        Aggregation with Computational Methods (R. Pappu (ed.))
+        ----------
+        Vitalis, A. (2009). Probing the Early Stages of Polyglutamine
+        Aggregation with Computational Methods (R. Pappu, ed.)
         [Ph.D. thesis from Washington University in St. Louis].
         """
 
@@ -3157,42 +3201,42 @@ class SSProtein:
     #
     #
     def get_angles(self, angle_name):
+        """Per-frame backbone or sidechain dihedral angles for every applicable residue.
 
-        """Returns all angle values for the specified angle name. Valid angle
-        names are ``phi``, ``psi``, ``omega``, ``chi1``, ``chi2``, ``chi3``,
-        ``chi4``, ``chi5``. Returns a tuple with both angle values for each
-        frame and also also for each indexed angle the name of the atoms used
-        to calculate that atom (based on the intrinsic underlying protein
-        topology).
+        Computes the named dihedral using the corresponding mdtraj helper
+        (``compute_phi``, ``compute_psi``, ..., ``compute_chi5``) and converts
+        the result to degrees. The first call for a given ``angle_name`` is
+        memoised so repeated calls are essentially free.
 
         Parameters
-        --------------
-        angle_name : str
-            Name of angle being investigated. Must be one of ``phi``, ``psi``,
-            ``omega``, ``chi1``, ``chi2``, ``chi3``, ``chi4``, or ``chi5``.
+        ----------
+        angle_name : {'phi', 'psi', 'omega', 'chi1', 'chi2', 'chi3', 'chi4', 'chi5'}
+            Dihedral to compute. ``chi3``-``chi5`` only exist for residues
+            with long sidechains (Arg, Lys, Met, etc.), so the result will
+            contain fewer entries than ``n_residues``.
 
         Returns
-        ---------
-        tuple
-            Returns a tuple where element 0 is the list of lists, where each
-            sub-list defines the atom names that are used to calculate each angle,
-            while element 2 is a list of arrays, where each element in the array
-            maps to the atoms defined in the corresponding element in tuple element
-            0, and each array defines the list of angles associated with each frame.
+        -------
+        list of [list_of_mdtraj_atoms, np.ndarray]
+            A two-element list:
 
+            * ``[0]`` is a list-of-lists; each sub-list holds the four
+              ``mdtraj.Atom`` objects that define one dihedral.
+            * ``[1]`` is an array of shape ``(n_dihedrals, n_frames)`` of the
+              per-frame angles in degrees.
+
+        Raises
+        ------
+        SSException
+            If ``angle_name`` is not one of the eight allowed strings.
 
         Example
-        ----------------
-            For example, in a protein with two arginine residues::
+        -------
+        For a protein with two arginine residues:
 
-                chi5 = ssprotein_object._angles('chi5')
-
-                # will print the atom names (chi5[0]) associated with the 2nd ([1]) arginine
-                # in the sequence
-                print(chi5[0][1])
-
-                # will print the actual chi5 angles associated with the 2nd arginine
-                print(chi5[1][1])
+        >>> chi5 = protein.get_angles('chi5')
+        >>> chi5[0][1]                  # atoms defining 2nd arginine's chi5
+        >>> chi5[1][1]                  # per-frame chi5 angles for that residue
         """
 
 
@@ -3241,163 +3285,78 @@ class SSProtein:
     #
     #
     def get_internal_scaling(self, R1=None, R2=None, mode='COM', mean_vals=False, stride=1, weights=False, etol=0.0000001, verbose=True):
-        """
-        Calculates the raw internal scaling info for the protein in the
-        simulation. R1 and R2 define a sub-region to operate over if sub-
-        regional analysis is required. When residues are not provided the full
-        protein's internal scaling (EXCLUDING the caps, if present) is
-        calculated.
+        """Internal scaling profile: sequence separation vs. inter-residue distance.
 
-        Distance is measured in Angstroms.
+        For every sequence separation :math:`|i-j|` from 0 to ``R2-R1``, this
+        method collects the inter-residue distances of every pair at that
+        separation across every frame. The result is the raw material for an
+        internal-scaling plot — a foundational polymer-physics observable for
+        IDPs and IDRs (Mao et al. 2013; Pappu et al. 2008).
 
-        Returns two lists of the same length
+        ACE / NME peptide caps are excluded. (Note: this differs from CAMPARI,
+        which includes them.)
 
-        1. List of arrays, where each array is the simulation average
-           set of inter-residue distances for the primary sequence
-           separation defined by the equivalent position in the second
-           array. Each array in this list will be a different length as there
-           are many more i to i+1 pairs of residues than i to i+10 (e.g. in a
-           15 residue sequence).
-
-        2. The sequence separation associated with each set of measurements
-           (i.e. a single list which will normally be 0,1,2,3,...n where
-           n = number of residues in sequence.
-
-        The internal scaling profile is a plot of sequence separation vs. mean
-        through-space distance for all pairs of residues at a given sequence
-        separation. What this means is that if we had a 6 residue peptide the
-        internal scaling profile would be calculated as follows::
-
-          sequence separation = 0
-          average distance(average distance of 1-to-1, 2-to-2, 3-to-3, etc.)
-
-          sequence separation = 1
-          average distance(average distance of 1-to-2, 2-to-3, 3-to-4, etc.)
-
-          sequence separation = 2
-          average distance(average distance of 1-to-3, 2-to-4, 3-to-5, etc.)
-
-          sequence separation = 3
-          average distance(average distance of 1-to-4, 2-to-5, 3-to-6.)
-
-          sequence separation = 4
-          average distance(average distance of 1-to-5, 2-to-6)
-
-          sequence separation = 5
-          average distance(average distance of 1-to-6)
-
-
-        The residues considered for internal scaling analysis DO NOT
-        include the ACE/NME peptide caps if present. This differs from
-        CAMPARI, which DOES include the peptide caps. As an aisde, exclusion
-        of the caps is different to how this is done in CAMPARI, which includes
-        the caps, if present.
-
-        For more information on the ideas associated with internal scaling,
-        see [1,2].
+        Distances are in Angstroms.
 
         Parameters
-        ---------------
-        R1 : int
-            Index value for first residue in the region of interest. If not
-            provided (None) then first residue is used. Default = None
-
-        R2 : int
-            Index value for last residue in the region of interest. If not
-            provided (None) then last residue is used. Default = None
-
-        mode : ['CA','COM']
-            String, must be one of either 'CA' or 'COM'.
-            - 'CA' = alpha carbon.
-            - 'COM' = center of mass (associated withe the residue).
-            Default = 'CA'.
-
-        mean_vals : bool
-            This is False by default, but if True the mean IS is returned
-            instead of the explicit values. In reality the non-default
-            behaviour is probably preferable. Default = False
-
-        stride : int
-            Defines the spacing between frames to compare - i.e. if comparing
-            frame 1 to a trajectory we'd compare frame 1 and every stride-th
-            frame. Note this operation may scale poorly as protein length
-            increases at which point increasing the stride may become
-            necessary. Default = 1
-
-        weights : list/np.ndarray {False}
-            If provided this defines the frame-specific weights if re-weighted
-            analysis is required. This can be useful if an ensemble has been
-            re-weighted to better match experimental data, or in the case of
-            analysing replica exchange data that is re-combined using T-WHAM.
-            Default = False.
-
-        etol : {0.0000001} float
-            Defines the error tollerance for the weight sums - i.e. if
-            abs(np.sum(weights) - 1) > etol an exception is raised.
-
-        verbose : bool
-            Flag that by default is True determines if the function prints
-            status updates. This is relevant because this function can be
-            computationally expensive, so having some report on status can
-            be comforting!
-            Default = True
-
+        ----------
+        R1 : int, optional
+            First residue of the region. ``None`` (default) means the first
+            CA-bearing residue.
+        R2 : int, optional
+            Last residue of the region. ``None`` (default) means the last
+            CA-bearing residue.
+        mode : {'COM', 'CA'}, optional
+            * ``'COM'`` (default) - distances between residue centres of mass.
+            * ``'CA'`` - distances between alpha-carbon atoms.
+        mean_vals : bool, optional
+            If True, the per-separation distances are reduced to their mean
+            before being returned. If False (default), every individual
+            inter-residue distance is kept (useful for plotting the full
+            distribution).
+        stride : int, optional
+            Use every ``stride``-th frame. Default is 1. Larger values are
+            recommended for long trajectories of large proteins.
+        weights : list or np.ndarray, optional
+            Per-frame weights for re-weighted averaging. Default ``False``
+            means uniform weighting.
+        etol : float, optional
+            Tolerance for the weights-sum-to-one check. Default ``1e-7``.
+        verbose : bool, optional
+            If True (default), print one status line per sequence separation.
 
         Returns
-        ----------
-        Tuple 
-        
-            1. Element 1 is a list of seequence separation values starting at 
-               1 and monotonically incrementing by 1 until we're at length of
-               sequence - 1.
+        -------
+        tuple of (list, list)
+            ``(seq_sep, distances)`` where:
 
-            2. Element 2 depends on if mean_vals is set to true or not. If it's
-               true then element 2 is a single value that reports the average 
-               inter-residue distance between ALL pairs of residues in all frames
-               that are at some sequence separation i.e plotting element 1 and 
-               element 2 gives you an internal scaling profile.
+            * ``seq_sep`` is a list of integer sequence separations
+              ``[0, 1, ..., R2-R1]``.
+            * If ``mean_vals=True``, ``distances`` is a list of per-separation
+              mean distances (one float per separation).
+            * If ``mean_vals=False`` (default), ``distances`` is a list of 1D
+              arrays — one array per separation containing every individual
+              inter-residue distance at that separation.
 
-               If mean_vals is False (default) then element 2 is a list of 
-               arrays where each array is EVERY individual inter-residue 
-               distance at the corresponding sequence separation. This means you
-               can plot the distribution on the internal scaling profile should
-               you so choose, rather than being limited to just the mean. 
-        Returns
-        ----------
-        Tuple 
-
-            The function returns a tuple with elements. Each sub-element is 
-            the same length are match 1-1 with one another.
-        
-            1. Element 1 is a list of seequence separation values starting at 
-               1 and monotonically incrementing by 1 until we're at length of
-               sequence - 1.
-
-            2. Element 2 depends on if mean_vals is set to true or not. If it's
-               true then element 2 is a single value that reports the average 
-               inter-residue distance between ALL pairs of residues in all frames
-               that are at some sequence separation i.e plotting element 1 and 
-               element 2 gives you an internal scaling profile.
-
-               If mean_vals is False (default) then element 2 is a list of 
-               arrays where each array is EVERY individual inter-residue 
-               distance at the corresponding sequence separation. This means you
-               can plot the distribution on the internal scaling profile should
-               you so choose, rather than being limited to just the mean.
-       
+        Example
+        -------
+        >>> sep, mean_d = protein.get_internal_scaling(mean_vals=True, verbose=False)
+        >>> # plot sep vs mean_d for an internal-scaling profile
 
         References
-        ---------------
+        ----------
+        Mao AH, Lyle N, Pappu RV. Describing sequence-ensemble
+        relationships for intrinsically disordered proteins. Biochem J.
+        2013;449:307-318.
 
-        [1] Mao, A.H., Lyle, N., and Pappu, R.V. (2013). Describing
-        sequence-ensemble relationships for intrinsically disordered proteins.
-        Biochem. J 449, 307-318.
+        Pappu RV, Wang X, Vitalis A, Crick SL. A polymer-physics
+        perspective on driving forces and mechanisms for protein
+        aggregation. Arch Biochem Biophys. 2008;469:132-141.
 
-        [2] Pappu, R.V., Wang, X., Vitalis, A., and Crick, S.L. (2008). A polymer
-        physics perspective on driving forces and mechanisms for protein
-        aggregation - Highlight Issue: Protein Folding. Arch. Biochem. Biophys.
-        469, 132-141.
-
+        Notes
+        -----
+        Computational cost scales rapidly with chain length; consider
+        increasing ``stride`` for trajectories of long proteins.
         """
 
         if weights is not False:
@@ -3428,7 +3387,7 @@ class SSProtein:
         seq_sep_vals = []
 
         for seq_sep in range(0, max_seq_sep):
-            ssio.status_message("Internal Scaling - on sequence separation %i of %i" %(seq_sep, max_seq_sep-1), verbose)
+            ssio.status_message(f"Internal Scaling - on sequence separation {seq_sep} of {max_seq_sep-1}", verbose)
 
             tmp = []
             seq_sep_vals.append(seq_sep)
@@ -3466,124 +3425,57 @@ class SSProtein:
     #
     #
     def get_internal_scaling_RMS(self, R1=None, R2=None, mode='COM', stride=1, weights=False, etol=0.0000001, verbose=True):
-        """Calculates the averaged internal scaling info for the protein in the
-        simulation in terms of.
+        """Root-mean-square internal scaling profile: separation vs. RMS distance.
 
-        root mean square (i.e. `sqrt(<Rij^2>`) vs `| i - j |`.
-
-        R1 and R2 define a sub-region to operate over if sub-regional analysis is
-        required. When residues are not provided the full protein's internal
-        scaling (EXCLUDING* the caps, if present) is calculated.
-
-        Distance is measured in Angstroms.
-
-        Returns two lists of the same length:
-
-        1) sequence separation (`|i - j|`)
-
-        2) mean sqrt(`<Rij^2>`)
-
-        The internal scaling profile is a plot of sequence separation vs. mean
-        through-space distance for all pairs of residues at a given sequence
-        separation. What this means is that if we had a 6 residue peptide the
-        internal scaling profile would be calculated as follows.
-
-        sequence separation = 0
-        average distance(average distance of 1-to-1, 2-to-2, 3-to-3, etc.)
-
-        sequence separation = 1
-        average distance(average distance of 1-to-2, 2-to-3, 3-to-4, etc.)
-
-        sequence separation = 2
-        average distance(average distance of 1-to-3, 2-to-4, 3-to-5, etc.)
-
-        sequence separation = 3
-        average distance(average distance of 1-to-4, 2-to-5, 3-to-6.)
-
-        sequence separation = 4
-        average distance(average distance of 1-to-5, 2-to-6)
-
-        sequence separation = 5
-        average distance(average distance of 1-to-6)
-
-        The residues considered for internal scaling analysis DO NOT include
-        the ACE/NME peptide caps if present. This differs from CAMPARI, which
-        DOES include the peptide caps.
-
-        For more information on this and other ideas for how polymer-physics
-        can be a useful way of thinking about proteins, take a look at
-
-        Mao, A.H., Lyle, N., and Pappu, R.V. (2013). Describing sequence-ensemble
-        relationships for intrinsically disordered proteins. Biochem. J 449, 307-318.
-
-        and
-
-        Pappu, R.V., Wang, X., Vitalis, A., and Crick, S.L. (2008). A polymer
-        physics perspective on driving forces and mechanisms for protein aggregation
-        - Highlight Issue: Protein Folding. Arch. Biochem. Biophys. 469, 132-141.
+        Like :meth:`get_internal_scaling` but reports
+        :math:`\\sqrt{\\langle r_{ij}^2 \\rangle}` for each sequence
+        separation — the formally correct order parameter for polymer-physics
+        analyses (Mao et al. 2013; Pappu et al. 2008). ACE / NME caps are
+        excluded. Distances in Angstroms.
 
         Parameters
-        ---------------
-        R1 : int
-            Index value for first residue in the region of interest. If not
-            provided (None) then first residue is used. Default = None
-
-        R2 : int
-            Index value for last residue in the region of interest. If not
-            provided (None) then last residue is used. Default = None
-
-        mode : ['CA','COM']
-            String, must be one of either 'CA' or 'COM'.
-            - 'CA' = alpha carbon.
-            - 'COM' = center of mass (associated withe the residue).
-            Default = 'CA'.
-
-        mean_vals : bool
-            This is False by default, but if True the mean IS is returned
-            instead of the explicit values. In reality the non-default
-            behaviour is probably preferable. Default = False
-
-        stride : int
-            Defines the spacing between frames to compare - i.e. if
-            comparing frame1 to a trajectory we'd compare frame 1 and every
-            stride-th frame. Note this operation may scale poorly as protein
-            length increases at which point increasing the stride may become
-            necessary. Default = 1
-
-        weights : list/np.ndarray {False}
-            If provided this defines the frame-specific weights if re-weighted
-            analysis is required. This can be useful if an ensemble has been
-            re-weighted to better match experimental data, or in the case of
-            analysing replica exchange data that is re-combined using T-WHAM.
-            Default = False.
-
-        etol : {0.0000001} float
-            Defines the error tollerance for the weight sums - i.e. if
-            abs(np.sum(weights) - 1) > etol an exception is raised.
-
-        verbose : bool
-            Flag that by default is True determines if the function prints
-            status updates. This is relevant because this function can be
-            computationally expensive, so having some report on status can
-            be comforting! Default = True
+        ----------
+        R1 : int, optional
+            First residue of the region. ``None`` (default) means the first
+            CA-bearing residue.
+        R2 : int, optional
+            Last residue of the region. ``None`` (default) means the last
+            CA-bearing residue.
+        mode : {'COM', 'CA'}, optional
+            * ``'COM'`` (default) - distances between residue centres of mass.
+            * ``'CA'`` - distances between alpha-carbon atoms.
+        stride : int, optional
+            Use every ``stride``-th frame. Default is 1.
+        weights : list or np.ndarray, optional
+            Per-frame weights for re-weighted averaging. Default ``False``.
+        etol : float, optional
+            Tolerance for the weights-sum-to-one check. Default ``1e-7``.
+        verbose : bool, optional
+            If True (default), print one status line per sequence separation.
 
         Returns
+        -------
+        tuple of (list, list)
+            ``(seq_sep, rms_distance)`` where ``seq_sep`` is the list of
+            integer separations and ``rms_distance`` is the corresponding
+            list of RMS inter-residue distances in Angstroms.
+
+        Example
+        -------
+        >>> sep, rms = protein.get_internal_scaling_RMS(verbose=False)
+        >>> import numpy as np
+        >>> # log-log fit of rms vs sep recovers the apparent scaling exponent
+        >>> nu, _ = np.polyfit(np.log(sep[1:]), np.log(rms[1:]), 1)
+
+        References
         ----------
+        Mao AH, Lyle N, Pappu RV. Describing sequence-ensemble
+        relationships for intrinsically disordered proteins. Biochem J.
+        2013;449:307-318.
 
-        Returns
-        ----------
-        Tuple 
-
-            The function returns a tuple with elements. Each sub-element is 
-            the same length are match 1-1 with one another.
-        
-            1. Element 1 is a list of seequence separation values starting at 
-               1 and monotonically incrementing by 1 until we're at length of
-               sequence - 1.
-
-            2. Element 2 is a list of root mean-squared distance for each 
-               set of inter-residue distance that matches the sequence 
-               separation in element 1.
+        Pappu RV, Wang X, Vitalis A, Crick SL. A polymer-physics
+        perspective on driving forces and mechanisms for protein
+        aggregation. Arch Biochem Biophys. 2008;469:132-141.
         """
 
         # compute the non RMS internal scaling behaviour
@@ -3609,117 +3501,91 @@ class SSProtein:
                              stride=1,
                              weights=False,
                              verbose=True):
-        """Estimation for the A0 and nu-app exponents for the standard polymer
-        relationship :math:`\langle r_{i,j}^2 \\rangle^{1/2} = A_0 |i-j|^{\\nu_{app}}`
-        
-        Here, :math:`{\\nu}^{app}` (nu-app) reports on the solvent quality,
-        while the  prefactor A0 (:math:`A_0`) reports on the average chain
-        persistence length and volume, which itself also depends on the solvent
-        quality  - see [1]. For polymers with an apparently scaling exponent
-        above a 0.5  this works, but below this internal scaling starts to
-        increasingly  deviate from fractal behavior; as such, formally, this
-        relationship becomes increasingly inaccurate as the apparent nu-app
-        becomes smaller  working. In practice, the best possible fit line does
-        still track with  relative compactness, although we urge that the
-        meaning of nu-app calculated from a single-chain polymer when that
-        chain is compact  does not necessarily track with the nu-app calculated
-        from multiple chains of varying length where the radius of gyration is
-        fitted to the number of residues in the chain.
-        
-        **NOTE**: Despite their precision, nu-app and A0 should be treated as
-        qualitative metrics, and are subject to finite chain effects. The
-        idea of a polymer scaling behaviour is only necessarily useful in
-        the case of a homopolymer, whereas heterpolymers engender massive
-        averaging that can mask underlying conformational complexity. We
-        *strongly* caution against over interpretation of the scaling
-        exponent. For a better assement of how your chain actually deviates
-        from homopolymer behaviour, see the function ``get_polymer_scaled_distance_map()``
-        
+        """Fit the apparent polymer scaling exponent and prefactor by loglog regression.
+
+        Fits the homopolymer scaling relationship
+        :math:`\\sqrt{\\langle r_{ij}^2 \\rangle} = A_0 |i-j|^{\\nu_{app}}`
+        to the internal-scaling profile of the chain. The exponent
+        :math:`\\nu_{app}` ("nu-app") reports on solvent quality and the
+        prefactor :math:`A_0` captures chain stiffness / segment volume.
+
+        Bootstrap error estimates for ``nu`` and ``A0`` come from randomly
+        subdividing the trajectory into ``subdivision_batch_size`` chunks,
+        fitting each, and taking the min/max across the chunks.
+
+        .. note::
+            Despite the precision of the fit, ``nu_app`` and ``A0`` are
+            *qualitative* metrics subject to finite-chain-size effects, and
+            are most rigorously interpreted for genuine homopolymers. For
+            heteropolymers consider :meth:`get_polymer_scaled_distance_map`
+            which avoids the homopolymer assumption.
+
         Parameters
-        ------------------
-                                                          
-        inter_residue_min : int
-            Minimum distances used when selecting pairs of residues. This
-            25 threshold was determined previously, and essentially avoids
-            scenarios where the two residues (i and j) are close to each
-            other. The goal of this limit is to avoid finite chain size
-            strongly influencing the scaling exponent limit.
-            Default = 10.
-
-        end_effect : int
-            Avoid pairs where one of the residues is $end_effect residues
-            from the end. Helps mitigate end-effects. The default value of
-            5 was chosen as it's around above the blob-length in a
-            polypeptide. Note that for homopolymers this is much
-            less of an issue. Default = 5
-
-        mode : str
-            Defines the mode in which the internal scaling profile is
-            calculated, can use either COM (center of mass) of each residue
-            or the CA carbon of each residue. COM is more appropriate as CA
-            will inherently give a larger profile. Default = COM
-
-        num_fitting_points : int
-            Number of evenly spaced points to used to fit the scaling
-            exponent in loglog space. 40 seems to be a decent number that
-            scales well. Default = 40
-
-        fraction_of_points : float
-            This is only used if fraction_override is set to True OR the
-            sequence has less than the num_of_fitting_points residues.
-            Means that instead of using a an absolute number of points
-            (e.g. 40) to fit the loglog data, we use this fraction of
-            residues. i.e. if the protein had 20 residues and
-            fraction_of_points = 0.5 we'd use 10 points.
-            Default = 0.5
-
-        fraction_override : bool
-            If set to False then fraction_of_points ONLY used if the length
-            of the sequence is less than the num_fitting points. If true
-            then we explicitly use fraction_of_points and ignore
-            num_fitting_points. Default is True.
-
-        stride : int {1}
-            Defines the spacing between frames to compare - i.e. if
-            comparing frame1 to a trajectory we'd compare frame 1 and
-            every stride-th frame. Note this operation may scale poorly as
-            protein length increases at which point increasing the stride
-            may become necessary.
-
-        weights : list or array of floats or bool
-            Defines the frame-specific weights if re-weighted analysis is
-            required. This can be useful if an ensemble has been re-weighted
-            to better match experimental data, or in the case of analysing
-            replica exchange data that is re-combined using T-WHAM. Default
-            is False.
-
-        etol : {0.0000001} float
-            Defines the error tollerance for the weight sums - i.e. if
-            abs(np.sum(weights) - 1) > etol an exception is raised.
-
-        verbose : bool
-            Flag that by default is True determines if the function prints
-            status updates. This is relevant because this function can be
-            computationally expensive, so having some report on status can
-            be comforting!
+        ----------
+        inter_residue_min : int, optional
+            Minimum sequence separation ``|i-j|`` used in the fit. Helps
+            avoid the short-distance regime where local steric effects
+            dominate. Default is 15.
+        end_effect : int, optional
+            Exclude pairs in which one residue is within ``end_effect``
+            residues of either chain end. Default is 5.
+        subdivision_batch_size : int, optional
+            Target chunk size when bootstrapping fit-quality errors.
+            Default is 20.
+        mode : {'COM', 'CA'}, optional
+            Distance type. ``'COM'`` (default) is preferred — CA-CA tends to
+            inflate the apparent profile.
+        num_fitting_points : int, optional
+            Maximum number of evenly-spaced loglog points used in the linear
+            fit. Default is 40.
+        fraction_of_points : float, optional
+            When ``fraction_override`` is True, or when the chain is too
+            short to provide ``num_fitting_points`` points, this fraction of
+            the valid sequence separations is used instead. Default is 0.5.
+        fraction_override : bool, optional
+            If True, always use ``fraction_of_points`` and ignore
+            ``num_fitting_points``. Default is False.
+        etol : float, optional
+            Tolerance for the weights-sum-to-one check. Default ``1e-7``.
+        stride : int, optional
+            Use every ``stride``-th frame. Default is 1.
+        weights : list or np.ndarray, optional
+            Per-frame weights for re-weighted averaging. Default ``False``.
+        verbose : bool, optional
+            If True (default), print status updates during the
+            internal-scaling pass.
 
         Returns
-        ----------
-        tuple
+        -------
+        tuple of length 10
+            ``(best_nu, best_A0, min_nu, max_nu, min_A0, max_A0,
+            redchi_fit_region, redchi_all_points, fit_region_data,
+            all_points_data)`` where:
 
-            Returns a 10 position tuple with the following associated values:
+            * ``best_nu``, ``best_A0`` - point estimates from the full fit.
+            * ``min_nu``..``max_A0`` - bootstrap min/max bounds.
+            * ``redchi_fit_region`` - reduced chi^2 on the points used in
+              the linear fit (loglog-uniform).
+            * ``redchi_all_points`` - reduced chi^2 across every observed
+              :math:`|i-j|`.
+            * ``fit_region_data`` - shape ``(2, K)``; col 0 is sequence
+              separation, col 1 is RMS distance for the fit-region points.
+            * ``all_points_data`` - shape ``(3, M)``; col 0 is sequence
+              separation, col 1 is observed RMS distance, col 2 is the
+              best-fit prediction.
 
-            * `[0]` - best nu
-            * `[1]` - best A0
-            * `[2]` - minimum nu identified in bootstrap fitting
-            * `[3]` - maximum nu identified in bootstrap fitting
-            * `[4]` - minimum A0 identified in bootstrap fitting
-            * `[5]` - maximum A0 identified in bootstrap fitting
-            * `[6]` - reduced chi^2 for the fit region
-            * `[7]` - reduced chi^2 for ALL points
-            * `[8]` - 2-column array, where col 1 is the sequence separation and col 2 is the real spatila separation for the ACTUAL data used to fit to the polymer model (i.e. these points are uniformly spaced from one another on a log-log plot). Reduced chi^2 for the fit region is calculated using this dataset.
-            * `[9]` - 3-column array, where col 1 is the sequence separation, col 2 is the real spatial separation observed and col 3 is the best fit curve, for ALL i-j distances. Reduced chi^2 for all points is calculated using this dataset.
-                             
+        Raises
+        ------
+        SSException
+            If ``fraction_of_points > 1.0`` or if too few points remain to
+            fit a line (``< 3``).
+
+        Example
+        -------
+        >>> import numpy as np
+        >>> np.random.seed(42)   # error bootstrap consumes the RNG
+        >>> result = protein.get_scaling_exponent(verbose=False)
+        >>> nu, A0 = result[0], result[1]
         """
                     
 
@@ -3737,7 +3603,7 @@ class SSProtein:
         #  if we're not using fraction override check the number of points requested makes sense given sequence length
         if not fraction_override and (max_separation - (end_effect+inter_residue_min)) < num_fitting_points:
             fraction_of_points=1.0
-            ssio.warning_message("For scaling exponent calculation, sequence not long enough to use %i points (only %i valid positions once end effects and low |i-j| are accounted for), switching to using the fraction of points mode (will use %i points instead)" % (num_fitting_points, (max_separation - (end_effect+inter_residue_min)), int(fraction_of_points*(max_separation - (end_effect+inter_residue_min)))))
+            ssio.warning_message(f"For scaling exponent calculation, sequence not long enough to use {num_fitting_points} points (only {max_separation - (end_effect+inter_residue_min)} valid positions once end effects and low |i-j| are accounted for), switching to using the fraction of points mode (will use {int(fraction_of_points*(max_separation - (end_effect+inter_residue_min)))} points instead)")
 
             fraction_override = True
 
@@ -3749,7 +3615,7 @@ class SSProtein:
             if num_fitting_points < 3:
                 raise SSException("Less than three points - cannot fit a straight line")
             if num_fitting_points < 10:
-                ssio.warning_message("Warning: Scaling fit has only %i points - likely finite size effects!" % (num_fitting_points))
+                ssio.warning_message(f"Warning: Scaling fit has only {num_fitting_points} points - likely finite size effects!")
 
 
         # This section determines the number of subdivisions performed for error
@@ -3771,7 +3637,7 @@ class SSProtein:
         # for each possible sequence separation  (|i-j| value)
         for seq_sep in range(1, max_separation):
 
-            ssio.status_message("Internal Scaling - on sequence separation %i of %i" %(seq_sep, max_separation), verbose)
+            ssio.status_message(f"Internal Scaling - on sequence separation {seq_sep} of {max_separation}", verbose)
 
             tmp = []
             seq_sep_vals.append(seq_sep)
@@ -3912,52 +3778,44 @@ class SSProtein:
     #
     #
     def get_all_SASA(self, probe_radius=1.4, mode='residue', stride=20):
-        """Returns the Solvent Accessible Surface Area (SASA) for each residue
-        from every stride-th frame. SASA is determined using the Golden-Spiral
-        algorithm.
+        """Solvent-accessible surface area (SASA) per residue or per atom.
 
+        Internally uses mdtraj's Shrake-Rupley implementation (Golden-Spiral
+        algorithm). Results are memoised per ``(stride, mode, probe_radius)``
+        triple so repeated calls with the same parameters are free.
 
-        SASA is returned in Angstroms squared, probe radius is also in
-        Angstroms.
-
-        Note that this is a quiet a computationally expensive calculation,
-        so by default the stride is set at 20
+        SASA is returned in Angstroms^2; ``probe_radius`` is in Angstroms.
+        Because the calculation is expensive the default ``stride`` is 20.
 
         Parameters
-        -------------
+        ----------
+        probe_radius : float, optional
+            Solvent probe radius in Angstroms. Default 1.4 (water).
+        mode : {'residue', 'atom', 'sidechain', 'backbone', 'all'}, optional
+            Granularity:
 
-        probe_radius : float
-            Radius of the solvent probe used in Angstroms. Uses the the
-            Golden-Spiral algorithm, where a radius of 1.4 A is pretty
-            standard. Default = 1.4
-
-        mode : string
-            Defines the mode used to compute the SASA. Must be one of
-            ['residue', 'atom', 'sidechain','backbone', 'all']. For atom
-            mode, extracted areas are resolved per-atom.  For 'residue',
-            this is computed instead on the per residue basis.
-
-        stride : int
-            Defines the spacing between frames to compare - i.e. if
-            comparing  frame1 to a trajectory we'd compare frame 1 and
-            every stride-th frame. Note this operation may scale poorly
-            as protein length increases at  which point increasing the
-            stride may become necessary. NOTE default  is NOT 1 because
-            this is quite an expensive analysis. Default = 20.
+            * ``'residue'`` (default) - per-residue SASA, shape ``(n_frames_strided, n_residues)``.
+            * ``'atom'`` - per-atom SASA, shape ``(n_frames_strided, n_atoms)``.
+            * ``'sidechain'`` - per-residue SASA summed over sidechain atoms
+              (excluding backbone H, HA, HA2, HA3 which mdtraj's 'sidechain'
+              selector erroneously includes).
+            * ``'backbone'`` - per-residue SASA summed over backbone atoms
+              (including the backbone hydrogens that mdtraj's 'backbone'
+              selector erroneously excludes).
+            * ``'all'`` - returns a 3-tuple of (residue, sidechain, backbone)
+              arrays.
+        stride : int, optional
+            Use every ``stride``-th frame. Default is 20.
 
         Returns
-        -----------
-        np.ndarray or tuple:
+        -------
+        np.ndarray or tuple of np.ndarray
+            See ``mode`` description. All arrays are in Angstroms^2.
 
-            The return type depends on what options are passed.
-
-            * **If no mode is passed or mode ='residue' is passed**, the function defaults to using the 'residue' mode with a stride of 20. This returns a np.ndarray of shape (frames, nres) where frames is the number of individual frames over which the per-residue SASA was calculated, and nres is the number of residues INCLUDING caps if present.
-            * **If mode = 'atom'** This returns a np.ndarray of shape  (frames, natoms) where frames is the number of individual frames over which the per-residue SASA was The function defaults to using the 'atom' mode with the requested stride (default  =20). 
-            * **If mode ='sidechain' is passed**, this returns a np.ndarray of shape  (frames, nres) where frames is the number of individual frames over which the per-residue SASA was calculated and nres is the number of residues where the sidechain SASA was calculated. Sidechain selection here is done using mdtraj 'sidechain' topology selection language with the exception that backbone hydrogen atoms are included with the sidechain (H, HA, HA2, HA3) so we excluded these.
-            * **If mode ='backbone' is passed** this returns a np.ndarray of shape (frames, nres) where frames is the number of individual frames over which the per-residue SASA was calculated and nres is the number of residues where the The function defaults to using the 'sidechain' mode with the requested stride (default  =20). Backbone selection here is done using mdtraj 'backbone' topology selection language with the exception that backbone hydrogen atoms are excluded from the backbone (H, HA, HA2, HA3) so we include these.
-            * **If mode ='all' is passed**, the function returns a 3x tuple where the first element is the 'residues' return array, the second is the 'sidechain' return array and the third is the 'backbone' return array
-        
-
+        Example
+        -------
+        >>> sasa = protein.get_all_SASA(mode='residue', stride=10)
+        >>> sasa.mean(axis=0)   # mean per-residue SASA across frames
         """
 
         ## >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
@@ -3977,11 +3835,11 @@ class SSProtein:
                 if passed_mode == 'sidechain':
                     
                     # for some reason 'sidechain' selection includes the backbone hydrogen atoms??!?!
-                    relevant_atom_idx = self.topology.select('resid %i and %s and (not name "H" "HA" "HA2" "HA3")' % (i,passed_mode))
+                    relevant_atom_idx = self.topology.select(f'resid {i} and {passed_mode} and (not name "H" "HA" "HA2" "HA3")')
 
                 if passed_mode == 'backbone':
                     # for some reason 'backbone' ignores the backbone hydrogen atoms ?!?!?
-                    relevant_atom_idx = self.topology.select('(resid %i and %s) or (resid %i and name "H" "HA" "HA2" "HA3")' % (i,passed_mode, i))
+                    relevant_atom_idx = self.topology.select(f'(resid {i} and {passed_mode}) or (resid {i} and name "H" "HA" "HA2" "HA3")')
 
                 # no atoms so create an empty list
                 if len(relevant_atom_idx) == 0:
@@ -4058,52 +3916,47 @@ class SSProtein:
     #
     #
     def get_site_accessibility(self, input_list, probe_radius=1.4, mode='residue_type', stride=20):
-        """Function to compute site/residue type accessibility.
+        """Mean & std SASA for selected residue types or specific residue indices.
 
-        This can be done using one of two modes. Under 'residue_type' mode,
-        the input_list should be a list of canonical 3-letter amino acid
-        names. Under 'resid' mode, the input list should be a list of
-        residue id positions (recall that resid ALWAYS starts from 0 and
-        will include the ACE cap if present).
+        Under ``mode='residue_type'``, ``input_list`` is interpreted as
+        canonical three-letter residue names and every matching residue in
+        the chain is summarised. Under ``mode='resid'`` the input is treated
+        as a list of explicit residue indices.
 
-        Returns a dictionary with the key = residue "type-number" string
-        and the value equal the average and standard devaition associated
-        with the SASA. Useful for looking at comparative accessibility of
-        the same residue accross the sequence.
+        Useful for comparing accessibility of chemically-equivalent residues
+        at different positions in the chain.
 
         Parameters
-        -------------
-
+        ----------
         input_list : list
-            List of either residue names (e.g. ['TRP','TYR','GLN'] or
-            resid values ([1,2,3,4]) which will be taken and the SASA
-            calculated for.
+            Either:
 
-        probe_radius : float
-            Radius of the solvent probe used in Angstroms. Uses the
-            Golden-Spiral algorithm. 1.4 A is pretty standard for water
-            probe size. Default = 1.4
-
-        mode : string
-            Mode used to examine sites. MUST be one of 'residue_type'
-            or 'resid'. Default = 'residue_type'
-
-        stride : int
-            Defines the spacing between frames to compare - i.e. if
-            comparing frame1 to a trajectory we'd compare frame 1 and
-            every stride-th frame. Note this operation may scale poorly
-            as protein length increases at which point increasing the
-            stride may become necessary. NOTE default is NOT 1 because
-            this is quite an expensive analysis. Default = 20.
+            * three-letter residue names, e.g. ``['TRP', 'TYR', 'GLN']``
+              (when ``mode='residue_type'``).
+            * residue indices, e.g. ``[1, 2, 3, 4]`` (when ``mode='resid'``).
+        probe_radius : float, optional
+            Solvent probe radius in Angstroms. Default 1.4 (water).
+        mode : {'residue_type', 'resid'}, optional
+            How to interpret ``input_list``. Default ``'residue_type'``.
+        stride : int, optional
+            Use every ``stride``-th frame. Default is 20.
 
         Returns
-        ---------
+        -------
         dict
-            Returns a dictionary where values are residue positions
-            (with residue type and index position) and values are SASA
-            of that specific resdue position. Note that SASA values are
-            returned in squared angstroms.
+            Keys are ``"RESNAME-RESID"`` strings; each value is
+            ``[mean_SASA, std_SASA]`` in Angstroms^2.
 
+        Raises
+        ------
+        SSException
+            If ``input_list`` contains a residue name not in the canonical
+            20 + caps set when ``mode='residue_type'``.
+
+        Example
+        -------
+        >>> protein.get_site_accessibility(['LEU', 'VAL'])
+        {'LEU-5': [42.1, 6.0], 'LEU-12': [55.4, 8.3], 'VAL-21': [38.0, 5.5], ...}
         """
 
         ## First check mode is valid and then sanity check input
@@ -4120,7 +3973,7 @@ class SSProtein:
             # set the list of valid residues to the 20 AAs + the caps
             for res in input_list:
                 if res not in ALL_VALID_RESIDUE_NAMES:
-                    raise SSException("Error: Tried to use get_site_accessibility in 'residue_type' mode but residue %s not found in list of valid residues %s" % (res, str(ALL_VALID_RESIDUE_NAMES)))
+                    raise SSException(f"Error: Tried to use get_site_accessibility in 'residue_type' mode but residue {res} not found in list of valid residues {ALL_VALID_RESIDUE_NAMES}")
 
 
             # get AA list and convert into an ordered list of each
@@ -4157,49 +4010,36 @@ class SSProtein:
     #
     #
     def get_regional_SASA(self, R1, R2, probe_radius=1.4, stride=20):
-        """Returns the Solvent Accessible Surface Area (SASA) for a local
-        region in every stride-th frame. SASA is determined using Golden-Spiral
-        algorithm.
+        """Mean total SASA summed over a contiguous residue range.
 
-        SASA is returned in Angstroms squared, probe radius is in Angstroms.
+        Calls :meth:`get_all_SASA` (whose result is memoised) and sums the
+        time-averaged per-residue SASA values from ``R1`` to ``R2-1``. Note
+        the SASA *must* be computed on the full protein first because atoms
+        outside the region can occlude region atoms.
 
-        A note on performance - the algorithm has to calculate SASA for EVERY
-        atom for each frame before a subregion can be evaluated. However,
-        the total SASA data is saved and memoized for future use in the
-        session. As such, if you scan over a protein to compute local SASA
-        in a sliding window the first window will take an INORDINATE amount
-        of time but the subsequent ones are just look ups so instantaneous.
-        This speed up is lost if either the stride or the probe-size
-        is altered, however.
+        SASA is returned in Angstroms^2.
 
         Parameters
-        -----------
+        ----------
         R1 : int
-            Index value for the first residue in the region
-
+            First residue of the region.
         R2 : int
-            Index value for the last residue in the region
-
-        probe_radius : float
-            Radius of the solvent probe used in Angstroms. Uses the the
-            Golden-Spiral algorithm, where a radius of 1.4 A is pretty
-            standard. Default = 1.4
-
-        stride : int
-            Defines the spacing between frames to compare - i.e. if
-            comparing frame1 to a trajectory we'd compare frame 1 and
-            every stride-th frame. Note this operation may scale poorly
-            as protein length increases at which point increasing the
-            stride may become necessary. NOTE default is NOT 1 because
-            this is quite an expensive analysis. Default = 20.
+            Last residue of the region (exclusive in the internal sum).
+        probe_radius : float, optional
+            Solvent probe radius in Angstroms. Default 1.4 (water).
+        stride : int, optional
+            Use every ``stride``-th frame. Default is 20.
 
         Returns
-        --------
+        -------
         float
-            Returns a single float which defines the sum-total SASA of
-            the region defined between residue R1 and R2. Note that SASA
-            values are returned in squared angstroms.
+            Sum over residues ``[R1, R2)`` of the time-averaged per-residue
+            SASA in Angstroms^2.
 
+        Example
+        -------
+        >>> protein.get_regional_SASA(5, 25)
+        2150.6
         """
 
         # NOTE - we HAVE to compute SASA over the full ensemble to take into acount
@@ -4220,56 +4060,53 @@ class SSProtein:
     #
     #
     def get_sidechain_alignment_angle(self, R1, R2, sidechain_atom_1='default', sidechain_atom_2='default'):
-        """Function that computes the angle alignment between two residue
-        sidechains. Sidechain vectors are defined as the unit vector between
-        the CA of the residue and a designated 'sidechain' atom on the
-        sidechain. The default sidechain atoms are listed below, but custom
-        atom names can also be provided using the sidechain_atom_1/2 variables.
+        """Per-frame angle between two residues' sidechain orientation vectors.
 
-        Residue : atom name default pairs (defaults from OPLS-AA used)::
+        For each residue a "sidechain vector" is the CA-to-tip vector, where
+        the tip atom is the canonical sidechain terminus (e.g. CB for Ala,
+        CZ for Phe/Tyr/Arg). The returned angle is between those two
+        vectors. Useful for asking whether two sidechains tend to point
+        towards each other (small angle) or away (~180 degrees).
 
-            'ALA' : 'CB'
-            'CYS' : 'SG'
-            'ASP' : 'CG'
-            'GLU' : 'CD'
-            'PHE' : 'CZ'
-            'GLY' : 'ERROR'
-            'HIS' : 'NE2'
-            'ILE' : 'CD1'
-            'LYS' : 'NZ'
-            'LEU' : 'CG'
-            'MET' : 'CE'
-            'ASN' : 'CG'
-            'PRO' : 'CG'
-            'GLN' : 'CD'
-            'ARG' : 'CZ'
-            'SER' : 'OG'
-            'THR' : 'CB'
-            'VAL' : 'CB'
-            'TRP' : 'CG'
-            'TYR' : 'CZ'
-            'ACE' : 'ERROR'
-            'NME' : 'ERROR'
+        Default tip atoms (from the OPLS-AA force field)::
 
+            ALA: CB    CYS: SG    ASP: CG    GLU: CD    PHE: CZ
+            HIS: NE2   ILE: CD1   LYS: NZ    LEU: CG    MET: CE
+            ASN: CG    PRO: CG    GLN: CD    ARG: CZ    SER: OG
+            THR: CB    VAL: CB    TRP: CG    TYR: CZ
+
+        GLY, ACE, NME have no sidechain and raise.
 
         Parameters
-        -----------
+        ----------
         R1 : int
-            Residue index of first residue
-
+            Resid of the first residue. Must not be GLY/ACE/NME.
         R2 : int
-            Residue index of second residue
-
-        sidechain_atom_1 : str {CA}
-            Atom name of the sidechain atom in residue 1 we're going to use. Default = 'default'.
-
-        sidechain_atom_2 : str {CA}
-            Atom name of the sidechain atom in residue 2 we're going to use. Default = 'default'.
+            Resid of the second residue. Must not be GLY/ACE/NME.
+        sidechain_atom_1 : str, optional
+            Override the tip atom of R1. ``'default'`` (default) uses the
+            canonical OPLS-AA atom from the table above.
+        sidechain_atom_2 : str, optional
+            Override the tip atom of R2. Same convention as
+            ``sidechain_atom_1``.
 
         Returns
-        --------
+        -------
         np.ndarray
-            Returns a numpy array which defines the per-frame angle alignment between the sidechains
+            1D array of length ``n_frames`` with the per-frame alignment
+            angle in degrees.
+
+        Raises
+        ------
+        SSException
+            If either residue is glycine or a cap, if a residue index is out
+            of range, or if a custom sidechain atom name cannot be found.
+
+        Example
+        -------
+        >>> theta = protein.get_sidechain_alignment_angle(5, 45)
+        >>> theta.mean()
+        82.4
         """
 
 
@@ -4277,10 +4114,10 @@ class SSProtein:
         # bad inputs. It's a litte drawn out but useful for code clarity reasons.
         # note need to do this with the un-corrected residue index values, hence why it comes first
         if R1 not in self.__residue_atom_table:
-            raise SSException('Residue index for R1: %d does not exist in the protein.' % R1)
+            raise SSException(f'Residue index for R1: {R1:d} does not exist in the protein.')
 
         if R2 not in self.__residue_atom_table:
-            raise SSException('Residue index for R2: %d does not exist in the protein.' % R2)
+            raise SSException(f'Residue index for R2: {R2:d} does not exist in the protein.')
 
 
         if sidechain_atom_1 == 'default':
@@ -4291,10 +4128,10 @@ class SSProtein:
                 sidechain_atom_1 = DEFAULT_SIDECHAIN_VECTOR_ATOMS[resname_1]
 
                 if sidechain_atom_1 == 'ERROR':
-                    raise SSException('Residue lacks a valid sidechain (%s)' % resname_1)
+                    raise SSException(f'Residue lacks a valid sidechain ({resname_1})')
 
             except KeyError:
-                raise SSException('Cannot parse residue at position %i (residue name = %s) ' % (R1, resname_1))
+                raise SSException(f'Cannot parse residue at position {R1} (residue name = {resname_1}) ')
         else:
             raise SSException('Unsupported sidechain atom name: "%s". Please use: "default".' % sidechain_atom_1)
 
@@ -4306,19 +4143,19 @@ class SSProtein:
                 sidechain_atom_2 = DEFAULT_SIDECHAIN_VECTOR_ATOMS[resname_2]
 
                 if sidechain_atom_2 == 'ERROR':
-                    raise SSException('Residue lacks a valid sidechain (%s)' % resname_2)
+                    raise SSException(f'Residue lacks a valid sidechain ({resname_2})')
 
             except KeyError:
-                raise SSException('Cannot parse residue at position %i (residue name = %s) ' % (R2, resname_2))
+                raise SSException(f'Cannot parse residue at position {R2} (residue name = {resname_2}) ')
         else:
             raise SSException('Unsupported sidechain atom name: "%s". Please use: "default".' % sidechain_atom_1)
 
         ### At this point we have reasonable atom names defined!
-        TRJ_1_SC = self.traj.atom_slice(self.topology.select('resid %i and name "%s"' % (R1, sidechain_atom_1) ))
-        TRJ_1_CA = self.traj.atom_slice(self.topology.select('resid %i and name "CA"' % (R1) ))
+        TRJ_1_SC = self.traj.atom_slice(self.topology.select(f'resid {R1} and name "{sidechain_atom_1}"'))
+        TRJ_1_CA = self.traj.atom_slice(self.topology.select(f'resid {R1} and name "CA"'))
 
-        TRJ_2_SC = self.traj.atom_slice(self.topology.select('resid %i and name "%s"' % (R2, sidechain_atom_2) ))
-        TRJ_2_CA = self.traj.atom_slice(self.topology.select('resid %i and name "CA"' % (R2) ))
+        TRJ_2_SC = self.traj.atom_slice(self.topology.select(f'resid {R2} and name "{sidechain_atom_2}"'))
+        TRJ_2_CA = self.traj.atom_slice(self.topology.select(f'resid {R2} and name "CA"'))
 
 
         # compute CA-SC vector
@@ -4345,72 +4182,57 @@ class SSProtein:
     # ........................................................................
     #
     #
-    def get_dihedral_mutual_information(self, angle_name='psi',  bwidth = np.pi/5.0, stride=1, weights=False, normalize=False):
-        """
-        Generate the full mutual information matrix for a specific dihedral
-        type. The resulting matrix describes the mutual information between
-        each dihedral angle as defined by the variable angle_name. A weights
-        parameter can be passed if frames are to be re-weighted, but this
-        requires that the (number of frames) / stride = the number of weights.
+    def get_dihedral_mutual_information(self, angle_name='psi', bwidth=np.pi/5.0, stride=1, weights=False, normalize=False):
+        """Mutual-information matrix between every pair of a chosen dihedral.
 
-        The mutual information for a pair of angles is determined by generating
-        a histogram of each dihedral individually (p(phi1), p(phi2)) and the
-        joint probability histogram (p(phi1,phi2)), and then computing the
-        Shannon entropy associated with the single and joint probability
-        histograms (H_phi1, H_phi2, H_phi1_phi2). The mutual information is
-        then returned as::
+        For each pair of dihedrals :math:`(\\phi_i, \\phi_j)` of the same
+        type, this computes the mutual information
 
-            H_phi1 + H_phi2 - (H_phi1_H_phi2)
+        .. math::
+            I(\\phi_i; \\phi_j) = H(\\phi_i) + H(\\phi_j) - H(\\phi_i, \\phi_j)
 
-        The easiest way to interpret these results is to normalize the inferred
-        matrix using an equivalent matrix generated using a limiting polymer
-        model (e.g., an excluded volume simulaion).
-
-        An optional flag is included to normalize the mutual information by the
-        joint Shannon entropy. This may also be useful when looking for
-        differences in MI matrices between a simulation and a limiting polymer
-        model.
-
-        Return:
-        Mutual information matrix (n x n) where n is the number of that type of
-        bonds in the protein.
+        where the Shannon entropies :math:`H` come from binned histograms.
+        The natural baseline for interpretation is the equivalent matrix
+        computed on a polymer-model reference ensemble (e.g. an
+        excluded-volume simulation), since the absolute values are
+        bin-width-dependent. Setting ``normalize=True`` divides each entry
+        by the joint entropy, which can help with comparisons across
+        ensembles of different sizes.
 
         Parameters
-        -------------
-
-        angle_name : str
-            String, must be one of the following options
-            'chi1','phi, 'psi', 'omega'. Default = 'psi'.
-
-        bwidth : np.array
-            The width of the bins that will stretch from -pi to pi. np.pi/5.0
-            is probablty the smallest binsize you want - even np.pi/2 should
-            work well. You may want to experiment with this parameter...
-            Default = np.pi/5.0
-
-        stride : int
-            Defines the spacing between frames to compare - i.e. if comparing
-            frame1 to a  trajectory we'd compare frame 1 and every stride-th
-            frame. Note this operation may scale poorly as protein length
-            increases at which point increasing the stride may become
-            necessary. Default = 1
-
-        weights : array_like
-            An `numpy.array` object that corresponds to the number of frames
-            within an input trajectory. Default = False.
-
-        normalize : boolean
-            Boolean flag to determine whether the mutual information matrix
-            should be  normalized by the joint shannon entropy (Default =
-            False).
+        ----------
+        angle_name : {'phi', 'psi', 'omega', 'chi1'}, optional
+            Dihedral to use. Default ``'psi'``. (``chi2``-``chi5`` are not
+            supported by this method.)
+        bwidth : float, optional
+            Histogram bin width on the ``[-pi, pi]`` interval. Smaller
+            widths give a finer-grained estimate but need more data.
+            Default ``pi/5``.
+        stride : int, optional
+            Use every ``stride``-th frame. Default 1.
+        weights : array_like, optional
+            Per-frame weights for re-weighted MI estimation. Must satisfy
+            ``len(weights) == n_frames // stride``. Default ``False``.
+        normalize : bool, optional
+            If True, divide each MI value by the joint entropy. Default False.
 
         Returns
-        ---------
-        np.ndarray (2d)
-            Returns a 2D (square) matrix where the upper-left triangle is
-            populated with the mutual information between the angles and
-            pairs of residues in each chain.
+        -------
+        np.ndarray
+            Symmetric ``(n_dihedrals, n_dihedrals)`` mutual-information
+            matrix. The diagonal is the self-information of each dihedral.
 
+        Raises
+        ------
+        SSException
+            If ``bwidth`` is not in ``(0, 2*pi]`` or ``angle_name`` is not
+            one of the four allowed strings.
+
+        Example
+        -------
+        >>> MI = protein.get_dihedral_mutual_information(angle_name='psi')
+        >>> MI.shape
+        (92, 92)
         """
 
 
@@ -4440,7 +4262,7 @@ class SSProtein:
 
         # check the angle_name is an allowed name
         if angle_name not in list(selector.keys()):
-            raise SSException('The variable angle_name was set to %s, which is not one of phi, omega, psi, chi1' % angle_name)
+            raise SSException(f'The variable angle_name was set to {angle_name}, which is not one of phi, omega, psi, chi1')
 
         # select and compute the relevant angles of the subtrajectory
         fx = selector[angle_name]
@@ -4469,71 +4291,64 @@ class SSProtein:
     #
     #
     def get_local_to_global_correlation(self, mode='COM', n_cycles=100, max_num_pairs=10, stride=20, weights=False, verbose=True):
-        """Method to analyze how well ensemble average distances taken from a
-        finite number of inter-residue distances correlate with global
-        dimensions as measured by the radius of gyration. This is a new
-        analysis, that is best explained through a formal write up.
+        """How well finite subsets of inter-residue distances predict global Rg.
+
+        For each ``k`` in ``[1, max_num_pairs)``, this randomly picks ``k``
+        inter-residue distance pairs ``n_cycles`` times and computes the
+        correlation between the chain's :math:`R_g^2` and the mean-squared
+        of those ``k`` distances. Averaging the correlations across cycles
+        gives a per-``k`` measure of how informative a finite local
+        measurement is about the global chain dimensions.
+
+        This is intended to inform experimental design (e.g. how many
+        smFRET pairs are "enough" to pin down :math:`R_g`).
 
         Parameters
         ----------
-        mode : str {'COM'}
-            Must be one of either 'CA' or 'COM'.
-
-            - 'CA' = alpha carbon.
-            - 'COM' = center of mass (associated withe the residue).
-
-        n_cycles : int {100}
-            Number of times, for each number of pairs, we re-select a different
-            set of paris to use. This depends (weakly) on the number of residues,
-            but we do not recommend a value < 50. For larger proteins this
-            number should be increased. Again, it's worth examining how your
-            results chain as a function of n_cycles to determine the optimal
-            tradeoff between speed and precision.
-
-        max_num_pairs : int {10}
-            The maximum number of pairs to be consider for correlation analysis.
-            In general we've found above 10-20 the average correlation tends to
-            plateau towards 1 (note it will NEVER be 1) so 1-20 is a reasonable
-            set to use.
-
-        stride : int {20}
-            Defines the spacing between frames for calculating the ensemble
-            average. As stride gets larger this analysis gets slower. It is
-            worth experimenting with to see how the results change as a function
-            of stride, but in theory the accuracy should remain fixed but
-            precision  improved as stride is reduced.
-
-        weights : bool {False}
-            Flag that indicates if frame weights should be used or not.
-
-        verbose : bool
-            Flag that by default is True determines if the function prints
-            status  updates. This is relevant because this function can be
-            computationally  expensive, so having some report on status can
-            be comforting!
+        mode : {'COM', 'CA'}, optional
+            Distance type. Default ``'COM'``.
+        n_cycles : int, optional
+            Number of random pair-resamples per ``k``. Default 100. Larger
+            ``n_cycles`` reduces sampling noise; values below ~50 are not
+            recommended.
+        max_num_pairs : int, optional
+            Upper bound on the number of pairs sampled. Default 10. Beyond
+            10-20 the average correlation typically saturates close to 1.
+        stride : int, optional
+            Use every ``stride``-th frame. Default 20.
+        weights : array_like or False, optional
+            Per-frame weights for the covariance computation. Default
+            ``False`` (uniform weighting).
+        verbose : bool, optional
+            If True (default), print one status line per ``k``.
 
         Returns
         -------
-        tuple
-            Returns a four-place tuple.
+        tuple of length 4
+            ``(raw, n_pairs, mean_corr, std_corr)`` where:
 
-            * [0] = This is an 2 by (n_cycles*max_num_pairs) array, where the first column is the number of pairs and the second column is the Rg-lambda correlation for a specific set of pairs (the pairs in question are not included). This can be thought of as the 'raw' data, and may only be useful if distributions of the correlation are of interest (e.g. for generating 2D histograms).
-
-            * [1] = Array with the number of pairs used (e.g. if max_num_pairs = 10 then this would be [1,2,3,4,5,6,7,8,9]).
-
-            * [2] = Array with the mean correlation associated with the numbers of pairs in position 2 and the radius of gyration.
-
-            * [3] = Array with the standard deviation of the correlation associated with the number of pairs in position 2 and the radius of gyration. Note the inclusion of the standard deviation makes the assumption that the distribution is Gaussian which may or may not be true.
-
+            * ``raw`` (np.ndarray of shape ``(n_cycles * (max_num_pairs - 1), 2)``):
+              one row per resample; col 0 is ``k`` and col 1 is the
+              :math:`R_g^2` vs. local-mean-square correlation for that
+              resample.
+            * ``n_pairs`` (np.ndarray): the ``k`` values used,
+              ``[1, 2, ..., max_num_pairs - 1]``.
+            * ``mean_corr`` (np.ndarray): mean correlation per ``k``.
+            * ``std_corr`` (np.ndarray): standard deviation of correlation
+              per ``k`` (assumes Gaussian distribution, may be approximate).
 
         Raises
         ------
         SSException
-            Raised when the mode is not 'CA' or 'COM'; or, when the lengths of
-            the Rg-stride derived calculations did not match the lengths of the
-            internal distances; or, when the installed numpy version doesn't
-            support the `aweights` keyword for the `numpy.cov` function.
+            If ``mode`` is invalid, the strided Rg length disagrees with the
+            inter-residue distance length, or the installed numpy version
+            cannot accept ``aweights`` in ``numpy.cov``.
 
+        Example
+        -------
+        >>> import numpy as np
+        >>> np.random.seed(42)   # the pair-resampling consumes the RNG
+        >>> raw, ks, mean_c, std_c = protein.get_local_to_global_correlation()
         """
 
         weights = self.__check_weights(weights, stride)
@@ -4549,7 +4364,7 @@ class SSProtein:
 
         # start with a sequence separation of 1
         for seq_sep in range(1, self.n_residues):
-            ssio.status_message("On sequence separation %i" % (seq_sep), verbose)
+            ssio.status_message(f"On sequence separation {seq_sep}", verbose)
 
             for pos in range(start, end - seq_sep):
 
@@ -4590,7 +4405,7 @@ class SSProtein:
 
         idx=0
         for n_selected in pair_selection_vector:
-            ssio.status_message("On %i pairs selected" % n_selected, verbose)
+            ssio.status_message(f"On {n_selected} pairs selected", verbose)
             for i in range(0,n_cycles):
 
                 # select n_select different values between 0 and n_pairs
@@ -4616,7 +4431,7 @@ class SSProtein:
                         if len(set(weights)) == 1:
                             cov_matrix = np.cov(np.vstack((local_mean_square, np.power(stride_rg,2))))
                         else:
-                            raise SSException('Weights being passed to get_global_from_local but the current version of numpy (%s) may not support weights via the "aweights" keyword...' % np.version.full_version)
+                            raise SSException(f'Weights being passed to get_global_from_local but the current version of numpy ({np.version.full_version}) may not support weights via the "aweights" keyword...')
 
                     # this computes the upper right square from the correlation matrix from the covariance matrix using (Rij = (Cij/(sqrt(Cii - Cjj))) where i and j are
                     # 0 and 1 respectively
@@ -4642,21 +4457,29 @@ class SSProtein:
     #
     #
     def get_end_to_end_vs_rg_correlation(self, mode='COM'):
-        """Computes the correlation between Rg^2 and end-to-end^2.
+        """Pearson correlation between per-frame :math:`R_e^2` and :math:`R_g^2`.
+
+        For a Gaussian chain Debye's result gives :math:`R_e^2 = 6 R_g^2`,
+        but in practice the correlation is a more useful diagnostic of how
+        fractal-like (or otherwise) the chain is. This method returns the
+        Pearson correlation across frames between the end-to-end distance
+        squared and the radius of gyration squared.
 
         Parameters
-        ---------
-
-        mode : str {'CA'}
-            String, must be one of either 'CA' or 'COM'.
-            - 'CA' = alpha carbon.
-            - 'COM' = center of mass (associated withe the residue).
+        ----------
+        mode : {'COM', 'CA'}, optional
+            Type of distance to use for the end-to-end distance.
+            Default ``'COM'``.
 
         Returns
         -------
         float
-            A single float describing the correlation (as calculated
-            by np.corrcoef).
+            Pearson correlation coefficient in ``[-1, 1]``.
+
+        Example
+        -------
+        >>> protein.get_end_to_end_vs_rg_correlation()
+        0.92
         """
 
         # validate the keyword
@@ -4681,57 +4504,45 @@ class SSProtein:
     #
     #
     def get_secondary_structure_DSSP(self, R1=None, R2=None, return_per_frame=False):
-        """Returns the a 4 by n numpy array inwhich column 1 gives residue
-        number, column 2 is local helicity, column 3 is local 'extended' (beta
-        strand/sheet) and column 4 is local coil on a per-residue basis.
+        """Per-residue secondary structure (helix / extended / coil) via DSSP.
 
-        Parameter R1 and R2 define a local region if only a sub-region is
-        required.
+        Calls ``mdtraj.compute_dssp`` on the chosen residue range and
+        summarises the output into per-residue fractional occupancies (the
+        default) or per-frame binary masks (with ``return_per_frame=True``).
 
-        The function return depends on if return_per_frame is set to True
-        or False.
-
-        If False (default), a tuple is returned where the 4 internal
-        vectors are
-
-        * [0] - residue ID list - integers counting the resid for each element in the other lists
-        * [1] - per residue factional helicity content
-        * [2] - per residue factional extended content
-        * [3] - per residue fractional coil content
-
-        If True, returns a tuple where the 4 elements are
-
-        * [0] - residue ID list - integers counting the resid for each element in the other lists
-        * [1] - frame vs. residue matrix where 1 = helix and 0 = not helix
-        * [2] - frame vs. residue matrix where 1 = extended and 0 = not extended
-        * [3] - frame vs. residue matrix where 1 = coil and 0 = not coil
-
+        The three buckets are H (helix), E (extended/beta), C (coil). At
+        every residue the three values sum to 1 (default mode).
 
         Parameters
-        -------------
-        R1 : int
-            Default value is None. Defines the value for first residue in
-            the region of interest. If not provided (False) then first
-            residue is used. Default is None.
-
-        R2 : int
-            Default value is None. Defines the value for last residue in
-            the region of interest. If not provided (False) then last residue
-            is used. Default is None
-
-        return_per_frame : bool
-            Default value is False. Defines if the function should, instead
-            of returning average data, return three N x F (N = number of residues,
-            F number of frames) where 1 = the associated secondary structure is
-            seen and 0 not seen. Default is False
+        ----------
+        R1 : int, optional
+            First residue of the region. ``None`` (default) means the first
+            CA-bearing residue.
+        R2 : int, optional
+            Last residue of the region. ``None`` (default) means the last
+            CA-bearing residue.
+        return_per_frame : bool, optional
+            * False (default): return per-residue fractional occupancies.
+            * True: return per-frame binary 1/0 masks.
 
         Returns
-        ----------
-        tuple
-            Returns a 4x tuple, where the meaning of the elements depend on if
-            the return_per_frame is set to to True or False. See function description
-            for further explanation.
+        -------
+        tuple of length 4
+            ``(resid_list, helix, extended, coil)`` where:
 
+            * ``resid_list`` (list of int): residue indices covered.
+            * If ``return_per_frame=False``: ``helix``, ``extended``, ``coil``
+              are 1D arrays of length ``len(resid_list)`` with per-residue
+              fractional time in each bucket.
+            * If ``return_per_frame=True``: ``helix``, ``extended``, ``coil``
+              are 2D arrays of shape ``(n_frames, len(resid_list))`` with
+              1 / 0 entries indicating presence of that bucket in that frame.
+
+        Example
+        -------
+        >>> resids, h, e, c = protein.get_secondary_structure_DSSP()
+        >>> h.mean()    # mean helicity across the chain
+        0.32
         """
 
         # build R1/R2 values
@@ -4740,7 +4551,7 @@ class SSProtein:
         R2_real = out[1]
 
         # select the relevant subtrajectory (out[2] is the 'resid %i to %i' where %i and %i are R1 and R2)
-        ats = self.traj.atom_slice(self.topology.select('%s' % out[2]))
+        ats = self.traj.atom_slice(self.topology.select(f'{out[2]}'))
 
         # compute DSSP over the selected subtrajectory
         dssp_data = md.compute_dssp(ats)
@@ -4776,65 +4587,51 @@ class SSProtein:
     #
     #
     def get_secondary_structure_BBSEG(self, R1=None, R2=None, return_per_frame=False):
-        """Returns a dictionary where eack key-value pair is keyed by a BBSEG
-        classification type (0-9) and each value is a vector showing the
-        fraction of time each residue is in that particular BBSEG type.
+        """Per-residue secondary structure via the BBSEG2 phi/psi classification.
 
-        BBSEG classification types are listed below:
+        Classifies each (phi, psi) pair into one of 9 BBSEG2 bins using a
+        lookup table distributed with CAMPARI. Implementation is in pure
+        Python, so the result is version-stable across mdtraj releases.
+
+        BBSEG2 classes:
 
         * 0 - unclassified
         * 1 - beta (turn/sheet)
         * 2 - PII (polyproline type II helix)
-        * 3 - Unusual region
-        * 4 - Right handed alpha helix
-        * 5 - Inverse C7 Equatorial (gamma-prime turn)
-        * 6 - Classic C7 Equatorial  (gamma turn)
-        * 7 - Helix with 7 Residues per Turn
-        * 8 - Left handed alpha helix
-
-        Parameters R1 and R2 are optional and allow a local sub-region to be
-        defined.
-
-        The function return depends on if return_per_frame is set to True or
-        False.
-
-        If False (default), a tuple is returned with the following elements:
-
-        * [0] - residue ID list - integers counting the resid for each element in the other lists
-        * [1] - Dictionary where keys are the BBSEG types and values are lists with fractional per-residue content for the associated BBSEG type.
-
-        If True, a tupe is returned with the following elements:
-
-        * [0] - residue ID list - integers counting the resid for each element in the other lists
-        * [1] - Dictionary where keys are BBSEG types and values are 2d np.arrays that map frame and residue with a 1 if the given BBSEG structure is found and 0 if not.
+        * 3 - unusual region
+        * 4 - right-handed alpha helix
+        * 5 - inverse C7-equatorial (gamma-prime turn)
+        * 6 - classic C7-equatorial (gamma turn)
+        * 7 - 7-residue-per-turn helix
+        * 8 - left-handed alpha helix
 
         Parameters
         ----------
-
-        R1 : int
-             Default value is False. Defines the value for first residue
-             in the region of interest. If not provided (False) then first
-             residue is used.
-
-        R2 : int
-             Default value is False. Defines the value for last residue in
-             the region of interest. If not provided (False) then last
-             residue is used.
-
-        return_per_frame : bool {False}
-            Default value is False. Defines if the function should, instead
-            of returning average data, return three N x F (N = number of
-            residues, F number of frames) where 1 = the associated secondary
-            structure is seen and 0 not seen
+        R1 : int, optional
+            First residue of the region. ``None`` (default) means the first
+            residue with phi/psi defined.
+        R2 : int, optional
+            Last residue of the region. ``None`` (default) means the last
+            residue with phi/psi defined.
+        return_per_frame : bool, optional
+            * False (default): return per-residue fractional occupancies.
+            * True: return per-frame binary masks.
 
         Returns
         -------
+        tuple of (list, dict)
+            ``(resid_list, per_class)`` where:
 
-        return_bbseg : dict
-             Dictionary of 9 key-value pairs where keys are integers 0-8 and
-             values are numpy arrays showing the fractional occupancy of each
-             of the distinct types of defined secondary structure. Note the
-             three classifications will sum to 1 (within numerical precision).
+            * ``resid_list`` (list of int): residue indices covered.
+            * ``per_class`` (dict): keys 0..8 (int), values are either
+              1D fractional-occupancy arrays (length ``len(resid_list)``)
+              or 2D ``(n_frames, len(resid_list))`` binary masks depending
+              on ``return_per_frame``.
+
+        Example
+        -------
+        >>> resids, classes = protein.get_secondary_structure_BBSEG()
+        >>> classes[4].mean()    # mean right-handed-alpha occupancy across chain
 
         """
 
@@ -4851,8 +4648,8 @@ class SSProtein:
 
 
         # extract the phi/psi angles in degrees
-        phi_data = np.degrees(md.compute_phi(self.traj.atom_slice(self.topology.select('%s'%(out[2]))))[1])
-        psi_data = np.degrees(md.compute_psi(self.traj.atom_slice(self.topology.select('%s'%(out[2]))))[1])
+        phi_data = np.degrees(md.compute_phi(self.traj.atom_slice(self.topology.select(f'{out[2]}')))[1])
+        psi_data = np.degrees(md.compute_psi(self.traj.atom_slice(self.topology.select(f'{out[2]}')))[1])
 
         # extract the relevant information (note shape of phi_data and psi_data will be identical)
         # shape info here is (number_of_frames, number_of_residues) sized
@@ -4956,20 +4753,22 @@ class SSProtein:
     # ........................................................................
     #
     def get_overlap_concentration(self):
+        """Overlap concentration :math:`c^*` of the chain, in Molar.
 
-        """Returns the overlap concentration for the chain in Moles.
-
-        The overlap concentration reflects the concentration at which a
-        flexible polymer begins to 'collide' in trans with other polymers
-        - i.e. the concentration at which the chains begin to overlap. We
-        calculate this by first computing the mean radius if gyration,
-        and then computing the concentration of chain within the radius
-        of gyration.
+        Defined as the polymer concentration at which independent chains
+        begin to occupy the same volume in trans, computed by treating each
+        chain as a sphere of radius equal to its mean :math:`R_g`. Useful as
+        a coarse limit on dilute-regime behaviour.
 
         Returns
         -------
         float
-            Molar concentration for the overlap concentration.
+            Overlap concentration :math:`c^*` in Molar.
+
+        Example
+        -------
+        >>> protein.get_overlap_concentration()
+        0.0042
         """
 
         return sspolymer.get_overlap_concentration(np.mean(self.get_radius_of_gyration()))
@@ -4981,63 +4780,44 @@ class SSProtein:
     #
     def get_angle_decay(self, atom1='C', atom2='N', return_all_pairs=False):
 
-        """Function that returns the correlation getween C->N bond vectors
-        along the chain as a function of sequence separation. This decay can
-        be used to estimate the persisence length.
+        """Bond-vector autocorrelation along the chain (persistence-length proxy).
 
-        Conceptually, the way to think about this is that if every amino
-        acid has a C->N vector WITHIN itself, we can ask how that C->N
-        vector decays as you move further apart in sequence separation.
-        For residue i and i+1 these vectors are quite well-correlated 
-        because, they're next to each other, but as i and i+x get 
-        further away these two vectors become decorrelated. This gives
-        a measure of the intramolecular correlation, which effectively
-        reports on how stiff the chain is. 
-        
-        Note that atom1 and atom2 must be found within the same residue and 
-        must be present for all residues, so the C->N bond is really the
-        only reasonable option.
+        For each residue we form a single intra-residue vector
+        :math:`\\vec{v}_i` (default ``C -> N``, the peptide bond direction).
+        For every pair :math:`(i, j)` we compute
+        :math:`\\langle \\hat{v}_i \\cdot \\hat{v}_j \\rangle` across
+        frames; averaging over all pairs with the same sequence separation
+        :math:`|i-j|` yields the decay profile. A faster initial decay
+        implies a less rigid chain.
+
+        Both ``atom1`` and ``atom2`` must exist in every residue, so the
+        peptide C->N vector is essentially the only reasonable choice.
 
         Parameters
         ----------
-
-        atom1: str
-            The first atom to use when calculating the angle decay.
-            Default = 'C'.
-
-        atom2: str
-            The second atom to use when calculating the angle decay.
-            Default = 'N'.
-
-        return_all_pairs: bool {False}
-            Whether or not to return a dictionary with all inter-residue
-            distances or not. If True, the second element in the return
-            tuple is a dictionary of res1-res2 pairs that reports on the
-            average decay for that specific pair. This can be useful for
-            assessing if there are specific regions of the chain that are
-            more or less stiff.
+        atom1 : str, optional
+            Origin atom name. Default ``'C'``.
+        atom2 : str, optional
+            Tip atom name. Default ``'N'``.
+        return_all_pairs : bool, optional
+            If True, additionally return a dict of every individual
+            ``"i-j"`` residue-pair correlation. Default is False.
 
         Returns
         -------
-        list or tuple
-        
-            The return type depends on if return_all_pairs is set to 
-            True or not. 
-        
-            If return_all_pairs is False (default), then the return type
-            is a numpy array of shape (nres,3), where the first column is 
-            the inter-residue separation, the second column is the average
-            correlation and the third column is the standard devaition of
-            the distribution of correlations obtained from all inter-residue
-            correlations associated with that specific sequence separation.
+        np.ndarray OR tuple of (np.ndarray, dict)
+            * If ``return_all_pairs=False`` (default): array of shape
+              ``(n_separations, 3)`` with columns ``[separation, mean_corr,
+              std_corr]``. The first row is ``[0, 1.0, 0.0]`` (self
+              correlation).
+            * If ``return_all_pairs=True``: ``(array, pair_dict)`` where
+              ``pair_dict["i-j"]`` is the mean correlation for that
+              specific residue pair.
 
-            If return_all_pairs is set to True then, the 2-position tuple
-            is returned where element 1 is the same matrix described above,
-            and the second element is a dictionary of res1-res2 pairs that 
-            reports on the average decay for that specific pair. This can 
-            be useful for assessing if there are specific regions of the 
-            chain that are more or less stiff.
-
+        Example
+        -------
+        >>> decay = protein.get_angle_decay()
+        >>> # decay[:, 0] is separation, decay[:, 1] is mean correlation
         """
 
         # first compute all the C-N vector for each residue
@@ -5130,38 +4910,48 @@ class SSProtein:
     #
     #
     def get_local_collapse(self, window_size=10, bins=None, verbose=True):
-        """This function calculates a vectorial representation of the radius of
-        gyration along a polypeptide chain, using a sliding window to calculate
-        the local Rg. This makes it very easy to determine where you see local
-        collapse vs. local expansion.
+        """Sliding-window local radius of gyration profile.
 
-        Local collapse is calculated using a stepsize of 1 and a window size of
-        window_size. As such, the resulting output will be of length ``n``,
-        where ``n`` = (number of residues - window_size)+1.
-
+        At every starting residue ``i`` the local Rg is computed over the
+        window ``[i, i + window_size]``, producing a per-position profile of
+        compaction along the chain. Useful for identifying locally collapsed
+        regions in otherwise extended IDPs (and vice versa).
 
         Parameters
         ----------
-
-        window_size : int, default=10
-            Size of the window along the chain in which conformations are
-            examined.
-
-        bins : np.arange or list
-            A range of values (np.arange or list) spanning histogram bins.
-            Default is np.arange(0, 10, 0.1).
-
-
-        verbose : bool
-            Flag that by default is True determines if the function prints
-            status updates. This is relevant because this function can be
-            computationally expensive, so having some report on status can
-            be comforting!
+        window_size : int, optional
+            Size of the sliding window in residues. Must be ``<= n_residues``.
+            Default 10.
+        bins : np.ndarray or list, optional
+            Histogram bin edges (evenly spaced). If None (default),
+            ``np.arange(0, 10, 0.01)`` is used.
+        verbose : bool, optional
+            If True (default), print one status line per starting residue.
 
         Returns
         -------
-        tuple (len = 4)
+        tuple of (list, list, list, np.ndarray)
+            ``(mean, std, histo, bins)`` where:
 
+            * ``mean`` (list of float, length ``n_residues - window_size + 1``):
+              mean local Rg per starting residue.
+            * ``std`` (same length): standard deviation of local Rg per
+              starting residue.
+            * ``histo`` (list of np.ndarray, same length): histogram counts.
+            * ``bins`` (np.ndarray): the bin edges actually used.
+
+        Raises
+        ------
+        SSException
+            If ``window_size > n_residues`` or ``bins`` is malformed.
+
+        Example
+        -------
+        >>> mean, std, hist, bins = protein.get_local_collapse(window_size=8)
+        >>> # plot mean vs residue index to see where the chain collapses
+
+        Returns (legacy enumeration)
+        ----------------------------
             * [0] - list of floats (length = n)
                   Each float reports on the mean Rg at a specific position
                   along the sequence.
@@ -5200,7 +4990,7 @@ class SSProtein:
             fpe = np.finfo(diff[0].dtype).eps
             evenly_spaced = np.isclose(np.sum(bins_delta), 0, rtol=fpe)
             if not evenly_spaced:
-                raise SSException('The spacing between bins is uneven, or you may using bins widths less than: %f' % fpe)
+                raise SSException(f'The spacing between bins is uneven, or you may using bins widths less than: {fpe:f}')
 
         n_residues = self.n_residues
         n_frames   = self.n_frames
@@ -5215,7 +5005,7 @@ class SSProtein:
 
         for i in range(window_size - 1, n_residues):
 
-            ssio.status_message("On range %i" % i, verbose)
+            ssio.status_message(f"On range {i}", verbose)
 
             # get radius of gyration (now by default is in Angstroms
             # - in previous versions we performed a conversion here)

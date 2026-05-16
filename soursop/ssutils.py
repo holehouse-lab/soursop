@@ -8,7 +8,7 @@
 
 ## Alex Holehouse (Pappu Lab and Holehouse Lab) and Jared Lalmansing (Pappu lab)
 ## Simulation analysis package
-## Copyright 2014 - 2022
+## Copyright 2014 - 2026
 ##
 
 
@@ -135,6 +135,49 @@ def _set_numpy_threads(candidate_library_paths, num_threads):
 ## thirst to be quenched...
 ##
 def set_numpy_threads(num_threads):
+    """Set the number of threads NumPy's BLAS backend is allowed to use.
+
+    Some of NumPy's linear-algebra routines will grab every CPU core they can
+    find by default. That is rarely what you want when you are already
+    running many SOURSOP analyses in parallel (or sharing a node), so this
+    helper provides a single place to clamp BLAS thread use.
+
+    Implementation differs across platforms:
+
+    * **Windows**: uses the ``mkl`` Python package (installed via conda).
+    * **macOS / Linux**: locates the MKL or OpenBLAS shared library inside
+      the current virtual environment (or conda env) and calls the C-level
+      thread-setter via ``ctypes``.
+
+    Some BLAS backends (notably Apple's Accelerate framework) do not expose
+    a thread-control API and will raise :class:`SSException` here.
+
+    Parameters
+    ----------
+    num_threads : int
+        Maximum number of threads to allow. Must be a positive integer.
+
+    Returns
+    -------
+    tuple of (int, str)
+        ``(set_threads, library)`` where ``set_threads`` is the actual
+        thread count BLAS now reports (which may differ from
+        ``num_threads`` if the BLAS implementation clamps it), and
+        ``library`` is one of ``'mkl_rt'``, ``'openblas'``, or
+        ``'unknown'``.
+
+    Raises
+    ------
+    SSException
+        If no MKL or OpenBLAS library can be found in the active
+        environment (typical of Apple Accelerate setups).
+
+    Example
+    -------
+    >>> from soursop.ssutils import set_numpy_threads
+    >>> set_numpy_threads(2)
+    (2, 'openblas')
+    """
     # Currently only MKL is supported on Windows as it's installed alongside
     # the other packages via conda. A "traditional" virtual environment requires
     # access to a compiler and other libraries for successful compilation.
@@ -144,6 +187,11 @@ def set_numpy_threads(num_threads):
         return mkl.get_max_threads(), MKL_LIBRARY
 
     candidates, other_candidates = _identify_library_paths()
+    if len(candidates) == 0 and len(other_candidates) == 0:
+        raise SSException(
+            "No MKL or OpenBLAS library found in the current environment. "
+            "Thread count control is not available for this BLAS backend (e.g., Apple Accelerate)."
+        )
     if len(candidates) > 0:
         set_threads, library = _set_numpy_threads(candidates, num_threads)
     else:
@@ -152,33 +200,40 @@ def set_numpy_threads(num_threads):
 
 
 def validate_keyword_option(keyword, allowed_vals, keyword_name, error_message=None):
-    """
-    Helper function that checks a passed keyword is only one of a set of possible
-    valid keywords
+    """Raise :class:`SSException` unless ``keyword`` is one of the allowed values.
+
+    Used throughout SOURSOP to validate ``mode`` / ``scheme`` / similar
+    string options at the top of public methods. If ``error_message`` is
+    not supplied a standard message naming the offending keyword and
+    listing the allowed values is constructed automatically.
 
     Parameters
-    -----------
-
+    ----------
     keyword : str
-        The actual passed keyword value
-
+        The value the caller passed.
     allowed_vals : list of str
-        A list of possible keywords
-
+        The complete set of accepted values.
     keyword_name : str
-        the name of the keyword as the user would select it in the function call
-
-    error_message : str
-        Allows the user to pass a custom error message. Default is None.
-
+        Human-readable name of the parameter (for the error message).
+    error_message : str, optional
+        Custom message to use instead of the default. Must be a string.
 
     Returns
-    --------
+    -------
     None
 
-        No return value, but raises ssexceptions.SSException if ``keyword `` is not
-        found in the allowed_vals list
+    Raises
+    ------
+    SSException
+        If ``keyword`` is not in ``allowed_vals``.
+    RuntimeError
+        If ``error_message`` is supplied as a non-string type.
 
+    Example
+    -------
+    >>> from soursop.ssutils import validate_keyword_option
+    >>> validate_keyword_option('CA', ['CA', 'COM'], 'mode')   # passes silently
+    >>> validate_keyword_option('xyz', ['CA', 'COM'], 'mode')  # raises SSException
     """
 
 

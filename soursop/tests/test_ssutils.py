@@ -14,7 +14,10 @@ from threadpoolctl import threadpool_info, threadpool_limits
 
 def test_set_numpy_threads():
     num_threads = 2
-    set_threads, blas_library = ssutils.set_numpy_threads(num_threads)
+    try:
+        set_threads, blas_library = ssutils.set_numpy_threads(num_threads)
+    except SSException:
+        pytest.skip("No controllable BLAS library found (e.g., Apple Accelerate does not support ctypes thread control)")
     assert blas_library != 'unknown'
     assert set_threads == num_threads
 
