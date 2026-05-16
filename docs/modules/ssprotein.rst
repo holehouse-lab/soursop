@@ -2,9 +2,26 @@
 ssprotein
 =========================================================
 
-The ssprotein module holds the SSProtein class. This is the main class used for working with simulations of individual proteins.
+Overview
+----------------------------
 
-Once a trajectory has been read in and an SSProtein object extracted from the SSTrajectory object, a wide range of analyses are available. 
+``SSProtein`` is the core analysis class in SOURSOP and the primary interface for characterizing the conformational behaviour of a single protein chain across a simulation trajectory.
+
+``SSProtein`` objects are not created directly. Instead, they are extracted from an :class:`~soursop.sstrajectory.SSTrajectory` object after reading a trajectory from disk. Each protein chain in the system is represented by its own ``SSProtein`` instance, accessible via ``SSTrajectory.proteinTrajectoryList``.
+
+Analyses fall into several broad categories:
+
+* **Residue utilities** — sequence retrieval, atom/CA index lookup, residue center-of-mass positions and masses.
+* **Inter-residue distances** — pairwise CA or COM distance matrices, distance maps, and polymer-scaled distance maps.
+* **Global size and shape** — radius of gyration, hydrodynamic radius, end-to-end distance, asphericity, gyration tensor, and the :math:`t`-parameter.
+* **Secondary structure** — per-frame DSSP assignments and BBSEG backbone-torsion-based classification.
+* **Polymer scaling** — internal scaling profiles (:math:`\langle r^2 \rangle` vs sequence separation), the scaling exponent :math:`\nu`, and local heterogeneity in scaling behaviour.
+* **Contact and RMSD analysis** — contact maps (with configurable threshold and mode), RMSD to a reference structure, and fraction of native contacts :math:`Q`.
+* **Solvent accessibility** — per-residue and region-level SASA via ``get_all_SASA``, ``get_regional_SASA``, and ``get_site_accessibility``.
+* **Local dynamics** — local collapse profiles, sidechain alignment angles, dihedral mutual information, local-to-global correlation, and angle decay.
+* **Clustering and overlap** — conformational clustering via ``get_clusters``, overlap concentration :math:`c^*`.
+
+Most functions return NumPy arrays; per-frame results have shape ``(n_frames,)`` or ``(n_frames, ...)`` so standard NumPy operations (``np.mean``, ``np.std``, etc.) apply directly.
 
 By way of an example::
 
@@ -17,7 +34,7 @@ By way of an example::
   # get the first protein chain (this is an SSProtein object)
   ProtObj = TrajOb.proteinTrajectoryList[0]
 
-  # print the mean radius of gyration
+  # print the mean end-to-end distance
   mean_e2e = np.mean(ProtObj.get_end_to_end_distance())
   print(mean_e2e)
 
@@ -28,19 +45,20 @@ SSProtein objects have a set of object variables associated with them.
 
 .. autoclass:: soursop.ssprotein.SSProtein
 
-        .. automethod:: resid_with_CA
-        .. automethod:: ncap
-        .. automethod:: ccap
-        .. automethod:: n_frames
-        .. automethod:: n_residues
-        .. automethod:: residue_index_list
-        .. automethod:: length
+        .. autoattribute:: resid_with_CA
+        .. autoattribute:: ncap
+        .. autoattribute:: ccap
+        .. autoattribute:: n_frames
+        .. autoattribute:: n_residues
+        .. autoattribute:: residue_index_list
+        .. autoattribute:: length
 
 
 SSProtein Functions
 ----------------------------
 
 .. autoclass:: soursop.ssprotein.SSProtein
+        :no-index:
 
         .. automethod:: reset_cache
         .. automethod:: print_residues

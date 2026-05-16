@@ -7,23 +7,34 @@ from soursop import sstrajectory
 from soursop import ssprotein
 
 
-GS6_FILES=['gs6.pdb','gs6.xtc']
-CTL9_FILES=['ctl9.pdb','ctl9.xtc']
-NTL9_FILES=['ntl9.pdb','ntl9.xtc']
+GS6_FILES=['gs6_AA.pdb','gs6_AA.xtc']
+CTL9_FILES=['ctl9_AA.pdb','ctl9_AA.xtc']
+NTL9_FILES=['ntl9_AA.pdb','ntl9_AA.xtc']
+SIGA_CG_FILES=['sigA_CG.pdb','sigA_CG.xtc']
+SYNTH_1_CG_FILES=['synth_1_CG.pdb','synth_1_CG.xtc']
+ALL_RESIDUES_FILES=['all_residues_AA.pdb','all_residues_AA.xtc']
+GROMACS_1_CHAIN=['gromacs1chain/top.pdb','gromacs1chain/traj.xtc']
 GROMACS_2_CHAINS=['gromacs2chains/top.pdb','gromacs2chains/traj.xtc']
 
 
 test_data_dir = soursop.get_data('test_data')
 
 
+def _load_traj(files):
+    return sstrajectory.SSTrajectory(
+        os.path.join(test_data_dir, files[1]),
+        os.path.join(test_data_dir, files[0]),
+    )
+
+
 @pytest.fixture(scope='session', autouse=True)
-def CTL9_CP(request):
-    topology_path = os.path.join(test_data_dir, CTL9_FILES[0])
-    trajectory_path = os.path.join(test_data_dir, CTL9_FILES[1])
-    
-    CTL9_CP = sstrajectory.SSTrajectory(trajectory_path, topology_path).proteinTrajectoryList[0]
-    
-    return CTL9_CP
+def CTL9_CO(request):
+    return _load_traj(CTL9_FILES)
+
+
+@pytest.fixture(scope='session', autouse=True)
+def CTL9_CP(CTL9_CO):
+    return CTL9_CO.proteinTrajectoryList[0]
 
 
 @pytest.fixture(scope='session', autouse=True)
@@ -61,8 +72,27 @@ def NTL9_CP(request):
 
 @pytest.fixture(scope='session', autouse=True)
 def GMX_2CHAINS(request):
-    GMX_2CHAINS = sstrajectory.SSTrajectory("%s/%s"%(test_data_dir, GROMACS_2_CHAINS[1]), "%s/%s"%(test_data_dir, GROMACS_2_CHAINS[0]))
-    return GMX_2CHAINS
+    return _load_traj(GROMACS_2_CHAINS)
+
+
+@pytest.fixture(scope='session', autouse=True)
+def GMX_1CHAIN_CO(request):
+    return _load_traj(GROMACS_1_CHAIN)
+
+
+@pytest.fixture(scope='session', autouse=True)
+def SIGA_CG_CO(request):
+    return _load_traj(SIGA_CG_FILES)
+
+
+@pytest.fixture(scope='session', autouse=True)
+def SYNTH_1_CG_CO(request):
+    return _load_traj(SYNTH_1_CG_FILES)
+
+
+@pytest.fixture(scope='session', autouse=True)
+def ALL_RESIDUES_CO(request):
+    return _load_traj(ALL_RESIDUES_FILES)
 
 
 # This is implemented for use in unittests for `ssanalyzer`.

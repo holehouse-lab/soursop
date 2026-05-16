@@ -7,8 +7,9 @@
 # Jeffrey M. Lotthammer (Holehouse Lab)
 # Alex Holehouse (Pappu Lab and Holehouse Lab) and Jared Lalmansing (Pappu lab)
 # Simulation analysis package
-# Copyright 2014 - 2022
+## Copyright 2014 - 2026
 ##
+
 import itertools
 import os
 import pathlib
@@ -34,6 +35,36 @@ from .sstrajectory import SSTrajectory, parallel_load_trjs
 
 
 def compute_joint_hellinger_distance(p, q):
+    """Hellinger distance between two joint probability distributions.
+
+    Defined via the Bhattacharyya coefficient
+    :math:`BC = \\sum_i \\sqrt{p_i q_i}` as
+    :math:`H = \\sqrt{1 - BC}`. The normalisation factor of
+    :math:`1/\\sqrt{2}` used in :func:`hellinger_distance` is omitted here
+    because the inputs are already joint (2D) probability surfaces that
+    sum to 1.
+
+    Parameters
+    ----------
+    p, q : array_like
+        Joint probability distributions of the same shape. Each must sum
+        to 1 (within numerical tolerance) for the result to be a valid
+        Hellinger distance.
+
+    Returns
+    -------
+    float
+        Hellinger distance in ``[0, 1]``; 0 means identical distributions
+        and 1 means disjoint supports.
+
+    Example
+    -------
+    >>> import numpy as np
+    >>> from soursop.sssampling import compute_joint_hellinger_distance
+    >>> p = np.eye(2) / 2
+    >>> compute_joint_hellinger_distance(p, p)
+    0.0
+    """
     # Compute the Bhattacharyya coefficient
     b_coefficient = np.sum(np.sqrt(p * q))
 
@@ -44,27 +75,39 @@ def compute_joint_hellinger_distance(p, q):
 
 
 def hellinger_distance(p: np.ndarray, q: np.ndarray) -> np.ndarray:
-    """
-    Computes the Hellinger distance between a set of probability distributions p and q.
-    The Hellinger distances is defined as:
+    """Hellinger distance(s) between pairs of 1D probability distributions.
 
-        :math:`H(P,Q) = \\frac{1}{\\sqrt{2}} \\times \\sqrt{\\sum_{i=1}^{k}(\\sqrt{p_i}-\\sqrt{q_i})^2}`
+    For each pair the distance is
 
-    where k is the length of the probability vectors being compared.
+    .. math::
+        H(P, Q) = \\frac{1}{\\sqrt{2}} \\sqrt{\\sum_{i=1}^{k} (\\sqrt{p_i} - \\sqrt{q_i})^2}
 
-    For sets of distributions, the datapoints should be in the last axis.
+    which lies in ``[0, 1]``. The reduction is taken along the last axis
+    of ``p`` / ``q``, so passing higher-rank arrays computes one distance
+    per leading-axis slice.
 
     Parameters
     ----------
-    p : np.ndarray
-        A probability distribution or set of probability distributions to compare.
-    q : np.ndarray
-        A probability distribution or set of probability distributions to compare.
+    p, q : np.ndarray
+        Probability distributions of identical shape. The last axis is
+        treated as the distribution axis; any leading axes are broadcast.
 
     Returns
     -------
     np.ndarray
-        The Hellinger distance(s) between p and q.
+        Hellinger distance(s) with shape ``p.shape[:-1]``.
+
+    Example
+    -------
+    >>> import numpy as np
+    >>> from soursop.sssampling import hellinger_distance
+    >>> hellinger_distance(np.array([0.5, 0.5]), np.array([0.5, 0.5]))
+    0.0
+    >>> # per-residue distances for an (n_residues, n_bins) PDF stack
+    >>> pdf_a = np.full((10, 20), 1/20)
+    >>> pdf_b = np.full((10, 20), 1/20)
+    >>> hellinger_distance(pdf_a, pdf_b).shape
+    (10,)
     """
     # Ensure that p and q are NumPy arrays
     p = np.asarray(p)
@@ -77,23 +120,32 @@ def hellinger_distance(p: np.ndarray, q: np.ndarray) -> np.ndarray:
 
 
 def rel_entropy(p: np.ndarray, q: np.ndarray) -> np.ndarray:
-    """Computes the relative entropy between two probability distributions p and q.
-    For sets of distributions, the datapoints should be in the last axis.
+    """Kullback-Leibler relative entropy :math:`D_{KL}(P || Q)`.
+
+    Computed via ``scipy.special.rel_entr`` (which handles ``p == 0`` and
+    ``q == 0`` correctly), summed along the last axis. Asymmetric in
+    ``p`` and ``q``; the result is always non-negative and is 0 only when
+    ``p == q`` almost everywhere.
 
     Parameters
     ----------
-    p : np.ndarray
-        a probability distribution function, or series of probabiliy distribution functions,
-        to compute the relative entropy distance on. p and q must be the same shape
-
-    q : np.ndarray
-        a probability distribution function, or series of probabiliy distribution functions, to compute the relative entropy on
-        p and q must be the same shape
+    p, q : np.ndarray
+        Probability distributions of identical shape. The last axis is
+        the distribution axis; leading axes are broadcast.
 
     Returns
     -------
     np.ndarray
-        The relative entropy for each residue in the sequence
+        Relative entropy values with shape ``p.shape[:-1]``, in nats.
+
+    Example
+    -------
+    >>> import numpy as np
+    >>> from soursop.sssampling import rel_entropy
+    >>> rel_entropy(np.array([0.5, 0.5]), np.array([0.5, 0.5]))
+    0.0
+    >>> rel_entropy(np.array([0.9, 0.1]), np.array([0.5, 0.5]))
+    0.368
     """
     p = np.asarray(p)
     q = np.asarray(q)
@@ -118,50 +170,69 @@ class SamplingQuality:
         force_sequential: bool = False,
         **kwargs: dict,
     ):
-        """
-        SamplingQuality is a class to compare the sampling quality for a set of trajectories
-        relative to some referene model. This is usually a polymer limiting model, but could
-        be different proteins, mutations, or PTMs.
+        """Compare sampling quality of one or more trajectories against a reference.
+
+        The reference can be a limiting-polymer-model ensemble, a wild-type
+        simulation, or any other set of trajectories. If a ``reference_list``
+        is not supplied, SOURSOP falls back to the precomputed excluded-
+        volume (EV) limiting polymer angles tabulated in ``ssdata``.
+
+        On construction, the class loads (or truncates, if requested) every
+        trajectory, computes phi/psi dihedrals for the chosen ``proteinID``,
+        and stores them for downstream methods such as
+        :meth:`compute_dihedral_hellingers`, :meth:`compute_frac_helicity`,
+        and :meth:`quality_plot`.
 
         Parameters
         ----------
-        traj_list : List[str]
-            a list of the trajectory paths associated with the simulated trajectories.
-        reference_list : Union[List[str], None]
-            a list of the trajectory paths associated with the reference model.
-            This is usually a limiting polymer model.
-        top_file : str
-            path to the simulated trajectories topology file.
-        ref_top : Union[str, None]
-            path to the reference topology - usually the same topology file
-            if using a polymer model, but can differ if reference is e.g., a mutant.
-        method : str
-            The method used to compute the Hellinger distance
-            between the simulated trajectories and the polymer limiting model.
-            options include: 'dihedral' and 'rmsd' or 'p_vects' [not currently implemented]
+        traj_list : list of str
+            Trajectory file paths (xtc / dcd) for the simulated ensembles.
+        reference_list : list of str or None, optional
+            Trajectory file paths for the reference ensembles. If ``None``,
+            the precomputed EV limiting-polymer dihedrals are used as the
+            reference.
+        top_file : str, optional
+            Topology PDB for the simulated trajectories. Default
+            ``"__START.pdb"``.
+        ref_top : str or None, optional
+            Topology PDB for the reference trajectories. Only required when
+            ``reference_list`` is supplied.
+        method : {'2D angle distributions', '1D angle distributions'}, optional
+            Histogram strategy used when computing Hellinger distances and
+            relative entropies. Default ``'2D angle distributions'``.
         bwidth : float, optional
-            bin width parameter for segmenting histogrammed data into buckets,
-            by default 15 degrees.
+            Histogram bin width in radians. Default ``deg2rad(15)``.
         proteinID : int, optional
-            The ID of the protein where the ID is the proteins position
-            in the ``self.proteinTrajectoryList`` list, by default 0.
-        n_cpus : int, optional
-            number of CPUs to use for parallel loading of SSTrajectory objects,
-            by default None, which uses all available threads.
+            Index into each trajectory's ``proteinTrajectoryList`` that
+            picks the chain to analyse. Default 0.
+        n_cpus : int or None, optional
+            Number of worker processes for parallel trajectory loading.
+            None (default) uses all CPUs reported by ``os.cpu_count()``.
         truncate : bool, optional
-            if True, will slice all the trajectories such that
-            they're all of the same minimum length.
-        force_sequential: bool, optional
-            if True, will load trajectories sequentially instead of in parallel.
-        kwargs : dict, optional
-            if provided, key-value pairs will be passed to SSTrajectory for file
-            loading. For example, can be useful for passing a stride.
+            If True, slice every trajectory to the minimum length across
+            the input set before computing dihedrals. Useful for mid-run
+            analysis. Default False.
+        force_sequential : bool, optional
+            If True, load trajectories one-by-one rather than in parallel.
+            Default False.
+        **kwargs : dict
+            Extra keyword arguments forwarded to :class:`SSTrajectory` (e.g.
+            ``stride``).
+
         Raises
         ------
-        NotImplementedError
-            Raised when the requested functionality has not yet been implemented.
         SSException
-            Raised when the keyword methodology is not part of the validated options.
+            If ``method`` is not one of the allowed options, ``bwidth`` is
+            out of range, or ``traj_list`` is empty.
+
+        Example
+        -------
+        >>> from soursop.sssampling import SamplingQuality
+        >>> sq = SamplingQuality(
+        ...     traj_list=['rep0/traj.xtc', 'rep1/traj.xtc'],
+        ...     top_file='topology.pdb',
+        ... )
+        >>> hellingers = sq.compute_dihedral_hellingers()
         """
         super(SamplingQuality, self).__init__()
         self.traj_list = traj_list
@@ -434,20 +505,35 @@ class SamplingQuality:
     def compute_frac_helicity(
         self, proteinID: int = 0, recompute: bool = False
     ) -> np.ndarray:
-        """Function that computes the per residue fractional helicity at a given index (proteinID)
-        in the proteinTrajectoryList of an SSTrajectory for all SSTrajectory objects provided
-        in the ``self.trajs`` list.
+        """Per-residue fractional helicity for every loaded trajectory and reference.
+
+        Helicity is taken directly from
+        :meth:`SSProtein.get_secondary_structure_DSSP` (the helix column of
+        the DSSP summary). If no reference trajectories were supplied,
+        the reference helicity is zeros — the precomputed EV polymer
+        reference is dihedral-only and has no DSSP equivalent.
+
+        Results are cached on the instance; pass ``recompute=True`` to
+        bypass the cache.
 
         Parameters
         ----------
         proteinID : int, optional
-            The ID of the protein where the ID is the proteins position
-            in the ``self.proteinTrajectoryList`` list, by default 0.
+            Index of the chain in each trajectory's ``proteinTrajectoryList``.
+            Default 0.
+        recompute : bool, optional
+            If True, ignore any cached result and recompute. Default False.
 
         Returns
         -------
-        np.ndarray
-            Returns the fractional helicity for the simulated trajectory and the reference model.
+        tuple of (np.ndarray, np.ndarray)
+            ``(trj_helicity, ref_helicity)`` each of shape
+            ``(n_trajectories, n_residues)``. When no reference was
+            supplied, ``ref_helicity`` is all zeros.
+
+        Example
+        -------
+        >>> trj_h, ref_h = sq.compute_frac_helicity()
         """
         selectors = ("trj_helicity", "ref_helicity")
         if not recompute and all(
@@ -479,12 +565,35 @@ class SamplingQuality:
         return self.__precomputed["trj_helicity"], self.__precomputed["ref_helicity"]
 
     def compute_dihedral_hellingers(self) -> np.ndarray:
-        """Compute the Hellinger distance for both the phi and psi angles between a set of trajectories.
+        """Per-residue Hellinger distance between simulated and reference dihedrals.
+
+        Behaviour depends on the ``method`` set at construction:
+
+        * ``'2D angle distributions'``: histograms the joint
+          ``(phi, psi)`` distribution per residue, then computes one
+          joint-Hellinger distance per (trajectory, residue) pair via
+          :func:`compute_joint_hellinger_distance`. Returns a shape
+          ``(n_trajectories, n_residues)`` array.
+        * ``'1D angle distributions'``: histograms phi and psi
+          separately and computes a Hellinger distance for each. Returns
+          a shape ``(2, n_trajectories, n_residues)`` array stacked as
+          ``[phi_hellingers, psi_hellingers]``.
 
         Returns
         -------
         np.ndarray
-            The Hellinger distances between the probability density distributions for the phi and psi angles for a set of trajectories.
+            Hellinger distances, shape depending on ``method`` (see above).
+
+        Raises
+        ------
+        NotImplementedError
+            If ``method`` is not one of the two supported strings.
+
+        Example
+        -------
+        >>> H = sq.compute_dihedral_hellingers()
+        >>> H.shape         # for 2D angle distributions
+        (3, 56)
         """
         if self.method == "2D angle distributions":
             data = np.array([self.phi_angles, self.psi_angles])
@@ -572,12 +681,22 @@ class SamplingQuality:
         return hellinger_distances
 
     def compute_dihedral_rel_entropy(self) -> np.ndarray:
-        """Compute the relative entropy for both the phi and psi angles between a set of trajectories.
+        """Per-residue Kullback-Leibler relative entropy between simulated and reference dihedrals.
+
+        Histograms phi and psi 1D distributions independently, then
+        computes :math:`D_{KL}(P || Q)` per residue via :func:`rel_entropy`.
 
         Returns
         -------
         np.ndarray
-            The relative entropy between the probability density distributions for the phi and psi angles for a set of trajectories.
+            Array of shape ``(2, n_trajectories, n_residues)`` stacked as
+            ``[phi_rel_entropy, psi_rel_entropy]``. Values are in nats.
+
+        Example
+        -------
+        >>> rel_e = sq.compute_dihedral_rel_entropy()
+        >>> rel_e.shape
+        (2, 3, 56)
         """
 
         phi_trj_pdfs = self.compute_pdf(self.phi_angles, bins=self.bins)
@@ -594,33 +713,38 @@ class SamplingQuality:
     def compute_series_of_histograms_along_axis(
         self, data: np.ndarray, bins: np.ndarray, axis: int = 0
     ):
-        """
-        Compute a series of 2D histograms along an axis of a 4D array
-        and convert them into probability density functions (PDFs).
+        """2D ``(phi, psi)`` PDFs for every (trajectory, residue) pair.
+
+        Builds an ``n_trajectories x n_residues`` grid of 2D joint
+        histograms (one per residue) and normalises them so each is a
+        probability density. The result is the per-pair PDF stack
+        consumed by :meth:`compute_dihedral_hellingers` in 2D mode.
 
         Parameters
         ----------
-        data : ndarray
-            4D array containing the joint phi/psi angle data.
-
-        bins : ndarray
-            1D array defining the bin edges for the histograms.
-
+        data : np.ndarray
+            4D array of shape ``(2, n_trajectories, n_residues, n_frames)``
+            where the leading axis stacks ``[phi_angles, psi_angles]``.
+        bins : np.ndarray
+            1D bin edges shared by both phi and psi axes.
         axis : int, optional
-            Axis along which to compute the histograms (default=0).
+            Retained for API compatibility; the function always reduces
+            over the frame axis internally. Default 0.
 
         Returns
         -------
-        pdfs : ndarray
-            Series of 2D probability density functions (PDFs) along the given axis.
+        np.ndarray
+            PDFs of shape
+            ``(n_trajectories, n_residues, len(bins)-1, len(bins)-1)``.
+            Each ``[i, j]`` slice is a normalised joint phi/psi
+            distribution that sums to 1.
 
-        Notes
-        -----
-        - The input data array should have dimensions (2, n_trajs, n_residues, n_samples).
-        - The bins array should contain the bin edges for the histograms.
-        - The resulting PDFs will have dimensions (n_trajs, n_residues, num_bins_phi, num_bins_psi), where num_bins_phi and num_bins_psi are the number of bins in the phi and psi dimensions, respectively.
-        - The PDFs are computed by normalizing the histogram values and multiplying them by the corresponding bin widths.
-
+        Example
+        -------
+        >>> pdfs = sq.compute_series_of_histograms_along_axis(
+        ...     np.array([sq.phi_angles, sq.psi_angles]),
+        ...     bins=sq.bins,
+        ... )
         """
         # Get the shape of the input array
         shape = data.shape
@@ -656,22 +780,31 @@ class SamplingQuality:
         return np.array(pdfs)
 
     def compute_pdf(self, arr: np.ndarray, bins: np.ndarray) -> np.ndarray:
-        """
-        Computes a probability density by constructing a histogram of the data array with a specified set of bins.
+        """Per-residue 1D probability density histograms.
+
+        Operates on either a 2D ``(n_residues, n_frames)`` array or a 3D
+        ``(n_trajectories, n_residues, n_frames)`` stack. Each
+        residue-level histogram is normalised by ``np.histogram(...,
+        density=True)`` and rescaled by the bin width (in degrees), so
+        each row sums to ~1.
 
         Parameters
         ----------
         arr : np.ndarray
-            A vector of shape (n_res x n_frames) or (traj x n_res x frames)
+            2D or 3D angle array. The last axis is the frame axis.
         bins : np.ndarray
-            The set of bin edges that specify the range for the histogram buckets.
+            1D array of bin edges.
 
         Returns
         -------
         np.ndarray
-            Returns a set of histograms of the probabilities
-            densities for each residue in the amino acid sequence.
-            Shape (n_res, len(bins) - 1)
+            * Input 2D -> output ``(n_residues, len(bins) - 1)``.
+            * Input 3D -> output
+              ``(n_trajectories, n_residues, len(bins) - 1)``.
+
+        Example
+        -------
+        >>> phi_pdfs = sq.compute_pdf(sq.phi_angles, bins=sq.bins)
         """
         # Lambda function is used to ignore the bin edges returned by np.histogram at index 1
         # xhistogram is ~2x faster, but introduces depedency - keeping lambda function for legacy for now
@@ -701,6 +834,36 @@ class SamplingQuality:
     def get_all_to_all_2d_trj_comparison(
         self, metric: str = "hellingers", recompute=False
     ) -> Tuple[pd.DataFrame]:
+        """All-vs-all 2D joint-dihedral Hellinger distances across trajectories.
+
+        Histograms the joint ``(phi, psi)`` distribution per residue for every
+        loaded trajectory, then forms every pairwise trajectory combination
+        (using ``itertools.combinations``) and computes a per-residue
+        Hellinger distance for each pair. With a single trajectory this
+        degenerates to a 1:1 self-comparison (which is always zero) and is
+        useful only as a sanity check.
+
+        Parameters
+        ----------
+        metric : str, optional
+            Currently only ``'hellingers'`` is implemented. Default
+            ``'hellingers'``.
+        recompute : bool, optional
+            Currently unused (accepted for API symmetry with
+            :meth:`get_all_to_all_trj_comparisons`). Default False.
+
+        Returns
+        -------
+        np.ndarray
+            Shape ``(n_combinations, n_residues)`` of pairwise per-residue
+            Hellinger distances in ``[0, 1]``.
+
+        Example
+        -------
+        >>> mat = sq.get_all_to_all_2d_trj_comparison()
+        >>> mat.shape   # 3 trajs -> C(3,2) == 3 pairs
+        (3, 56)
+        """
         # if self.method == "2D angle distributions":
         data = np.array([self.phi_angles, self.psi_angles])
 
@@ -766,17 +929,37 @@ class SamplingQuality:
     def get_all_to_all_trj_comparisons(
         self, metric: str = "hellingers", recompute=False
     ) -> Tuple[pd.DataFrame, pd.DataFrame]:
-        """function to aggregate an all-to-all comparison of pdfs
+        """All-vs-all per-residue dihedral comparisons (separate phi and psi).
+
+        Builds the per-residue 1D phi and psi PDFs for every trajectory,
+        enumerates every pairwise trajectory combination, and computes a
+        per-residue Hellinger distance or relative entropy for each pair.
+        The two dihedrals are kept separate (unlike
+        :meth:`get_all_to_all_2d_trj_comparison`).
 
         Parameters
         ----------
-        metric : str, optional
-            The metric to use for the comparison, by default "hellingers"
+        metric : {'hellingers', 'relative entropy'}, optional
+            Which divergence to compute. Default ``'hellingers'``.
+        recompute : bool, optional
+            If True, ignore cached PDFs from ``self.trj_pdfs`` and rebuild
+            them. Default False.
 
         Returns
         -------
-        Tuple[pd.DataFrame, pd.DataFrame]
-            all-to-all trajectory comparisons for the Hellinger distances in 'self.trj_pdfs'
+        tuple of (pd.DataFrame, pd.DataFrame)
+            ``(phi_df, psi_df)`` each of shape
+            ``(n_combinations, n_residues)`` containing the chosen metric
+            for every pairwise comparison.
+
+        Raises
+        ------
+        NotImplementedError
+            If ``metric`` is not one of the two supported strings.
+
+        Example
+        -------
+        >>> phi_df, psi_df = sq.get_all_to_all_trj_comparisons()
         """
         phi_pdfs = self.trj_pdfs(recompute=recompute, dihedral="trj_phi_pdfs")
         psi_pdfs = self.trj_pdfs(recompute=recompute, dihedral="trj_psi_pdfs")
@@ -831,12 +1014,23 @@ class SamplingQuality:
         return pd.DataFrame(phi_metric), pd.DataFrame(psi_metric)
 
     def get_degree_bins(self) -> np.ndarray:
-        """Returns the edges of the bins in degrees
+        """Histogram bin edges spanning ``[-180, 180]`` degrees.
+
+        Constructs the bin edges used by every histogram-based method on
+        this class. Uses ``self.bwidth`` (in radians) converted to
+        degrees and rounded to handle floating-point error so the final
+        edge lands cleanly on 180.
 
         Returns
         -------
         np.ndarray
-            an array of the bin edges in degrees
+            1D array of bin edges in degrees, monotonically increasing,
+            starting at -180 and ending at 180.
+
+        Example
+        -------
+        >>> sq.get_degree_bins()       # bwidth = 15 degrees
+        array([-180., -165., ...,  165.,  180.])
         """
         # have to round the conversion to handle floating point error so we get the right bins
         bwidth = np.round(np.rad2deg(self.bwidth))
@@ -854,39 +1048,62 @@ class SamplingQuality:
         dihedral: Union[None, str] = "2D",
         figname: str = "hellingers.pdf",
     ):
-        """
-        This function enables a convenient plotting functionality for quick visual
-        inspection of the sampling quality.
+        """Plot a four-panel sampling-quality summary figure.
+
+        The four panels are:
+
+        * **A** - per-residue Hellinger distance vs. the chosen reference
+          (e.g. excluded-volume limit) with per-trajectory points and
+          across-trajectory mean.
+        * **B** - per-residue all-vs-all trajectory Hellinger distances.
+        * **C** - fractional helicity (simulated trajectories + reference).
+        * **D** - paired comparison panel (configurable).
+
+        Layout is mosaic ``"AABB;CCDD"``. The chosen ``dihedral`` selector
+        controls which of phi / psi / joint 2D is shown.
 
         Parameters
         ----------
-        dihedral : str, optional
-            the torsional angle to assess the quality of. Current options are 2D, phi, and psi, by default "2D"
         increment : int, optional
-             x axis stride, by default 5
-        figsize : Tuple[int,int], optional
-            the dimensions of the figure, by default (7,5)
+            X-axis tick stride (residues). Default 5.
+        figsize : tuple of (int, int), optional
+            Figure dimensions in inches. Default ``(7, 5)``.
         dpi : int, optional
-            the dpi to save the figure, by default 400
+            Output DPI for ``savefig``. Default 400.
         panel_labels : bool, optional
-            whether or not to show manuscript figure panel labels, by default False
+            If True, add A/B/C/D panel labels for manuscript figures.
+            Default False.
         fontsize : int, optional
-            fontsize for all labels, by default 10
-        save_dir : str, optional
-            the directory to save the plotted graph in, by default None
+            Font size used for tick labels, titles, and axis labels.
+            Default 10.
+        save_dir : str or None, optional
+            If given, write the figure to ``<save_dir>/<figname>``.
+            Default None (no file written; figure is returned only).
+        dihedral : {'2D', 'phi', 'psi'} or None, optional
+            Which dihedral comparison to plot. ``'2D'`` requires
+            ``method='2D angle distributions'``. Default ``'2D'``.
         figname : str, optional
-            name of the output figure, by default "phi_hellingers.pdf"
+            File name (joined with ``save_dir``). Default
+            ``'hellingers.pdf'``.
 
         Returns
         -------
-        Tuple
-            corresponding figure and axis of the subplot
+        tuple
+            ``(fig, axd)`` — the matplotlib figure and the mosaic Axes
+            dictionary keyed by ``'A'``, ``'B'``, ``'C'``, ``'D'``.
 
         Raises
         ------
+        ValueError
+            If ``method='1D angle distributions'`` is paired with
+            ``dihedral='2D'``.
         NotImplementedError
-            Raised when quality assessment is requested on a dihedral angle
-            that is not currently supported
+            If a requested combination of method and dihedral isn't yet
+            supported.
+
+        Example
+        -------
+        >>> fig, axd = sq.quality_plot(dihedral='phi', save_dir='./figs')
         """
 
         fig, axd = plt.subplot_mosaic(
@@ -1062,27 +1279,42 @@ class SamplingQuality:
         return fig, axd
 
     def trj_pdfs(self, dihedral: str = "joint", recompute: bool = False):
-        """Function to return the pdfs computed from the phi/psi angles, respectively
+        """Per-residue PDFs from the simulated trajectories' dihedral angles.
+
+        Builds (and memoises) the three PDF stacks used by Hellinger /
+        relative-entropy calculations against the trajectories:
+
+        * ``'trj_phi_pdfs'`` — 1D phi histogram per residue.
+        * ``'trj_psi_pdfs'`` — 1D psi histogram per residue.
+        * ``'joint'`` (default) — 2D ``(phi, psi)`` histogram per residue.
+
+        On every call all three are populated on the cache; the selector
+        determines which is returned. ``recompute=True`` bypasses the
+        cache.
 
         Parameters
         ----------
-        dihedral : str, optional
-              method to use to return specific PDFs. Options are: "trj_phi_pdfs", "trj_psi_pdfs",
-              "joint". By default this is "joint".
-
+        dihedral : {'joint', 'trj_phi_pdfs', 'trj_psi_pdfs'}, optional
+            Which PDF stack to return. Default ``'joint'``.
         recompute : bool, optional
-            Whether or not to recompute the PDFs, by default False.
+            If True, ignore any cached PDFs and rebuild. Default False.
 
         Returns
         -------
         np.ndarray
-            PDFs computed from the phi and psi angles with the specified bins.
-            returns (2, num_traj, n_res, n_bins)
+            * For ``'trj_phi_pdfs'`` / ``'trj_psi_pdfs'``:
+              ``(n_trajectories, n_residues, n_bins)``.
+            * For ``'joint'``:
+              ``(n_trajectories, n_residues, n_bins, n_bins)``.
 
         Raises
         ------
         NotImplementedError
-            Raised if the selector is not one of the implemented options.
+            If ``dihedral`` is not one of the three allowed strings.
+
+        Example
+        -------
+        >>> phi_pdfs = sq.trj_pdfs(dihedral='trj_phi_pdfs')
         """
         selectors = ["trj_phi_pdfs", "trj_psi_pdfs", "joint"]
         if dihedral not in selectors:
@@ -1111,27 +1343,37 @@ class SamplingQuality:
         return self.__precomputed[dihedral]
 
     def ref_pdfs(self, dihedral="joint", recompute=False):
-        """Function to return the pdfs computed from the phi/psi angles, respectively
+        """Per-residue PDFs from the reference trajectories' dihedral angles.
+
+        The reference analogue of :meth:`trj_pdfs`. The three accepted
+        selectors here are ``'ref_phi_pdfs'``, ``'ref_psi_pdfs'``, and
+        ``'joint'`` (default). When no reference trajectories were
+        supplied to the constructor, the reference angles came from the
+        precomputed excluded-volume polymer model.
 
         Parameters
         ----------
-        dihedral : str, optional
-              method to use to return specific PDFs. Options are: "trj_phi_pdfs", "trj_psi_pdfs",
-              and "joint". By default this is "joint".
-
+        dihedral : {'joint', 'ref_phi_pdfs', 'ref_psi_pdfs'}, optional
+            Which PDF stack to return. Default ``'joint'``.
         recompute : bool, optional
-            Whether or not to recompute the PDFs, by default False.
+            If True, ignore any cached PDFs and rebuild. Default False.
 
         Returns
         -------
         np.ndarray
-            PDFs computed from the phi and psi angles with the specified bins.
-            returns (2, num_traj, n_res, n_bins)
+            * For ``'ref_phi_pdfs'`` / ``'ref_psi_pdfs'``:
+              ``(n_trajectories, n_residues, n_bins)``.
+            * For ``'joint'``:
+              ``(n_trajectories, n_residues, n_bins, n_bins)``.
 
         Raises
         ------
         NotImplementedError
-            Raised if the selector is not one of the implemented options.
+            If ``dihedral`` is not one of the three allowed strings.
+
+        Example
+        -------
+        >>> ref_phi = sq.ref_pdfs(dihedral='ref_phi_pdfs')
         """
         selectors = ["ref_phi_pdfs", "ref_psi_pdfs", "joint"]
 
@@ -1161,14 +1403,32 @@ class SamplingQuality:
         return self.__precomputed[dihedral]
 
     def hellingers_distances(self, recompute=False):
-        """property for getting the Hellinger distances computed from the phi/psi angles, respectively
+        """Cached accessor for per-residue Hellinger distances.
+
+        Thin wrapper around :meth:`compute_dihedral_hellingers` that
+        memoises the result on first call. Pass ``recompute=True`` to
+        invalidate the cache and force a fresh computation.
+
+        Parameters
+        ----------
+        recompute : bool, optional
+            If True, rebuild the Hellinger distances from scratch.
+            Default False.
 
         Returns
         -------
         np.ndarray
-            Hellinger distances computed from the phi and psi angles with the specified bins.
-            2 x n_reps x n_angles
-            where 0 is phi and 1 is psi
+            Shape and meaning depend on the SamplingQuality method:
+
+            * ``'2D angle distributions'``:
+              ``(n_trajectories, n_residues)`` joint Hellinger distances.
+            * ``'1D angle distributions'``:
+              ``(2, n_trajectories, n_residues)`` stacked as
+              ``[phi_hellingers, psi_hellingers]``.
+
+        Example
+        -------
+        >>> H = sq.hellingers_distances()
         """
         selector = "hellingers"
 
@@ -1178,14 +1438,27 @@ class SamplingQuality:
         return self.__precomputed[selector]
 
     def fractional_helicity(self, recompute=False):
-        """
-        Property for getting the per residue fractional helicity for all trajectories.
+        """Cached accessor for per-residue fractional helicity.
 
-        Returns:
+        Thin wrapper around :meth:`compute_frac_helicity` that returns
+        results from the instance cache if available. The
+        ``recompute=True`` flag is forwarded so the underlying
+        computation re-runs.
+
+        Parameters
         ----------
-        np.ndarray
-            The per residue fractional helicity for each trajectory in self.trajs and self.ref_trajs.
+        recompute : bool, optional
+            If True, bypass the cache and recompute. Default False.
 
+        Returns
+        -------
+        tuple of (np.ndarray, np.ndarray)
+            ``(trj_helicity, ref_helicity)`` each of shape
+            ``(n_trajectories, n_residues)``.
+
+        Example
+        -------
+        >>> trj_h, ref_h = sq.fractional_helicity()
         """
         selectors = ("trj_helicity", "ref_helicity")
         if not recompute and all(
@@ -1206,7 +1479,47 @@ class SamplingQuality:
 
 
 class PrecomputedDihedralInterface:
-    """docstring for PrecomputedDihedralInterface."""
+    """Reference dihedral provider backed by the precomputed EV polymer model.
+
+    Used by :class:`SamplingQuality` when no explicit ``reference_list``
+    of reference trajectories is supplied. For each residue the
+    appropriate phi / psi distribution is looked up from the
+    excluded-volume polymer reference tables in ``ssdata``, then
+    inverse-CDF sampled to produce a synthetic per-trajectory angle
+    array of the same shape as the simulated trajectories' dihedral
+    arrays — so the downstream Hellinger and relative-entropy code
+    treats it identically.
+
+    Parameters
+    ----------
+    sequence : str
+        Single-letter amino-acid sequence of the trajectory chain
+        (caps already stripped).
+    bins : np.ndarray
+        Histogram bin edges (in degrees) used for the inverse-CDF
+        sampling. Should match the SamplingQuality instance's bins.
+    num_trajs : int
+        Number of simulated-trajectory replicas to mimic. The
+        precomputed angles are tiled across this dimension.
+    nsamples : int
+        Number of synthetic frames to generate per replica.
+
+    Attributes
+    ----------
+    ref_phi_angles, ref_psi_angles : np.ndarray
+        Inverse-CDF-sampled reference angles of shape
+        ``(num_trajs, n_residues, nsamples)``.
+
+    Example
+    -------
+    >>> from soursop.sssampling import PrecomputedDihedralInterface
+    >>> ev = PrecomputedDihedralInterface(
+    ...     sequence='AAAAAAAA', bins=np.arange(-180, 181, 15),
+    ...     num_trajs=3, nsamples=1000,
+    ... )
+    >>> ev.ref_phi_angles.shape
+    (3, 8, 1000)
+    """
 
     def __init__(self, sequence, bins, num_trajs, nsamples):
         self.sequence = sequence
@@ -1230,6 +1543,31 @@ class PrecomputedDihedralInterface:
         self.ref_psi_angles = np.tile(self.sample_angles("psi"), (self.num_trajs, 1, 1))
 
     def sample_angles(self, angle):
+        """Inverse-CDF sample reference dihedrals to match a target sample count.
+
+        Builds a per-residue histogram from the precomputed reference
+        angles, normalises it to a CDF, and inverse-CDF samples
+        ``self.nsamples`` synthetic angles per residue using
+        ``numpy.random``. Used at construction time to populate
+        :attr:`ref_phi_angles` and :attr:`ref_psi_angles`.
+
+        Parameters
+        ----------
+        angle : {'phi', 'psi'}
+            Which backbone dihedral to sample.
+
+        Returns
+        -------
+        np.ndarray
+            Array of shape ``(n_residues, self.nsamples)`` of synthetic
+            dihedral angles (in degrees) drawn from the precomputed
+            reference distributions.
+
+        Example
+        -------
+        >>> ev.sample_angles('phi').shape
+        (8, 1000)
+        """
         dist_selector = {
             "phi": self.gather_phi_reference_dihedrals(self.sequence),
             "psi": self.gather_psi_reference_dihedrals(self.sequence),
@@ -1262,17 +1600,31 @@ class PrecomputedDihedralInterface:
         return np.array(dihedral_hist)
 
     def gather_phi_reference_dihedrals(self, sequence: str) -> np.ndarray:
-        """Gather the reference phi dihedral angles for a given sequence.
+        """Look up the excluded-volume reference phi distribution for each residue.
+
+        For each position ``i``, the relevant phi distribution depends on
+        the chemical context of residue ``i-1`` (the residue preceding
+        the rotatable phi bond). The lookup maps the preceding residue
+        to its EV-table key via :data:`EV_RESIDUE_MAPPER` and pulls the
+        distribution from :data:`PHI_EV_ANGLES_DICT`. For position 0 we
+        substitute alanine as the preceding context.
 
         Parameters
         ----------
         sequence : str
-            The amino acid sequence of the current trajectory.
+            One-letter amino-acid sequence (no caps).
 
         Returns
         -------
         np.ndarray
-            The reference phi dihedral angles for the given sequence.
+            Array of shape ``(n_residues, n_reference_samples)`` where
+            each row is the EV reference phi distribution for that
+            residue.
+
+        Example
+        -------
+        >>> ev.gather_phi_reference_dihedrals('AAAA').shape
+        (4, 50000)
         """
 
         phi_angles = []
@@ -1292,17 +1644,30 @@ class PrecomputedDihedralInterface:
         return np.array(phi_angles)
 
     def gather_psi_reference_dihedrals(self, sequence: str) -> np.ndarray:
-        """Gather the reference psi dihedral angles for a given sequence.
+        """Look up the excluded-volume reference psi distribution for each residue.
+
+        Mirror of :meth:`gather_phi_reference_dihedrals` for psi: the
+        distribution at position ``i`` depends on the *following*
+        residue ``i+1`` (because psi rotates the i-(i+1) bond). For the
+        last position we substitute alanine as the following context.
+        Reference distributions come from :data:`PSI_EV_ANGLES_DICT`.
 
         Parameters
         ----------
         sequence : str
-            The amino acid sequence of the current trajectory.
+            One-letter amino-acid sequence (no caps).
 
         Returns
         -------
         np.ndarray
-            The reference psi dihedral angles for the given sequence.
+            Array of shape ``(n_residues, n_reference_samples)`` where
+            each row is the EV reference psi distribution for that
+            residue.
+
+        Example
+        -------
+        >>> ev.gather_psi_reference_dihedrals('AAAA').shape
+        (4, 50000)
         """
 
         psi_angles = []

@@ -32,8 +32,11 @@ This documentation is currently being generated as we finalize **SOURSOP**.
 
 Changelog
 ==========
+*Update: May 2026* (0.2.7)
+Bug fixes across ``ssnmr`` (phospho-residue glycine corrections), ``ssprotein`` (native contacts NaN/overflow, glycine sidechain contacts, cluster centroid), ``sstrajectory`` (interchain map cap-residue handling), and ``ssutils`` (thread-count on Apple Accelerate). Added a ``stride`` parameter to ``get_interchain_contact_map`` and ``get_interchain_distance`` for faster analysis of large trajectories. Expanded regression test suite (~600+ parametrized observable tests) and extended ``sstrajectory`` test coverage. Full numpy-style docstring rewrite across all major modules, new narrative overview sections in all documentation pages, and rewritten worked examples.
+
 *Update: November. 2024* (0.2.6)
-Transition to pyproject.toml for packaging and versioningit for versioning. Dramatically improved performance of loading coarse-grained ensembles.
+Transition to pyproject.toml for packaging and versioning. Dramatically improved performance of loading coarse-grained ensembles.
 
 
 *Update: July. 2024*

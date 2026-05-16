@@ -8,7 +8,7 @@
 ## Alex Holehouse (Pappu Lab and Holehouse Lab) and Jared Lalmansing (Pappu lab)
 ## ssnmr was largely written by Alex Keeley
 ## Simulation analysis package
-## Copyright 2014 - 2022
+## Copyright 2014 - 2026
 ##
 
 
