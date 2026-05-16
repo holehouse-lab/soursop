@@ -10,7 +10,6 @@
 ## Copyright 2014 - 2026
 ##
 
-import time
 import mdtraj as md
 import numpy as np
 from .configs import *
@@ -27,7 +26,6 @@ from . import sstools
 ## 2. weights
 ## 3. verbose
 
-from copy import copy
 from functools import partial, wraps
 from multiprocessing import Pool, cpu_count
 
@@ -227,7 +225,7 @@ class SSTrajectory:
         # extract a list of protein trajectories where each protein is assumed
         # to be in its own chain
         if protein_grouping == None:
-            (self.proteinTrajectoryList, single_chain_sim) = self.__get_proteins(self.traj, debug, explicit_residue_checking=explicit_residue_checking)        
+            self.proteinTrajectoryList = self.__get_proteins(self.traj, debug, explicit_residue_checking=explicit_residue_checking)
         else:
             self.proteinTrajectoryList = self.__get_proteins_by_residue(self.traj, protein_grouping, debug)
 
@@ -400,8 +398,8 @@ class SSTrajectory:
                 uc_lengths_1 = traj.unitcell_lengths[0]
                 uc_lengths_2 = traj.unitcell_lengths[1]
             
-                if (uc_lengths_1[0] != uc_lengths_2[0]) or (uc_lengths_1[2] != uc_lengths_2[2]) or (uc_lengths_1[2] != uc_lengths_2[2]):
-                    ssio.warning_message('........................\nWARNING:\nThe unit cell dimensions of the PDB file and trajectory file did not match, specifically\nPDB file = [ %s ]\nXTC file = [ %s ]\nThis may cause issues if native MDTraj untilities are used (and potentially for SOURSOP utilities that are based on these. It is not necessarily an issue, but PLEASE sanity check your outcome. To be save we reeommend editing the PDB-file untilcell dimenions to match.')
+                if (uc_lengths_1[0] != uc_lengths_2[0]) or (uc_lengths_1[1] != uc_lengths_2[1]) or (uc_lengths_1[2] != uc_lengths_2[2]):
+                    ssio.warning_message(f'........................\nWARNING:\nThe unit cell dimensions of the PDB file and trajectory file did not match, specifically\nPDB file = [ {uc_lengths_1} ]\nXTC file = [ {uc_lengths_2} ]\nThis may cause issues if native MDTraj utilities are used (and potentially for SOURSOP utilities that are based on these). It is not necessarily an issue, but PLEASE sanity check your outcome. To be safe we recommend editing the PDB-file unitcell dimensions to match.')
 
             except TypeError:
                 ssio.warning_message("Warning: UnitCell lengths were not provided... This may cause issues but we're going to assume everything is OK for now...")
@@ -450,14 +448,8 @@ class SSTrajectory:
                 
                 if chain.residue(0).name in self.valid_residue_names:
 
-                    # intialize an empty list of atoms
-                    local_atoms = []
-
                     # get every atom in this chain
-                    for atom in chain.atoms:
-                        protein_atoms.append(atom.index)
-
-                    protein_atoms.extend(local_atoms)
+                    protein_atoms.extend(atom.index for atom in chain.atoms)
             else:
                 
                 # initialize an empty list of atoms
@@ -511,10 +503,7 @@ class SSTrajectory:
 
         chainAtoms = []
 
-        # flag that gets set to true if this is a single chain simulation
-        single_chain_sim = False
-        
-        # for each chain in this toplogy determine if the 
+        # for each chain in this toplogy determine if the
         # first residue is protein or not. If it's protein we parse it if 
         # not it gets skipped
         for chain in topology.chains:
@@ -562,13 +551,7 @@ class SSTrajectory:
         # sub-trajectories
         proteinTrajectoryList = []
 
-        # after parsing define number of chains we're gonna have... We do this because
-        # the ONLY scenario (for now) where we want to use the CG check is if we have
-        # a single chain simulation. 
         for local_chain_atoms in chainAtoms:
-
-            if single_chain_sim:
-                raise SSException('Error parsing trajectory; this is a bug and this should never happen.')
 
             # generate a trajectory composed of *JUST* the
             # $chain atoms. The PT object created now is self
@@ -585,14 +568,8 @@ class SSTrajectory:
 
             if first_resid != 0:
                 raise SSException('After extracting a protein subtrajectory, the first resid is not 0. This may reflect a bug, or you may not be using MDTraj 1.9.5')
-                
-            # if the number of atoms in the subtrajectory is the same as the 
-            # the number of atoms in the FULL trajectory we know there is only
-            # a single chain here - no need to pay the penalty of initializing                        
-            if PT.n_atoms == trajectory.n_atoms:                                
-                single_chain_sim = True
-            
-            # add that SSProtein to the ever-growing proteinTrajectory list. NOTE that 
+
+            # add that SSProtein to the ever-growing proteinTrajectory list. NOTE that
             # THIS is the line that is the source of most of the slowness for trajectory
             # loading.... 
             proteinTrajectoryList.append(SSProtein(PT))
@@ -600,8 +577,8 @@ class SSTrajectory:
 
         if len(proteinTrajectoryList) == 0:
             ssio.warning_message('No protein chains found in the trajectory')
-        
-        return (proteinTrajectoryList, single_chain_sim)
+
+        return proteinTrajectoryList
 
 
 
@@ -848,7 +825,7 @@ class SSTrajectory:
             else:
                 COM_1 = P1.get_residue_COM(r1, atom_name='CA')
 
-            p1_index = copy(r1)
+            p1_index = r1
             if P1.ncap:
                 p1_index = r1 - 1
 
@@ -859,7 +836,7 @@ class SSTrajectory:
                 else:
                     COM_2 = P2.get_residue_COM(r2, atom_name='CA')
 
-                p2_index = copy(r2)
+                p2_index = r2
                 if P2.ncap:
                     p2_index = r2 - 1
                 
@@ -1223,9 +1200,20 @@ def parallel_load_trjs(trj_filenames, top_filenames, n_procs=None, **kwargs):
     if n_procs is None:
         n_procs = cpu_count()
 
-    # Assume the same topology file for all trajectories if only one is provided
-    if len(top_filenames) < len(trj_filenames) and len(top_filenames) == 1:
+    # Normalize the topology argument. Accept either a single shared
+    # topology (str) or a per-trajectory list. A single string -- or a
+    # one-element list -- is broadcast across all trajectories.
+    if isinstance(top_filenames, str):
         top_filenames = [top_filenames] * len(trj_filenames)
+    elif len(top_filenames) == 1 and len(trj_filenames) > 1:
+        top_filenames = list(top_filenames) * len(trj_filenames)
+
+    if len(top_filenames) != len(trj_filenames):
+        raise SSException(
+            f"parallel_load_trjs(): number of topology files "
+            f"({len(top_filenames)}) does not match number of "
+            f"trajectory files ({len(trj_filenames)})"
+        )
 
     # Partially apply load_trajectory with topology file path and kwargs
     partial_load = partial(__load_trajectory, **kwargs)

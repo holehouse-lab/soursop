@@ -13,9 +13,20 @@
 
 
 """
+ssnmr - sequence-based random-coil chemical shift prediction.
+
+This module predicts random-coil backbone chemical shifts (CA, CB, CO,
+N, HN, HA) for an arbitrary amino-acid sequence, corrected for
+temperature, pH and (optionally) perdeuteration, including support for
+phosphorylated serine/threonine/tyrosine. The implementation ports the
+Kjaergaard & Poulsen / Schwarzinger reference-shift and neighbour-
+correction tables and is the basis for comparing simulated ensembles to
+experimental NMR data.
+
+The public entry point is ``compute_random_coil_chemical_shifts``; the
+remaining functions are private helpers.
 
 **Author(s):** Alex Keeley (with Alex Holehouse)
-
 """
 from .ssexceptions import SSException
 import re
@@ -26,78 +37,76 @@ import re
 
 # ----------------------------------------------------------------------------------------------------------------------------------------------------------------
 def compute_random_coil_chemical_shifts(protein_sequence, temperature=25, pH=7.4, use_ggxgg=True, use_perdeuteration=False, asFloat=True):
-    """
+    """Predict sequence-corrected random-coil chemical shifts.
 
-    Function that predicts the random coil chemical shifts for user-provided amino 
-    acid sequence corrected for user-provided conditions. Specifically, chemical 
-    shift and general sequence correction factors are from [1], temperature corrections     
-    and glycine corrections are from [2] and the underlying methods associated with 
-    correction-factor calculations are in [3]. The correction factors for pertdeuteration 
-    are from [4].
-    
-    Input sequence can be a standard one-letter sequence, but phosphoresidues can also 
-    be included (see examples). Code is based on JavaScript written by Alex Maltsev 
-    at the NIH and can be accessed here [5] 
-    
+    For a user-provided amino-acid sequence, predicts the random-coil
+    backbone chemical shifts (CA, CB, CO, N, HN, HA) and applies
+    sequence-context (nearest-neighbour), temperature and pH corrections.
+    Reference shifts and general sequence-correction factors are from
+    Kjaergaard & Poulsen (J. Biomol. NMR 2011, 50:157-165); temperature
+    and glycine corrections are from Kjaergaard, Brander & Poulsen
+    (J. Biomol. NMR 2011, 49:139-149); the correction-factor methodology
+    follows Schwarzinger et al. (JACS 2001, 123:2970-2978); and the
+    perdeuteration corrections are from Cavanagh, Fairbrother, Palmer,
+    Rance & Skelton, *Protein NMR Spectroscopy*, 2nd ed. (Academic Press,
+    2007). The implementation is a port of the JavaScript tool by Alex
+    Maltsev (NIH); see
+    https://www1.bio.ku.dk/english/research/bms/research/sbinlab/randomchemicalshifts/
+
+    The input may be a standard one-letter sequence; phospho-residues can
+    additionally be supplied using parenthesised three-letter codes (e.g.
+    ``"AS(SEP)GA"`` for a phospho-serine). Glycine and proline produce
+    masked placeholder values for atoms they lack (CB for glycine; N/HN
+    for proline).
 
     Parameters
     ----------
+    protein_sequence : str
+        Amino-acid sequence to predict shifts for. One-letter codes, with
+        optional parenthesised multi-letter codes for phospho-residues
+        (``SEP``/``PS``, ``TPO``/``PT``, ``PTR``/``PY``).
 
-    sequence : str
-        The sequence of representative abbreviations for the sequence of amino acids
+    temperature : float or int, optional
+        Sample temperature in degrees Celsius, used for the temperature
+        correction. Must be between 0 and 100. Default ``25``.
 
-    temperature : float or int    
-        Experiment temperature of the sample of amino acids for use in corrected chemical 
-        shift calculations (note units are in degrees celcius). Default value is 25 and 
-        should be between 0 and 100.
+    pH : float or int, optional
+        Sample pH, used for the pH (titratable-residue) correction. Must
+        be between 0 and 14. Default ``7.4``.
 
-    pH : float or int
-        pH of the sample of amino acids for use in corrected chemical shift calculations. 
-        Default value us 7.4 and should be between 0 and 14.
+    use_ggxgg : bool, optional
+        Whether to apply the GGXGG-based neighbour correction for
+        glycines. Default ``True``.
 
-    use_ggxgg : bool 
-        Whether to use GGXGG-based neighbor correction for glycines. Default is True.
+    use_perdeuteration : bool, optional
+        Whether to apply perdeuterated correction factors. Cannot be
+        combined with phospho-residues. Default ``False``.
 
-    use_perdeuteration : bool (default = False)
-        Whether perdeuterated correction factors should be used. Note this cannot 
-        work with phosphoresidues.
-          
-
-    asFloat : bool (default = True)
-          Whether to populate output dictionaries with float or string variables containing 
-          chemical shift numbers. False (strings) by default.
-          
+    asFloat : bool, optional
+        If ``True`` the output chemical shifts are floats; if ``False``
+        they are formatted strings. Default ``True``.
 
     Returns
     -------
-    output : list of dict
-           List containing a dictionary for each amino acid in the provided sequence detailing 
-           abbreviation and chemical shifts for the main six different atoms. 
+    list of dict
+        One dictionary per residue in the input sequence, each containing
+        the residue abbreviation (``'Res'``), its index (``'Index'``) and
+        the six predicted shifts (``'CA'``, ``'CB'``, ``'CO'``, ``'N'``,
+        ``'HN'``, ``'HA'``). Atoms absent for a residue type (glycine CB,
+        proline N/HN, HA under perdeuteration) carry a masked placeholder.
 
-    Examples
-    --------
+    Raises
+    ------
+    soursop.ssexceptions.SSException
+        If ``temperature`` is outside 0-100 C, if ``pH`` is outside
+        0-14, or if ``use_perdeuteration`` is requested for a sequence
+        containing phosphorylated residues.
 
-    
-    References
-    ----------
-
-    [1] Kjaergaard, M. and Poulsen, F.M. (2011) Sequence correction of random coil chemical shifts: 
-    correlation between neighbor correction factors and changes in the Ramachandran distribution 
-    J. Biomol. NMR 50(2):157-165        
-    
-    [2] Kjaergaard, M., Brander, S. and Poulsen, F.M. (2011) Random coil chemical shifts for 
-    intrinsically disordered proteins: Effects of temperature and pH J. Biomol. NMR 49(2):139-49.
-        
-    [3] Schwarzinger, S., Kroon, G.J., Foss, T.R., Chung. J., Wright, P.E., Dyson, H.J. (2001) 
-    Sequence-dependent correction of random coil NMR chemical shifts. JACS 123(13):2970-8.        
-
-    [4] Cavanagh, J., Fairbrother, W.J., Palmer, A.G., Rance, M. and Skelton, N.J. (2007) 
-    Protein NMR Spectroscopy - Principles and practice. 2nd edition. Academic Press
-
-    [5] https://www1.bio.ku.dk/english/research/bms/research/sbinlab/randomchemicalshifts/
-    
-    
-
+    Example
+    -------
+    >>> shifts = compute_random_coil_chemical_shifts('ASGAS', temperature=25, pH=7.4)
+    >>> sorted(shifts[0].keys())
+    ['CA', 'CB', 'CO', 'HA', 'HN', 'Index', 'N', 'Res']
     """
     # sanity check temperature
     if temperature > 100 or temperature < 0:
@@ -561,30 +570,40 @@ def compute_random_coil_chemical_shifts(protein_sequence, temperature=25, pH=7.4
 
 
 def __set_sequence(sequence, key1, key3):
-    """
-    Translates the amino acid input string into a list of integers 
-    representing the same set of amino acids.
+    """Translate an amino-acid sequence string into numeric indices.
+
+    Parses the input sequence (single-letter codes plus optional
+    parenthesised multi-letter phospho-residue codes) into the integer
+    encoding used by the chemical-shift tables. The numeric list is padded
+    with two sentinel residues (code ``23``) at each end so that the
+    nearest-neighbour correction can be applied uniformly at the chain
+    termini. Unrecognised characters are skipped.
 
     Parameters
     ----------
     sequence : str
-           The alphabetical list of amino acid abbreviations input by the user.
+        The amino-acid abbreviation string supplied by the user.
 
     key1 : list
-         The list of numeric keys used to translate single-letter amino acid 
-         abbreviations into representative numbers
+        Lookup list mapping single-letter codes (by ``ord``-offset) to
+        numeric residue indices; ``-1`` marks an invalid letter.
 
-    key3 : dictionary
-         The dictionary of alphabetical keys used to translate 2/3-letter amino 
-         acid abbreviations into representative numbers
+    key3 : dict
+        Lookup dict mapping two/three-letter codes (including phospho
+        aliases) to numeric residue indices.
 
     Returns
     -------
-    tuple
-        Returns a tuple of length two, element one is a list of numeric 
-        representatives of input amino acids and element two is a list of
-        the abbreviations for those amino acids.
+    tuple of (list of int, list of str)
+        A 2-tuple ``(sequence, aminos)`` where ``sequence`` is the
+        sentinel-padded list of numeric residue codes and ``aminos`` is
+        the list of the parsed residue abbreviations (unpadded).
 
+    Example
+    -------
+    >>> seq, aminos = __set_sequence('AG', key_aa1, key_aa3)
+    >>> seq[:2]
+    [23, 23]
     """
     key_aa1 = key1
     key_aa3 = key3
@@ -628,24 +647,34 @@ def __set_sequence(sequence, key1, key3):
 
 # ------------------------------------------------------------------------------------------------------------------------------------------------------------------
 def __round3(num, asFloat=False):
-    """
+    """Round a number to exactly three decimal places.
 
-    Performs statistics-consistent rounding of float variables to precisely 
-    three decimal places which can be returned as either a string or a float.
+    Performs statistics-consistent rounding of a float to precisely three
+    decimal places, zero-padding the fractional part so the result always
+    has three digits after the decimal point. The value can be returned as
+    either a fixed-width string or a float.
 
     Parameters
     ----------
     num : float
-        Float number to be rounded
+        The number to be rounded.
 
-    asFloat : bool (default=False)
-        Determines whether to return rounded number as string or float. False (returns string type) by default
+    asFloat : bool, optional
+        If ``True`` the rounded value is returned as a float; if ``False``
+        it is returned as a zero-padded string. Default ``False``.
 
     Returns
     -------
-    strng : str
-          Rounded number as string
+    str or float
+        The value rounded to three decimal places - a string when
+        ``asFloat`` is ``False``, otherwise a float.
 
+    Example
+    -------
+    >>> __round3(1.5, asFloat=True)
+    1.5
+    >>> __round3(1.5)
+    '1.500'
     """
     strng = "" + str(round(num * 1000 + 10**(-len(str(num * 1000)) - 1)) / 1000)
     strng2 = "" + str(round(num + 10**(-len(str(num)) - 1)))

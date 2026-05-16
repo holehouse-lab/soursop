@@ -1,106 +1,286 @@
 Installation
 =========================================================
 
-SOURSOP is built on top of the incredible `MDTraj
-<https://mdtraj.org/>`_. As such, once MDTraj is installed, SOURSOP can then be easily installed using ``pip``.
+SOURSOP is a pure-Python package built on top of the excellent `MDTraj
+<https://mdtraj.org/>`_, which provides the underlying trajectory reading
+and representation. SOURSOP is distributed on `PyPI
+<https://pypi.org/project/soursop/>`_ and can be installed with either
+``pip`` or `uv <https://docs.astral.sh/uv/>`_. It can also be installed
+directly from the `GitHub repository
+<https://github.com/holehouse-lab/soursop>`_ if you want the latest
+(unreleased) development version.
+
+SOURSOP requires **Python 3.7 or newer**. All other dependencies
+(including MDTraj) are resolved automatically by the installer, so in
+most cases a single command is all that is needed.
+
+.. contents:: On this page
+   :local:
+   :depth: 2
+
+
+Quick start
+----------------------
+
+If you just want the latest stable release into your current
+environment:
+
+.. code-block:: bash
+
+   pip install soursop
+
+or, equivalently, with uv:
+
+.. code-block:: bash
+
+   uv pip install soursop
+
+Then verify the install (see `Verifying the installation`_ below):
+
+.. code-block:: bash
+
+   python -c "import soursop; print(soursop.__version__)"
+
+
+Install using pip
+----------------------
+
+From PyPI (recommended)
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The simplest route is to install the most recent release from PyPI. We
+strongly recommend doing this inside an isolated virtual environment so
+SOURSOP and its dependencies do not interfere with other projects:
+
+.. code-block:: bash
+
+   # create and activate a virtual environment
+   python -m venv soursop-env
+   source soursop-env/bin/activate        # on Windows: soursop-env\Scripts\activate
+
+   # install the latest stable release (pulls in mdtraj, numpy, scipy, ...)
+   pip install soursop
+
+   # check everything works
+   python -c "import soursop; print(soursop.__version__)"
+
+From GitHub (development version)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+To install the `current development version
+<https://github.com/holehouse-lab/soursop>`_ directly from the GitHub
+``master`` branch, use ``pip`` with a VCS URL.
+
+Over HTTPS (no GitHub credentials required):
+
+.. code-block:: bash
+
+   pip install "git+https://github.com/holehouse-lab/soursop.git"
+
+Over SSH (requires an SSH key configured with GitHub):
+
+.. code-block:: bash
+
+   pip install "git+ssh://git@github.com/holehouse-lab/soursop.git"
+
+You can pin to a specific branch, tag, or commit by appending
+``@<ref>``, e.g.:
+
+.. code-block:: bash
+
+   pip install "git+https://github.com/holehouse-lab/soursop.git@master"
+
+
+Install using uv
+----------------------
+
+`uv <https://docs.astral.sh/uv/>`_ is a fast, modern Python package and
+environment manager that is a drop-in replacement for many ``pip`` and
+``virtualenv`` workflows. SOURSOP installs cleanly with uv.
+
+From PyPI (recommended)
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Into an existing environment using the pip-compatible interface:
+
+.. code-block:: bash
+
+   uv pip install soursop
+
+Or, to create a fresh, self-contained environment for SOURSOP:
+
+.. code-block:: bash
+
+   # create and activate a uv-managed virtual environment
+   uv venv soursop-env
+   source soursop-env/bin/activate        # on Windows: soursop-env\Scripts\activate
+
+   uv pip install soursop
+
+If you are managing a project with a ``pyproject.toml``, you can instead
+add SOURSOP as a project dependency:
+
+.. code-block:: bash
+
+   uv add soursop
+
+From GitHub (development version)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+uv accepts the same VCS URLs as ``pip``.
+
+Over HTTPS:
+
+.. code-block:: bash
+
+   uv pip install "git+https://github.com/holehouse-lab/soursop.git"
+
+Over SSH:
+
+.. code-block:: bash
+
+   uv pip install "git+ssh://git@github.com/holehouse-lab/soursop.git"
+
+To add the development version as a project dependency:
+
+.. code-block:: bash
+
+   uv add "git+https://github.com/holehouse-lab/soursop.git"
+
 
 Install using conda
 ----------------------
-We recommend using SOURSOP with `[mini]conda
-<https://docs.conda.io/en/latest/miniconda.html>`_, and the link here can get get miniconda set up and installed. 
 
-Once conda is set up, you can open a terminal and install MDTraj followed by SOURSOP, and you should be good to go. Specifically, to start from scratch and install soursop in a clean environment:
+SOURSOP itself is installed from PyPI with ``pip``, but if you prefer a
+`[mini]conda <https://docs.conda.io/en/latest/miniconda.html>`_
+environment you can install MDTraj from ``conda-forge`` first and then
+install SOURSOP with ``pip`` into the same environment:
 
-.. code-block ::
+.. code-block:: bash
 
-	# create a new conda environment called soursop. Note the
-	# name (after -n flag) can be anything
-	conda create -n soursop python=3.9 
-	
-	# activate your new conda environment
-	conda activate soursop
-	
-	# set conda forge (if this is already done, re-running it
-	# is no issue
-	conda config --add channels conda-forge
-	conda config --set channel_priority strict
-	
-	# install mdtraj
-	conda install mdtraj
-	
-	# install soursop
-	pip install soursop
-	
-	# check everything has worked OK
-	python -c "import soursop; soursop.version()"
+   # create and activate a new conda environment (the name is arbitrary)
+   conda create -n soursop python=3.10
+   conda activate soursop
+
+   # use the conda-forge channel
+   conda config --add channels conda-forge
+   conda config --set channel_priority strict
+
+   # install mdtraj from conda-forge
+   conda install mdtraj
+
+   # install soursop
+   pip install soursop
+
+   # check everything has worked
+   python -c "import soursop; print(soursop.__version__)"
 
 
-Alternatively, if you already have an environment set up, you can install MDTraj and then SOURSOP into that environment, although there may be some dependency issues/clashes with MDTraj.
+Install from source (editable / development install)
+-------------------------------------------------------
 
-To install the `current development version
-<https://github.com/holehouse-lab/soursop>`_ of SOURSOP you can use `pip` to install directly from the git repository using: 
+If you want to modify SOURSOP, contribute changes, or track the
+bleeding-edge code, clone the repository and perform an *editable*
+install. With an editable install, changes you make to the source tree
+are picked up immediately without reinstalling.
 
-.. code-block::
+With pip:
 
-   pip install git+ssh://git@github.com/holehouselab/soursop.git
+.. code-block:: bash
 
-This assumes you already have MDTraj installed.
+   git clone https://github.com/holehouse-lab/soursop.git
+   cd soursop
 
-Compile from source
-----------------------
-To build from source run:
+   # editable install plus the optional test dependencies
+   pip install -e ".[test]"
 
-.. code-block::
+With uv:
 
-	git clone git@github.com:holehouse-lab/soursop.git
-	
-	# move into the soursop root directory where the setup.py file is
-	cd soursop
-	
-	# the -e flag means soursop is linked against a live version of 
-	# the code here, so any changes to the files made will be reflected
-	# in your system-wide imports.
-	pip install -e .
-	
+.. code-block:: bash
 
-This also assumes you already have MDTraj installed.	
-	
-	
+   git clone https://github.com/holehouse-lab/soursop.git
+   cd soursop
+
+   uv venv
+   source .venv/bin/activate
+   uv pip install -e ".[test]"
+
+The ``[test]`` extra additionally installs PyTest so you can run the
+test suite (see below). Omit it (``pip install -e .``) if you do not
+need to run the tests.
+
+
+Verifying the installation
+-----------------------------
+
+After installing, confirm SOURSOP imports and reports a version:
+
+.. code-block:: bash
+
+   python -c "import soursop; print(soursop.__version__)"
+
+A quick functional smoke test:
+
+.. code-block:: python
+
+   from soursop.sstrajectory import SSTrajectory
+   help(SSTrajectory)
+
+
 Running tests
 ----------------------
-To ensure SOURSOP has been installed correctly you can run our complete battery of tests using `PyTest
-<https://docs.pytest.org/en/7.2.x/>`_. If PyTest is not installed you can install using
 
-.. code-block::
+SOURSOP ships with an extensive test suite (including a large
+regression suite that recomputes every public observable against stored
+reference values). Running it is the most thorough way to confirm a
+correct installation. The tests require PyTest, which is included in the
+``[test]`` optional dependency group (or can be installed directly):
 
-	pip install pytest
-	
-and from the main SOURSOP directory (where `setup.py` is) run
+.. code-block:: bash
 
-.. code-block::
+   pip install pytest        # or: uv pip install pytest
 
-	# move to the tests directory
-	cd soursop/tests
-	
-	# run ALL tests (takes some time...)
-	pytest -v
-	
+From a source checkout, run the full battery of tests from the
+repository root:
+
+.. code-block:: bash
+
+   pytest -v
+
+or run just a single module, e.g.:
+
+.. code-block:: bash
+
+   pytest soursop/tests/test_sstrajectory.py -v
+
+The full suite can take several minutes because of the regression
+tests.
+
 
 Dependencies
 ----------------------
-If you install MDTraj first via conda, all these dependencies will be met. However, for completeness, we provide the set of 
 
+All of the following are installed automatically when you install
+SOURSOP with ``pip`` or ``uv``. They are listed here for completeness:
 
-* ``mdtraj`` - underlying trajectory reading and representation is done by ``mdtraj``
+* ``mdtraj`` (>= 1.9.5) - underlying trajectory reading and
+  representation.
 
-* ``threadpoolctl`` - package for dealing with multiple threads 
+* ``numpy`` (>= 1.20.0) - core numerical computing.
 
-* ``numpy`` - core numerical computing algorithms
+* ``scipy`` (>= 1.5.0) - core scientific computing routines.
 
-* ``scipy`` - core scientific computing algorithms
+* ``pandas`` (>= 0.23.0) - data structures (also required by MDTraj).
 
-* ``pandas`` - core data structure (required by ``mdtraj`` but not always included as a dependency)
+* ``threadpoolctl`` (>= 2.2.0) - control over native thread pools.
 
-* ``pytest`` - required for running test
+* ``natsort`` - natural sorting of trajectory/replicate file paths.
 
+* ``matplotlib`` - plotting support used by some analysis helpers.
 
+* ``cython`` - build-time/optional acceleration dependency.
+
+Optional (only needed to run the test suite):
+
+* ``pytest`` (>= 6.1.2) - test runner; installed via the ``[test]``
+  extra (``pip install "soursop[test]"``).

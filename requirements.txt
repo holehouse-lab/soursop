@@ -1,13 +1,20 @@
+# Runtime + dev/test dependencies for SOURSOP.
+# The authoritative runtime dependency list lives in pyproject.toml;
+# this file mirrors it and additionally pins the dev/test tooling.
+
+# Runtime (kept in sync with pyproject.toml [project.dependencies])
+numpy>=1.20.0
+scipy>=1.5.0
+cython
+mdtraj>=1.9.5
+pandas>=0.23.0
+threadpoolctl>=2.2.0
+natsort
+matplotlib
+
+# Build / dev / test tooling
 wheel>=0.36
 pytest>=6.2.2
 pytest-cov>=2.11
 pytest-forked>=1.3
 pytest-xdist>=2.2
-mdtraj==1.9.5
-numpy>=1.20.3
-cx_Freeze==6.10
-PyYAML>=6.0
-ruamel_yaml>=0.15
-threadpoolctl>=3.1.0
-pandas>=1.2.1
-scipy>=1.5.4
