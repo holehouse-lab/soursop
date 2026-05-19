@@ -27,7 +27,7 @@ Most molecular-simulation analysis tools are oriented towards folded proteins (R
 * **Solvent exposure** - per-residue / per-atom / sidechain / backbone SASA and regional accessibility.
 * **NMR & PRE observables** - sequence-corrected random-coil chemical shifts (``ssnmr``) and synthetic paramagnetic relaxation enhancement profiles (``sspre``) for direct comparison with experiment.
 * **Sampling quality** - assessment of ensemble convergence via the PENGUIN tools in ``sssampling``.
-* **Ensemble reweighting** - *every* ensemble-average observable accepts an optional per-frame ``weights`` vector, applied consistently and deterministically, for re-weighted / enhanced-sampling / maximum-entropy ensembles (see :doc:`usage/weights`).
+* **Ensemble reweighting** - *every* ensemble-average observable accepts an optional per-frame ``weights`` vector, applied consistently and deterministically, for re-weighted / enhanced-sampling / maximum-entropy ensembles (see :doc:`usage/weights`). Weights can be derived directly from experimental data by Bayesian Maximum Entropy / iterative BME reweighting (see :doc:`modules/bme`).
 
 In addition to the pre-built analyses, SOURSOP gives easy and rapid access to **all** inter-residue and inter-atomic distances, so custom observables are straightforward to build.
 
@@ -71,7 +71,7 @@ Documentation map
 * :doc:`usage/examples` - worked, copy-pasteable IDP analysis recipes.
 * :doc:`usage/weights` - the consistent ensemble-reweighting (frame ``weights``) system and the shared validation helpers.
 * :doc:`usage/development` - extending SOURSOP, the plugin system, and contributing.
-* **Module API references** - :doc:`modules/sstrajectory`, :doc:`modules/ssprotein`, :doc:`modules/ssnmr`, :doc:`modules/sspre`, :doc:`modules/sssampling`.
+* **Module API references** - :doc:`modules/sstrajectory`, :doc:`modules/ssprotein`, :doc:`modules/ssnmr`, :doc:`modules/sspre`, :doc:`modules/sssampling`, :doc:`modules/bme`.
 
 
 .. toctree::
@@ -87,6 +87,7 @@ Documentation map
    modules/ssnmr
    modules/sspre
    modules/sssampling
+   modules/bme
    usage/development
 
 

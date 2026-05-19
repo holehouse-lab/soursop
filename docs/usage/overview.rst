@@ -111,6 +111,11 @@ SOURSOP is organised into a small number of focused modules:
   assessing the sampling quality / convergence of disordered-protein
   ensembles.
 
+* ``ssbme`` - the ``BME`` and ``iBME`` classes; Bayesian Maximum Entropy
+  and iterative BME reweighting of an ensemble against experimental
+  observables, producing per-frame ``weights`` that plug directly into
+  every reweighting-capable analysis routine (see :doc:`weights`).
+
 * ``sstools`` - miscellaneous numerical helper functions shared across
   the package (chunking, residue-name normalisation, the polymer
   power-law model, minimum-image distances, trajectory-file discovery).
@@ -129,5 +134,8 @@ Where to go next
 * :doc:`development` - extending SOURSOP and contributing plugins.
 
 * The per-module API references (``sstrajectory``, ``ssprotein``,
-  ``ssnmr``, ``sspre``, ``sssampling``) for the full list of available
-  analysis routines.
+  ``ssnmr``, ``sspre``, ``sssampling``, ``ssbme``) for the full list of
+  available analysis routines.
+
+* :doc:`../modules/bme` - reweighting an ensemble against experimental
+  data (BME / iBME) to generate frame ``weights``.

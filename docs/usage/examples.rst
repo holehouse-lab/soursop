@@ -317,3 +317,77 @@ See the :doc:`../modules/sssampling` page for a full description of the methodol
         ref_top='ev_topology.pdb',
     )
     sq.quality_plot()
+
+
+10. Reweighting against experiment (BME / iBME)
+---------------------------------------------------------
+
+When a simulated ensemble does not quite reproduce an experimental measurement, :mod:`~soursop.ssbme` can compute a new set of per-frame weights that reconcile the two while perturbing the prior ensemble as little as possible. The resulting weights plug straight back into any SOURSOP observable via its ``weights=`` argument. See the :doc:`../modules/bme` page for the theory and pitfalls.
+
+**Standard BME — match an experimental** :math:`R_g` **and** :math:`r_{ee}`. We compute the per-frame observables, define the experimental targets with their uncertainties, fit, and then read back *reweighted* ensemble averages::
+
+    import numpy as np
+    from soursop.sstrajectory import SSTrajectory
+    from soursop.ssbme import BME, ExperimentalObservable
+
+    traj    = SSTrajectory('traj.xtc', 'start.pdb')
+    protein = traj.proteinTrajectoryList[0]
+
+    # per-frame calculated observables -> (n_frames, n_observables)
+    rg  = protein.get_radius_of_gyration()
+    e2e = protein.get_end_to_end_distance()
+    calc = np.column_stack([rg, e2e])
+
+    # experimental values ± uncertainty (same units, here Å)
+    obs = [
+        ExperimentalObservable(value=23.0, uncertainty=1.0, name="Rg"),
+        ExperimentalObservable(value=60.0, uncertainty=2.0, name="Ree"),
+    ]
+
+    bme = BME(obs, calc)
+    result = bme.fit(theta=2.0, auto_theta=False)
+    result.print_diagnostics()          # chi2 before/after, phi, warnings
+
+    w = result.weights
+
+    print(f"Rg  : {np.mean(rg):.2f}  ->  {np.average(rg,  weights=w):.2f} Å")
+    print(f"Ree : {np.mean(e2e):.2f} ->  {np.average(e2e, weights=w):.2f} Å")
+
+    # the weights are consistent across *every* SOURSOP observable
+    cmap_rew = protein.get_contact_map(weights=w)
+
+**Letting the L-curve choose** :math:`\theta`. Rather than guessing the regularisation strength, scan it and pick the knee::
+
+    scan = bme.scan_theta(theta_range=(0.01, 50.0), n_points=20)
+    scan.print_summary()
+
+    result = bme.fit(theta=scan.optimal_theta, auto_theta=False)
+    # equivalently: result = bme.fit(auto_theta=True)
+
+**Predicting an independent observable.** A fair quality check is to apply the fitted weights to an observable that was *not* used in the fit::
+
+    asph = protein.get_asphericity()
+    print("reweighted asphericity:", np.average(asph, weights=result.weights))
+
+**Iterative BME — data with an unknown scale/offset (e.g. SAXS).** Here each scattering-vector point is one observable, and the calculated intensities differ from the experiment by an unknown global scale and background. ``iBME`` fits those nuisance parameters jointly with the ensemble::
+
+    from soursop.ssbme import iBME, ExperimentalObservable
+
+    # q, I_exp, sigma_exp : experimental SAXS curve (length n_q)
+    # calc_I : calculated intensities, shape (n_frames, n_q)
+    obs = [ExperimentalObservable(I_exp[k], sigma_exp[k], name=f"q{k}")
+           for k in range(len(q))]
+
+    ib = iBME(obs, calc_I)
+    result = ib.fit(theta=10.0, ftol=0.01, max_ibme_iterations=50)
+
+    print(f"fitted scale  = {result.scale:.4g}")
+    print(f"fitted offset = {result.offset:.4g}")
+    print(f"chi2 {result.chi_squared_initial:.2f} -> "
+          f"{result.chi_squared_final:.2f}  (phi = {result.phi:.2f})")
+
+    # per-iteration convergence log
+    for it in result.ibme_iterations:
+        print(it)
+
+    saxs_weights = result.weights       # use with any SOURSOP observable

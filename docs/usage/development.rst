@@ -61,6 +61,8 @@ The most relevant parts of the repository are:
   * ``ssnmr.py`` - random-coil chemical-shift prediction.
   * ``sspre.py`` - synthetic PRE profile calculations.
   * ``sssampling.py`` - sampling-quality / PENGUIN tools.
+  * ``ssbme.py`` - Bayesian Maximum Entropy / iterative BME ensemble
+    reweighting against experimental data.
   * ``sstools.py`` - shared numerical helpers.
   * ``plugins/`` - user-contributed analysis plugins.
   * ``tests/`` - the PyTest suite, including the parametrized

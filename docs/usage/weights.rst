@@ -17,6 +17,14 @@ how much each frame contributes to the average. The default,
 ``weights=False``, is an exact no-op and reproduces the original
 unweighted behaviour bit-for-bit.
 
+Such a weight vector can be supplied from any external source (an MSM,
+an enhanced-sampling estimator, importance weights), or generated
+*within* SOURSOP by reweighting the ensemble against experimental data
+using Bayesian Maximum Entropy / iterative BME — see :doc:`../modules/bme`.
+The weights returned by :class:`~soursop.ssbme.BME` /
+:class:`~soursop.ssbme.iBME` satisfy the contract below and can be passed
+straight into any reweighting-capable method.
+
 Reweighting in SOURSOP is **deterministic**. A weighted average is the
 closed-form expectation under the supplied weights — there is no
 stochastic resampling, so results are exactly reproducible and do not
@@ -95,8 +103,11 @@ Example
     rg_frame10 = protein.get_radius_of_gyration(weights=w_one)
     assert np.isclose(rg_frame10, rg_per_frame[10])
 
-    # 4. a real reweighting vector (e.g. from MSM / MaxEnt)
-    w = my_reweighting_vector            # shape (n,), >= 0, sums to 1
+    # 4. a real reweighting vector (e.g. from MSM / MaxEnt), here from BME
+    from soursop.ssbme import BME, ExperimentalObservable
+    obs  = [ExperimentalObservable(value=23.0, uncertainty=1.0, name="Rg")]
+    calc = protein.get_radius_of_gyration().reshape(-1, 1)   # (n, 1)
+    w    = BME(obs, calc).fit(theta=2.0, auto_theta=False).weights
     dmap_w, _ = protein.get_distance_map(weights=w)
     nu, A0    = protein.get_scaling_exponent(weights=w)[:2]
 
