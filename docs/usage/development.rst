@@ -58,11 +58,18 @@ The most relevant parts of the repository are:
   * ``sstrajectory.py`` - the ``SSTrajectory`` class (system-level /
     multi-chain analysis and trajectory loading).
   * ``ssprotein.py`` - the ``SSProtein`` class (single-chain analysis).
-  * ``ssnmr.py`` - random-coil chemical-shift prediction.
+  * ``ssnmr.py`` - random-coil chemical shifts, ³J(HN, Hα) scalar
+    couplings, and NOE distances.
   * ``sspre.py`` - synthetic PRE profile calculations.
   * ``sssampling.py`` - sampling-quality / PENGUIN tools.
   * ``ssbme.py`` - Bayesian Maximum Entropy / iterative BME ensemble
     reweighting against experimental data.
+  * ``sscoper.py`` - COPER / iterative COPER ensemble reweighting
+    (convex-optimisation, hard chi-squared constraint). Shares its
+    reweighting primitives (``ExperimentalObservable``, knee finding,
+    chi-squared, ...) with ``ssbme`` via ``ssutils``.
+  * ``sshdx.py`` - per-residue HDX protection factors via the
+    Best-Vendruscolo formula (heavy-atom contacts + backbone H-bonds).
   * ``sstools.py`` - shared numerical helpers.
   * ``plugins/`` - user-contributed analysis plugins.
   * ``tests/`` - the PyTest suite, including the parametrized

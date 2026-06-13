@@ -19,11 +19,19 @@ unweighted behaviour bit-for-bit.
 
 Such a weight vector can be supplied from any external source (an MSM,
 an enhanced-sampling estimator, importance weights), or generated
-*within* SOURSOP by reweighting the ensemble against experimental data
-using Bayesian Maximum Entropy / iterative BME — see :doc:`../modules/bme`.
-The weights returned by :class:`~soursop.ssbme.BME` /
-:class:`~soursop.ssbme.iBME` satisfy the contract below and can be passed
-straight into any reweighting-capable method.
+*within* SOURSOP by reweighting the ensemble against experimental data.
+Two complementary maximum-entropy reweighters are provided:
+
+* :class:`~soursop.ssbme.BME` / :class:`~soursop.ssbme.iBME` — Bayesian
+  Maximum Entropy, a tunable penalty balancing fit and diversity (see
+  :doc:`../modules/bme`); and
+* :class:`~soursop.sscoper.COPER` / :class:`~soursop.sscoper.iCOPER` —
+  Convex Optimization for Ensemble Reweighting, a hard chi-squared
+  constraint with no free regularisation parameter (see
+  :doc:`../modules/coper`).
+
+The weights returned by either satisfy the contract below and can be
+passed straight into any reweighting-capable method.
 
 Reweighting in SOURSOP is **deterministic**. A weighted average is the
 closed-form expectation under the supplied weights — there is no
@@ -154,3 +162,20 @@ API reference
 .. autofunction:: soursop.ssutils.weighted_rms
 .. autofunction:: soursop.ssutils.weighted_std
 .. autofunction:: soursop.ssutils.weighted_corr
+
+Shared reweighting primitives
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+These helpers in :mod:`soursop.ssutils` are shared by the BME
+(:doc:`../modules/bme`) and COPER (:doc:`../modules/coper`) reweighters so
+that both expose an identical interface.
+
+.. autoclass:: soursop.ssutils.ExperimentalObservable
+
+   .. automethod:: get_bounds
+
+.. autofunction:: soursop.ssutils.relative_entropy
+.. autofunction:: soursop.ssutils.weighted_linear_regression
+.. autofunction:: soursop.ssutils.find_optimal_theta
+.. autofunction:: soursop.ssutils.validate_reweighting_inputs
+.. autofunction:: soursop.ssutils.constraint_chi_squared

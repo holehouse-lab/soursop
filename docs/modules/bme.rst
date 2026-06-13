@@ -11,11 +11,13 @@ The module is self-contained (NumPy + SciPy only) and is adapted from the refere
 
 It exposes three user-facing pieces:
 
-* :class:`~soursop.ssbme.ExperimentalObservable` — a container for one experimental data point (value, uncertainty, constraint type).
+* :class:`~soursop.ssutils.ExperimentalObservable` — a container for one experimental data point (value, uncertainty, constraint type). This class lives in :mod:`soursop.ssutils` and is shared with the COPER reweighter (:doc:`coper`); it is re-exported from ``soursop.ssbme`` so ``from soursop.ssbme import ExperimentalObservable`` continues to work.
 * :class:`~soursop.ssbme.BME` — standard maximum-entropy reweighting.
 * :class:`~soursop.ssbme.iBME` — iterative BME, which additionally fits an unknown global scale and offset between calculated and experimental data.
 
 Both classes return a :class:`~soursop.ssbme.BMEResult` and share an L-curve :func:`~soursop.ssbme.theta_scan` helper for selecting the regularisation strength.
+
+SOURSOP also provides :doc:`COPER <coper>`, an alternative maximum-entropy reweighter that imposes a *hard* :math:`\chi^2 \le 1` constraint instead of BME's tunable penalty. The two share the same ``ExperimentalObservable`` interface; see the "COPER vs BME" comparison on the :doc:`coper` page.
 
 
 The reweighting problem
@@ -117,6 +119,46 @@ Convergence is declared when the change in :math:`\chi^2` between iterations dro
 **When to use which.** Use ``BME`` when calculated and experimental observables are directly comparable. Use ``iBME`` when there is an unknown multiplicative scale and/or additive offset linking them (SAXS being the textbook case). If in doubt, ``iBME`` with ``fit_offset=True`` reduces to ``BME`` when the true scale is 1 and offset is 0, at the cost of a few extra iterations.
 
 
+BMECustom — vector / matrix BME with a pluggable cost
+---------------------------------------------------------
+
+For *profile* data (a SAXS curve, a PRE intensity profile, an NMR chemical-shift vector — anything where the experiment is a length-:math:`m` vector and you can back-calculate the same observable per conformer) and for cases where you want a **non-Gaussian goodness-of-fit** (log-scale :math:`\chi^2`, a covariance :math:`\chi^2`, a Pearson-correlation cost, ...), :class:`~soursop.ssbme.BMECustom` reweights the ensemble against:
+
+* an experimental **vector** ``experiment`` of shape ``(m,)``,
+* a per-conformer **matrix** ``calculated_values`` of shape ``(n_frames, m)``,
+* an optional **uncertainty** scalar or length-``m`` vector (used by the default cost), and
+* an optional **cost function** ``cost(experiment, calculated_values, weights) -> float`` (lower = better fit).
+
+It is the **penalty form** of Bayesian Ensemble Refinement: rather than BME's closed-form exponential solution (special to the Gaussian :math:`\chi^2`), it optimises the weights directly to minimise
+
+.. math::
+
+   \mathcal{L}(w) = \text{cost}(w) \;+\; \theta\, D_{\mathrm{KL}}(w\,\|\,w^{0}),
+
+over the simplex (:math:`w_i \ge 0`, :math:`\sum_i w_i = 1`). Internally the simplex is enforced via a softmax reparameterisation (:math:`w = \mathrm{softmax}(z)`), which reduces the fit to an unconstrained minimisation in :math:`z \in \mathbb{R}^{n}` solved by SciPy's L-BFGS-B (and avoids boundary singularities in :math:`\log w`). With no ``cost_function`` it reproduces :class:`BME`'s reduced :math:`\chi^2` exactly; with a custom one it is the natural way to plug in any scalar fit metric.
+
+The cost function **must take the weights** — reweighting is the act of choosing them, and the cost can only be reweighting-sensitive through the weighted prediction :math:`\langle F_k \rangle = \sum_i w_i\, \mathrm{calc}[i, k]`::
+
+    import numpy as np
+    from soursop.ssbme import BMECustom
+
+    # SAXS-like: m points, n conformers
+    bme = BMECustom(I_exp, calc_I, uncertainty=sigma_exp)
+    result = bme.fit(theta=1.0)
+    weights = result.weights
+
+    # custom cost — chi-squared on a log scale
+    def log_chi2(experiment, calculated_values, weights):
+        avg = weights @ calculated_values
+        return float(np.mean((np.log(avg) - np.log(experiment)) ** 2))
+
+    result = BMECustom(I_exp, calc_I, cost_function=log_chi2).fit(theta=1.0)
+
+The result is a :class:`~soursop.ssbme.BMECustomResult` carrying ``cost_initial`` / ``cost_final`` in place of :math:`\chi^2`, ``phi``, the per-frame ``reweighting_factors`` :math:`r_i = w_i / w_i^{0}`, a ``predict`` for new observables, and the usual ``diagnostics`` / ``print_diagnostics``. :meth:`BMECustom.scan_theta <soursop.ssbme.BMECustom.scan_theta>` runs the same L-curve trade-off using the cost in place of :math:`\chi^2`.
+
+**Performance note.** The default :math:`\chi^2` path uses an analytic gradient; a custom ``cost_function`` triggers a finite-difference gradient (one cost evaluation per weight), so an expensive cost on a very large ensemble can be slow. Convexity (and hence a unique optimum) is guaranteed only when the cost is convex in ``w``; an arbitrary cost is optimised locally.
+
+
 Choosing theta (the L-curve scan)
 ---------------------------------------------------------
 
@@ -161,9 +203,8 @@ Foundational and closely related methodology:
 * Bottaro, S. & Lindorff-Larsen, K. *Biophysical experiments and biomolecular simulations: A perfect match?* Science **361**, 355–360 (2018) — perspective on integrating simulation and experiment.
 
 
-.. autoclass:: soursop.ssbme.ExperimentalObservable
-
-        .. automethod:: get_bounds
+The ``ExperimentalObservable`` container is documented under
+:doc:`../usage/weights` (it is shared with COPER).
 
 .. autoclass:: soursop.ssbme.BME
 
@@ -181,7 +222,20 @@ Foundational and closely related methodology:
         .. automethod:: get_ibme_weights
         .. automethod:: get_ibme_stats
 
+.. autoclass:: soursop.ssbme.BMECustom
+
+        .. automethod:: __init__
+        .. automethod:: fit
+        .. automethod:: scan_theta
+        .. automethod:: predict
+
 .. autoclass:: soursop.ssbme.BMEResult
+
+        .. automethod:: predict
+        .. automethod:: diagnostics
+        .. automethod:: print_diagnostics
+
+.. autoclass:: soursop.ssbme.BMECustomResult
 
         .. automethod:: predict
         .. automethod:: diagnostics

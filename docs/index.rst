@@ -6,7 +6,7 @@
 Welcome to the SOURSOP Documentation!
 =========================================================
 
-*Last updated: May 2026*
+*Last updated: June 2026*
 
 **SOURSOP** (**S**\imulation analysis **O**\f **U**\nfolded **R**\egion\ **S** **O**\f **P**\roteins) is a Python package for the analysis of all-atom and coarse-grained simulations of unfolded and disordered proteins. It provides a wide range of functionality that may not be relevant for folded proteins but is essential for extracting polymer-physics insight from simulations of intrinsically disordered proteins (IDPs) and intrinsically disordered regions (IDRs). **SOURSOP** was formerly *CAMPARITraj*, which was formerly *CTraj*, and includes all the original functionality therein.
 
@@ -21,13 +21,14 @@ Why SOURSOP?
 Most molecular-simulation analysis tools are oriented towards folded proteins (RMSD to a native state, secondary-structure stability, binding-pocket geometry). Disordered proteins have no single reference structure, so the questions - and the right observables - are different. SOURSOP focusses on the ensemble- and polymer-centric quantities that *are* meaningful for IDPs/IDRs:
 
 * **Global dimensions** - radius of gyration, hydrodynamic radius, end-to-end distance, asphericity, the gyration tensor, and the dimensionless size parameter :math:`\langle t \rangle`.
-* **Polymer scaling** - internal-scaling profiles, apparent scaling exponents (with bootstrap error estimation), and homopolymer-deviation maps.
+* **Polymer scaling** - internal-scaling profiles, apparent scaling exponents (with frame-level bootstrap confidence intervals and a reduced-:math:`\chi^2` fit-quality estimate), and homopolymer-deviation maps.
 * **Distance & contact maps** - mean / RMS inter-residue distance maps and fractional contact maps, including fast inter-chain maps for multi-chain systems.
 * **Local structure** - DSSP and BBSEG2 secondary structure, dihedral angles and dihedral mutual information, sliding-window local heterogeneity and local collapse.
 * **Solvent exposure** - per-residue / per-atom / sidechain / backbone SASA and regional accessibility.
-* **NMR & PRE observables** - sequence-corrected random-coil chemical shifts (``ssnmr``) and synthetic paramagnetic relaxation enhancement profiles (``sspre``) for direct comparison with experiment.
+* **NMR & PRE observables** - sequence-corrected random-coil chemical shifts, backbone ³J(HN, Hα) scalar couplings, and per-frame NOE distances (``ssnmr``), plus synthetic paramagnetic relaxation enhancement profiles (``sspre``) for direct comparison with experiment.
+* **HDX protection factors** - per-residue Best-Vendruscolo ln(P) from heavy-atom contacts and backbone H-bonds (``sshdx``), ready for reweighting against experimental HDX data.
 * **Sampling quality** - assessment of ensemble convergence via the PENGUIN tools in ``sssampling``.
-* **Ensemble reweighting** - *every* ensemble-average observable accepts an optional per-frame ``weights`` vector, applied consistently and deterministically, for re-weighted / enhanced-sampling / maximum-entropy ensembles (see :doc:`usage/weights`). Weights can be derived directly from experimental data by Bayesian Maximum Entropy / iterative BME reweighting (see :doc:`modules/bme`).
+* **Ensemble reweighting** - *every* ensemble-average observable accepts an optional per-frame ``weights`` vector, applied consistently and deterministically, for re-weighted / enhanced-sampling / maximum-entropy ensembles (see :doc:`usage/weights`). Weights can be derived directly from experimental data by Bayesian Maximum Entropy / iterative BME (see :doc:`modules/bme`) or by COPER / iterative COPER (see :doc:`modules/coper`) reweighting.
 
 In addition to the pre-built analyses, SOURSOP gives easy and rapid access to **all** inter-residue and inter-atomic distances, so custom observables are straightforward to build.
 
@@ -60,7 +61,7 @@ Quickstart
    dmap, dstd = protein.get_distance_map()
    cmap, corder = protein.get_contact_map()
 
-See :doc:`usage/overview` for the core concepts (``SSTrajectory`` vs. ``SSProtein``, multi-chain systems) and :doc:`usage/examples` for nine worked, end-to-end IDP analyses.
+See :doc:`usage/overview` for the core concepts (``SSTrajectory`` vs. ``SSProtein``, multi-chain systems) and :doc:`usage/examples` for eleven worked, end-to-end IDP analyses.
 
 
 Documentation map
@@ -71,7 +72,7 @@ Documentation map
 * :doc:`usage/examples` - worked, copy-pasteable IDP analysis recipes.
 * :doc:`usage/weights` - the consistent ensemble-reweighting (frame ``weights``) system and the shared validation helpers.
 * :doc:`usage/development` - extending SOURSOP, the plugin system, and contributing.
-* **Module API references** - :doc:`modules/sstrajectory`, :doc:`modules/ssprotein`, :doc:`modules/ssnmr`, :doc:`modules/sspre`, :doc:`modules/sssampling`, :doc:`modules/bme`.
+* **Module API references** - :doc:`modules/sstrajectory`, :doc:`modules/ssprotein`, :doc:`modules/ssnmr`, :doc:`modules/sspre`, :doc:`modules/sssampling`, :doc:`modules/bme`, :doc:`modules/coper`, :doc:`modules/hdx`.
 
 
 .. toctree::
@@ -88,6 +89,8 @@ Documentation map
    modules/sspre
    modules/sssampling
    modules/bme
+   modules/coper
+   modules/hdx
    usage/development
 
 
@@ -107,14 +110,19 @@ Please report bugs, typos, or unexpected behaviour on the `GitHub issue tracker 
 
 Changelog
 ==========
-*Update: May 2026* (0.2.7)
-A large maintenance, performance, and documentation release. Highlights:
+*Update: June 2026* (2.0.0)
+A major release. Highlights:
 
 * **Bug fixes** across ``ssnmr`` (phospho-residue glycine corrections), ``ssprotein`` (native-contacts NaN/overflow, glycine sidechain contacts, cluster centroid), ``sstrajectory`` (interchain-map cap-residue handling), ``ssutils`` (thread count on Apple Accelerate) and ``ssmutualinformation`` (a latent ``calc_MI`` weighted-path bug).
+* **Polymer-scaling error propagation** - ``get_scaling_exponent`` (and the fit used by ``get_polymer_scaled_distance_map``) now reports a proper, dimensionally consistent reduced :math:`\chi^2` and frame-level bootstrap **confidence intervals** for :math:`\nu` / :math:`A_0` (replacing the earlier min/max range over disjoint data chunks). This also fixes a broken log-log :math:`\chi^2` residual and a latent ragged-array crash on short/few-frame trajectories. **API change:** ``subdivision_batch_size`` is replaced by ``n_bootstrap`` and ``confidence_interval``, and return slots 3–6 are now confidence-interval bounds (``nu_ci_low/high``, ``A0_ci_low/high``).
 * **Performance** - large behaviour-preserving (byte-identical) speed-ups: the inter-chain distance/contact maps in ``sstrajectory`` and the O(n\ :sup:`2`) CA-mode polymer-scaling loops in ``ssprotein`` (``get_internal_scaling``, ``get_scaling_exponent``, ``get_local_to_global_correlation``); a new ``stride`` parameter on ``get_interchain_contact_map`` / ``get_interchain_distance``.
 * **Consistent ensemble reweighting** - every function returning an ensemble-average value now accepts an optional per-frame ``weights`` vector, applied deterministically (no stochastic resampling) and validated by a single shared ``ssutils.validate_weights``; ``stride`` + ``weights`` now work together correctly. See :doc:`usage/weights`.
-* **Testing** - new ``test_weights.py`` (~68 parametrized tests) plus the pickle-based regression suite (~600+ observable tests) and extended ``sstrajectory`` coverage.
-* **Documentation** - full numpy-style docstring rewrite across all major modules, narrative overviews on every page, rewritten worked examples, a new ensemble-reweighting page, and an expanded front page.
+* **Reweighting against experimental data** - two new modules derive frame ``weights`` from experimental observables: ``ssbme`` (Bayesian/MaxEnt ``BME``, the iterative scale/offset ``iBME``, and a vector/matrix variant ``BMECustom`` that accepts an arbitrary user goodness-of-fit function; see :doc:`modules/bme`) and ``sscoper`` (Convex Optimization for Ensemble Reweighting ``COPER`` and ``iCOPER``, a hard-χ²-constraint alternative that also reports infeasibility; see :doc:`modules/coper`). The two share an identical ``ExperimentalObservable`` interface via ``ssutils``.
+* **Scalar (J) couplings in ssnmr** - new ``compute_J3_HN_HA`` computes the backbone ³J(HN, Hα) scalar coupling per frame per residue from the φ dihedral via the Karplus relation (six literature parameterisations: Bax2007/Bax1997/Ruterjans1999/Habeck/Vuister/Pardi, ported from biceps). A generic ``karplus(...)`` evaluator is also exposed for arbitrary Karplus-form coefficients. Output shape ``(n_frames, n_phi)`` is the natural input for the BME / COPER reweighters; see :doc:`modules/ssnmr`.
+* **NOE distances in ssnmr** - new ``compute_NOE_distances`` returns per-frame inter-atom distances (Å) for arbitrary atom pairs, and ``noe_ensemble_average`` collapses them via the NOE :math:`\langle r^{-p}\rangle^{-1/p}` convention (default :math:`p = 6`). The per-frame matrix is BME/COPER-ready against experimental NOE intensities; see :doc:`modules/ssnmr`.
+* **HDX protection factors (new ``sshdx`` module)** - per-residue ln(P) via the Best-Vendruscolo formula :math:`\ln P_i = \beta_c N_c(i) + \beta_h N_h(i) + \beta_0` from per-residue heavy-atom contacts (:func:`~soursop.sshdx.compute_Nc`) and backbone H-bond counts (:func:`~soursop.sshdx.compute_Nh`, via :func:`mdtraj.wernet_nilsson`). Drop-in input for reweighting against experimental HDX protection factors; see :doc:`modules/hdx`.
+* **Testing** - new ``test_weights.py`` (~68 parametrized tests), ``test_ssbme.py`` and ``test_sscoper.py`` (BME/iBME and COPER/iCOPER), plus the pickle-based regression suite (~600+ observable tests) and extended ``sstrajectory`` coverage.
+* **Documentation** - full numpy-style docstring rewrite across all major modules, narrative overviews on every page, rewritten worked examples (including BME and COPER reweighting), new ``bme`` and ``coper`` API pages, a new ensemble-reweighting page, an expanded front page, and a worked SAXS-reweighting demo (four notebooks under ``demo_examples/``).
 * **Packaging** - reconciled dependency manifests, refreshed CI (Python 3.9-3.12), removed dead config.
 
 *Update: November. 2024* (0.2.6)

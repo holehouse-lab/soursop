@@ -17,8 +17,11 @@ import pytest
 
 from soursop.ssbme import (
     BME,
+    BMECustom,
+    BMECustomResult,
     BMEResult,
     ExperimentalObservable,
+    ThetaScanResult,
     iBME,
     theta_scan,
 )
@@ -240,3 +243,126 @@ class TestThetaScan:
         obs = [ExperimentalObservable(21.0, 1.0), ExperimentalObservable(58.0, 2.0)]
         with pytest.raises(SSException):
             theta_scan(obs, _make_ensemble(), reweighter="bogus")
+
+
+# --------------------------------------------------------------------------
+# BMECustom (raw vector + matrix, optional custom cost)
+# --------------------------------------------------------------------------
+def _make_profile_problem(n_frames=200, m=8, seed=3):
+    """Synthetic SAXS-like 'profile': m experimental points, n conformers."""
+    rng = np.random.default_rng(seed)
+    q = np.linspace(0.05, 0.3, m)
+    # True intensity (Debye-like decay) + per-conformer log-normal noise.
+    true = 100.0 * np.exp(-30.0 * q**2)
+    noise = rng.lognormal(mean=0.0, sigma=0.15, size=(n_frames, m))
+    calc = true[None, :] * noise  # (n, m)
+    # Experimental targets: a known shifted shape that *is* reachable.
+    exp = 100.0 * np.exp(-25.0 * q**2)
+    sigma = 0.05 * exp
+    return exp, calc, sigma
+
+
+class TestBMECustom:
+    def test_default_cost_reduces_chi2(self):
+        np.random.seed(0)
+        exp, calc, sigma = _make_profile_problem()
+        res = BMECustom(exp, calc, uncertainty=sigma).fit(theta=0.5, verbose=False)
+        assert isinstance(res, BMECustomResult)
+        assert res.success
+        assert np.isclose(np.sum(res.weights), 1.0)
+        assert np.all(res.weights >= -1e-12)
+        assert res.cost_final < res.cost_initial
+        assert 0.0 < res.phi <= 1.0
+        assert res.reweighting_factors.shape == (calc.shape[0],)
+
+    def test_custom_cost_matches_default(self):
+        """A user cost identical to the default chi^2 must give the same fit."""
+        np.random.seed(0)
+        exp, calc, sigma = _make_profile_problem()
+
+        def reduced_chi2(experiment, calc_matrix, weights):
+            avg = weights @ calc_matrix
+            return float(np.mean(((avg - experiment) / sigma) ** 2))
+
+        res_def = BMECustom(exp, calc, uncertainty=sigma).fit(theta=0.5, verbose=False)
+        res_cus = BMECustom(exp, calc, cost_function=reduced_chi2).fit(
+            theta=0.5, verbose=False
+        )
+        # Same global optimum (convex problem); both paths converge to the
+        # same cost within optimiser tolerance. The weight vectors are
+        # close but not identical because the default uses an analytic
+        # gradient while the custom path uses a finite-difference gradient.
+        assert res_def.cost_final == pytest.approx(res_cus.cost_final, rel=5e-3)
+        assert res_def.phi == pytest.approx(res_cus.phi, rel=5e-2)
+
+    def test_custom_cost_runs_and_reduces(self):
+        """A non-default cost (log-scale chi^2) should still drive the fit."""
+        np.random.seed(0)
+        exp, calc, _ = _make_profile_problem()
+
+        def log_chi2(experiment, calc_matrix, weights):
+            avg = weights @ calc_matrix
+            return float(np.mean((np.log(avg) - np.log(experiment)) ** 2))
+
+        res = BMECustom(exp, calc, cost_function=log_chi2).fit(theta=0.5, verbose=False)
+        assert res.success
+        assert res.cost_final < res.cost_initial
+        assert np.isclose(np.sum(res.weights), 1.0)
+
+    def test_scalar_uncertainty(self):
+        np.random.seed(0)
+        exp, calc, _ = _make_profile_problem()
+        # Scalar uncertainty broadcasts to all m points.
+        res = BMECustom(exp, calc, uncertainty=5.0).fit(theta=0.5, verbose=False)
+        assert res.success
+        assert np.isclose(np.sum(res.weights), 1.0)
+
+    def test_predict_matches_weighted_mean(self):
+        np.random.seed(0)
+        exp, calc, sigma = _make_profile_problem()
+        bme = BMECustom(exp, calc, uncertainty=sigma)
+        res = bme.fit(theta=0.5, verbose=False)
+        pred = bme.predict(calc)
+        expected = res.weights @ calc
+        assert pred.shape == (calc.shape[1],)
+        assert np.allclose(pred, expected)
+
+    def test_predict_before_fit_raises(self):
+        exp, calc, sigma = _make_profile_problem()
+        with pytest.raises(SSException):
+            BMECustom(exp, calc, uncertainty=sigma).predict(calc)
+
+    def test_invalid_inputs_raise(self):
+        exp, calc, sigma = _make_profile_problem()
+        # Wrong vector dim
+        with pytest.raises(SSException):
+            BMECustom(calc, calc)
+        # Wrong matrix dim
+        with pytest.raises(SSException):
+            BMECustom(exp, exp)
+        # Mismatched m
+        with pytest.raises(SSException):
+            BMECustom(exp[:-1], calc)
+        # Non-callable cost
+        with pytest.raises(SSException):
+            BMECustom(exp, calc, cost_function=42)
+        # Bad uncertainty shape
+        with pytest.raises(SSException):
+            BMECustom(exp, calc, uncertainty=np.ones(exp.shape[0] + 1))
+        # Non-positive uncertainty
+        with pytest.raises(SSException):
+            BMECustom(exp, calc, uncertainty=0.0)
+        # Bad theta
+        with pytest.raises(SSException):
+            BMECustom(exp, calc, uncertainty=sigma).fit(theta=0.0, verbose=False)
+
+    def test_scan_theta(self):
+        np.random.seed(0)
+        exp, calc, sigma = _make_profile_problem(n_frames=120)
+        bme = BMECustom(exp, calc, uncertainty=sigma)
+        scan = bme.scan_theta(theta_range=(0.05, 5.0), n_points=4)
+        assert isinstance(scan, ThetaScanResult)
+        assert scan.theta_values.shape == (4,)
+        # chi_squared_values is overloaded to store the cost for BMECustom.
+        assert scan.chi_squared_values.shape == (4,)
+        assert 0 <= scan.optimal_idx < 4

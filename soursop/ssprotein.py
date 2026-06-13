@@ -3708,7 +3708,8 @@ class SSProtein:
     def get_scaling_exponent(self,
                              inter_residue_min=15,
                              end_effect=5,
-                             subdivision_batch_size=20,
+                             n_bootstrap=200,
+                             confidence_interval=95.0,
                              mode='COM',
                              num_fitting_points=40,
                              fraction_of_points=0.5,
@@ -3725,9 +3726,25 @@ class SSProtein:
         :math:`\\nu_{app}` ("nu-app") reports on solvent quality and the
         prefactor :math:`A_0` captures chain stiffness / segment volume.
 
-        Bootstrap error estimates for ``nu`` and ``A0`` come from randomly
-        subdividing the trajectory into ``subdivision_batch_size`` chunks,
-        fitting each, and taking the min/max across the chunks.
+        Uncertainties are estimated by a frame-level bootstrap. The frames
+        are resampled with replacement ``n_bootstrap`` times (the *same*
+        frame resample applied across every sequence separation, so the
+        chain-wide correlation structure is preserved and the frame - not
+        the individual residue pair - is treated as the independent
+        sampling unit). Each resample is re-fit to give a distribution of
+        ``nu`` / ``A0`` (reported as a percentile confidence interval), and
+        the per-separation spread of the resampled :math:`\\log` RMS values
+        gives the standard error used as the denominator of a genuine
+        reduced chi-squared.
+
+        .. note::
+            The frame bootstrap treats frames as independent draws. If the
+            trajectory frames are temporally correlated (i.e. sampled faster
+            than the conformational autocorrelation time) the standard
+            errors are under-estimated and the reduced chi-squared is
+            correspondingly inflated; pre-stride the trajectory (or pass
+            ``stride``) to roughly decorrelate frames for a more honest
+            error.
 
         .. note::
             Despite the precision of the fit, ``nu_app`` and ``A0`` are
@@ -3745,9 +3762,16 @@ class SSProtein:
         end_effect : int, optional
             Exclude pairs in which one residue is within ``end_effect``
             residues of either chain end. Default is 5.
-        subdivision_batch_size : int, optional
-            Target chunk size when bootstrapping fit-quality errors.
-            Default is 20.
+        n_bootstrap : int, optional
+            Number of frame-level bootstrap resamples used to estimate the
+            ``nu`` / ``A0`` confidence interval and the per-separation
+            standard errors. Default is 200. If there are fewer than two
+            frames (after striding) no bootstrap is possible and the
+            confidence bounds / reduced chi-squared are returned as ``nan``.
+        confidence_interval : float, optional
+            Width (in percent) of the bootstrap confidence interval reported
+            for ``nu`` and ``A0``. Default is 95.0 (i.e. the 2.5th and
+            97.5th percentiles of the bootstrap distribution).
         mode : {'COM', 'CA'}, optional
             Distance type. ``'COM'`` (default) is preferred — CA-CA tends to
             inflate the apparent profile.
@@ -3774,14 +3798,19 @@ class SSProtein:
         Returns
         -------
         tuple of length 10
-            ``(best_nu, best_A0, min_nu, max_nu, min_A0, max_A0,
-            redchi_fit_region, redchi_all_points, fit_region_data,
-            all_points_data)`` where:
+            ``(best_nu, best_A0, nu_ci_low, nu_ci_high, A0_ci_low,
+            A0_ci_high, redchi_fit_region, redchi_all_points,
+            fit_region_data, all_points_data)`` where:
 
             * ``best_nu``, ``best_A0`` - point estimates from the full fit.
-            * ``min_nu``..``max_A0`` - bootstrap min/max bounds.
+            * ``nu_ci_low``, ``nu_ci_high`` - lower/upper bounds of the
+              ``confidence_interval``% bootstrap confidence interval on
+              ``nu`` (``nan`` if the bootstrap could not be run). Likewise
+              ``A0_ci_low`` / ``A0_ci_high`` for ``A0``.
             * ``redchi_fit_region`` - reduced chi^2 on the points used in
-              the linear fit (loglog-uniform).
+              the linear fit (loglog-uniform), using the bootstrap standard
+              error of each :math:`\\log` RMS point as the per-point
+              uncertainty (``nan`` if the bootstrap could not be run).
             * ``redchi_all_points`` - reduced chi^2 across every observed
               :math:`|i-j|`.
             * ``fit_region_data`` - shape ``(2, K)``; col 0 is sequence
@@ -3793,8 +3822,9 @@ class SSProtein:
         Raises
         ------
         SSException
-            If ``fraction_of_points > 1.0`` or if too few points remain to
-            fit a line (``< 3``).
+            If ``fraction_of_points > 1.0``, if ``confidence_interval`` is
+            not in ``(0, 100)``, or if too few points remain to fit a line
+            (``< 3``).
 
         Example
         -------
@@ -3834,21 +3864,28 @@ class SSProtein:
                 ssio.warning_message(f"Warning: Scaling fit has only {num_fitting_points} points - likely finite size effects!")
 
 
-        # This section determines the number of subdivisions performed for error
-        # bootstrapping. If we have fewer frames than we can divide the data into
-        # then we just use each frame individually (although now error bootstrapping
-        # is probably meaningless!
-        # note integer math used here to round down - also set
-        if int(self.n_frames/stride) < int(subdivision_batch_size):
-            num_subdivisions_for_error = int(self.n_frames/stride)
-        else:
-            num_subdivisions_for_error = int(int(self.n_frames/stride) / subdivision_batch_size)
+        # validate the requested confidence-interval width
+        if not 0.0 < confidence_interval < 100.0:
+            raise SSException(
+                "confidence_interval must be a percentage in the open "
+                f"interval (0, 100), got {confidence_interval}"
+            )
 
-        seq_sep_vals             = []
-        seq_sep_RMS_distance     = []
-        seq_sep_RMS_var_distance     = []
-        seq_sep_RSTDS_distance   = []
-        seq_sep_subsampled_distances  = []
+        seq_sep_vals          = []
+        seq_sep_RMS_distance  = []
+
+        # Per-separation bootstrap RMS distances: seq_sep_boot_RMS[k] is a
+        # length-n_bootstrap array of RMS distances for the k-th sequence
+        # separation, one value per frame-resample. These drive BOTH the
+        # nu / A0 confidence interval and the per-point standard errors used
+        # in the reduced chi-squared. The frame-resample index matrix
+        # (boot_frames) is generated once - lazily, on the first separation,
+        # once the strided frame count is known - so the SAME resample is
+        # applied across every separation (preserving the chain-wide
+        # correlation structure; the frame is the independent sampling unit).
+        seq_sep_boot_RMS = []
+        boot_frames = None
+        do_bootstrap = n_bootstrap is not None and n_bootstrap >= 2
 
         # Hoist the per-residue CA position out of the O(n^2) pair loop.
         # get_inter_residue_atomic_distance recomputes each residue's CA
@@ -3864,11 +3901,12 @@ class SSProtein:
 
             ssio.status_message(f"Internal Scaling - on sequence separation {seq_sep} of {max_separation}", verbose)
 
-            tmp = []
-            tmp_w = []
+            tmp_rows = []
             seq_sep_vals.append(seq_sep)
 
-            # collect all possible average seq-sep values weighted by the weights
+            # collect the per-frame distance vector for every residue pair at
+            # this sequence separation: one row per (A, B) pair, one column
+            # per (strided) frame.
             for pos in range(0, max_separation-seq_sep):
 
                 # define the two positions
@@ -3883,75 +3921,60 @@ class SSProtein:
                 elif mode == 'COM':
                     distance = self.get_inter_residue_COM_distance(A, B, stride=stride)
 
-                tmp.extend(distance)
+                tmp_rows.append(np.asarray(distance, dtype=np.float64))
 
-                # deterministic re-weighting: pool the validated per-frame
-                # weights alongside the distances instead of stochastic
-                # resampling. Unweighted path is untouched.
-                if weights is not False:
-                    tmp_w.extend(weights)
+            # shape (n_pairs, n_frames). ravel() reproduces the old flattened
+            # ordering (all frames of pair 0, then pair 1, ...) exactly, so the
+            # point-estimate RMS below is numerically unchanged.
+            dist_2d = np.array(tmp_rows)
+            n_pairs = dist_2d.shape[0]
+            sq = dist_2d * dist_2d
 
-            tmp = np.array(tmp)
-
-            # add mean and std vals for this sequence sep
+            # point-estimate RMS distance for this separation
             if weights is not False:
-                wn = np.array(tmp_w)
+                wn = np.tile(weights, n_pairs)
                 wn = wn / np.sum(wn)
-                seq_sep_RMS_distance.append(ssutils.weighted_rms(tmp, wn))
-                seq_sep_RSTDS_distance.append(np.sqrt(ssutils.weighted_std(tmp*tmp, wn)))
-                seq_sep_RMS_var_distance.append(np.sqrt(np.power(ssutils.weighted_std(tmp, wn)**2, 2)))
+                seq_sep_RMS_distance.append(ssutils.weighted_rms(dist_2d.ravel(), wn))
             else:
-                seq_sep_RMS_distance.append(np.sqrt(np.mean(tmp*tmp)))
-                seq_sep_RSTDS_distance.append(np.sqrt(np.std(tmp*tmp)))
-                seq_sep_RMS_var_distance.append(np.sqrt(np.power(np.var(tmp),2)))
+                seq_sep_RMS_distance.append(np.sqrt(np.mean(sq)))
 
-            if num_subdivisions_for_error > 0:
+            if not do_bootstrap:
+                continue
 
-                # note we cast this to an int to ensure subdivision_size is always
-                # the value added to RMS_local_append is always the same, because
-                # len(tmp) will vary with sequence separation. Basically this means
-                # we take ALL the data and subidivided it into num_subdivisions_for_error
-                # chunks and then use this for error calculations
-                subdivision_size = int(len(tmp)/num_subdivisions_for_error)
+            # build the frame-resample index matrix once, now that the strided
+            # frame count is known (need >= 2 frames to resample).
+            n_fr = dist_2d.shape[1]
+            if boot_frames is None:
+                if n_fr < 2:
+                    do_bootstrap = False
+                    continue
+                boot_frames = np.random.randint(0, n_fr, size=(n_bootstrap, n_fr))
 
-                # get shuffled indices
-                idx = np.random.permutation(list(range(0,len(tmp))))
+            # Vectorised bootstrap RMS over all resamples for this separation.
+            # Each residue pair (row) is weighted equally; frames (columns) are
+            # weighted by the optional per-frame weight vector. Because every
+            # pair shares the same frame axis, the (pair, frame) mean collapses
+            # to a frame-wise reduction that we then index by boot_frames.
+            if weights is not False:
+                w_per_frame = np.asarray(weights, dtype=np.float64)
+                ws = (sq * w_per_frame).sum(axis=0)                  # sum_pairs w*d^2 -> (n_frames,)
+                num = ws[boot_frames].sum(axis=1)                    # (n_bootstrap,)
+                den = n_pairs * w_per_frame[boot_frames].sum(axis=1)
+                rms_boot = np.sqrt(num / den)
+            else:
+                col_mean_sq = sq.mean(axis=0)                        # mean over pairs -> (n_frames,)
+                rms_boot = np.sqrt(col_mean_sq[boot_frames].mean(axis=1))
 
-                # split shuffled indices into $num_subdivisions_for_error sized chunks
+            seq_sep_boot_RMS.append(rms_boot)
 
-                subdivided_idx = sstools.chunks(idx, subdivision_size)
-
-                # finally subselect each of the randomly selected indicies
-                RMS_local   = []
-
-                for idx_set in subdivided_idx:
-
-                    # subselect a random set of distances and compute RMS.
-                    # The permutation/chunking (and hence the RNG stream) is
-                    # identical to the unweighted path; only the per-chunk
-                    # statistic is deterministically re-weighted.
-                    if weights is not False:
-                        cw = wn[idx_set]
-                        cw_sum = np.sum(cw)
-                        if cw_sum <= 0.0:
-                            RMS_local.append(np.nan)
-                        else:
-                            RMS_local.append(ssutils.weighted_rms(tmp[idx_set], cw / cw_sum))
-                    else:
-                        RMS_local.append(np.sqrt(np.mean(tmp[idx_set]*tmp[idx_set])))
-
-                # add distribution of values for this sequence sep
-                seq_sep_subsampled_distances.append(RMS_local)
-
-        # now sub-select the bit of the curve we actually want for the separation, distance, and distance variance data
-        # note we are RE DEFINING these three variables here
-        seq_sep_vals = seq_sep_vals[inter_residue_min:-end_effect]
+        # sub-select the region of the curve we actually fit: drop the
+        # short-separation steric regime and the chain-end regime.
+        seq_sep_vals         = seq_sep_vals[inter_residue_min:-end_effect]
         seq_sep_RMS_distance = seq_sep_RMS_distance[inter_residue_min:-end_effect]
-        seq_sep_RMS_var_distance = seq_sep_RMS_var_distance[inter_residue_min:-end_effect]
 
-        ## next find indices for evenly spaced points in logspace. This whole sectino
+        ## next find indices for evenly spaced points in logspace. This whole section
         # leads to the identification of the indices in logspaced_idx, which are the
-        # list indices that will given evenly spaced points when plotted in log space
+        # list indices that will give evenly spaced points when plotted in log space
         y_data = np.log(seq_sep_vals)
         y_data_offset = y_data - y_data[0]
         interval = y_data_offset[-1]/num_fitting_points
@@ -3966,59 +3989,70 @@ class SSProtein:
                 logspaced_idx.append(local_ix)
 
         # finally using those evenly-spaced log indices we extract out new lists
-        # that have values which will be evenly spaced in logspace. Cool.
+        # that have values which will be evenly spaced in logspace.
         fitting_separation = [seq_sep_vals[i] for i in logspaced_idx]
         fitting_distances  = [seq_sep_RMS_distance[i] for i in logspaced_idx]
-        fitting_variance   = [seq_sep_RMS_var_distance[i] for i in logspaced_idx]
 
-        # fit to a log/log model and extract params
-        out = np.polyfit(np.log(fitting_separation), np.log(fitting_distances), 1)
+        # fit the homopolymer power law in log-log space
+        log_sep_fit = np.log(fitting_separation)
+        out = np.polyfit(log_sep_fit, np.log(fitting_distances), 1)
         nu_best = out[0]
         logR0_best = out[1]
         R0_best = np.exp(out[1])
 
         ## >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-        ### next calculated reduced chi-squared
-        n_points = len(fitting_distances)
-        chi2=0
-        for i in range(0, n_points):
-            chi2 = chi2 + (np.power(np.log(fitting_distances[i]) - (nu_best*np.log(fitting_separation[i])+logR0_best),2))/fitting_variance[i]
+        ## Bootstrap-derived parameter confidence interval and per-point
+        ## standard errors -> a dimensionally consistent reduced chi-squared.
+        nu_ci_low = nu_ci_high = A0_ci_low = A0_ci_high = np.nan
+        reduced_chi_squared_fitting = np.nan
+        reduced_chi_squared_all = np.nan
 
-        # finally calculated reduced chi squared correcting for 2 model parameters
-        reduced_chi_squared_fitting = chi2 / (n_points-2)
+        if do_bootstrap and len(seq_sep_boot_RMS) > 0:
 
-        full_n_points = len(seq_sep_vals)
+            # (n_sep, n_bootstrap), aligned to the sub-selected fit region
+            boot_RMS = np.array(seq_sep_boot_RMS)[inter_residue_min:-end_effect]
+            log_boot = np.log(boot_RMS)
 
-        chi2=0
+            # se_log[k] is the bootstrap standard error of log(RMS) at the
+            # k-th separation - the proper, dimensionless denominator for the
+            # reduced chi-squared of the log-log fit (same space as the fit
+            # residual). This replaces the earlier linear-space variance,
+            # which was dimensionally inconsistent.
+            se_log = log_boot.std(axis=1, ddof=1)
 
-        for i in range(0, full_n_points):
-            chi2 = chi2 + (np.power(np.log(seq_sep_RMS_distance[i]) - (nu_best*np.log(seq_sep_vals[i])+logR0_best),2))/seq_sep_RMS_var_distance[i]
+            # parameter CI: re-fit every frame-resample over the same
+            # log-spaced fit region (np.polyfit vectorises over the columns),
+            # then take percentiles of the resulting nu / A0 distributions.
+            log_boot_fit = log_boot[logspaced_idx, :]            # (n_fit, n_bootstrap)
+            coeffs = np.polyfit(log_sep_fit, log_boot_fit, 1)    # (2, n_bootstrap)
+            nu_boot = coeffs[0]
+            A0_boot = np.exp(coeffs[1])
+            lower_p = (100.0 - confidence_interval) / 2.0
+            upper_p = 100.0 - lower_p
+            nu_ci_low, nu_ci_high = np.percentile(nu_boot, [lower_p, upper_p])
+            A0_ci_low, A0_ci_high = np.percentile(A0_boot, [lower_p, upper_p])
 
-        # finally calculated reduced chi squared correcting for 2 model parameters
-        reduced_chi_squared_all = chi2 / (full_n_points-2)
+            # reduced chi-squared using the bootstrap SE as the per-point
+            # uncertainty. Points with zero SE (no spread) are dropped and
+            # the degrees-of-freedom count adjusted, avoiding division by zero.
+            def _reduced_chi2(sep_vals, rms_vals, se):
+                resid = np.log(rms_vals) - (nu_best*np.log(sep_vals) + logR0_best)
+                ok = se > 0
+                dof = int(np.sum(ok)) - 2
+                if dof <= 0:
+                    return np.nan
+                return float(np.sum((resid[ok]/se[ok])**2) / dof)
 
-        ## >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-        ### Finally run the subselection protocol to subsampled
+            reduced_chi_squared_fitting = _reduced_chi2(
+                np.array(fitting_separation), np.array(fitting_distances),
+                se_log[logspaced_idx])
+            reduced_chi_squared_all = _reduced_chi2(
+                np.array(seq_sep_vals), np.array(seq_sep_RMS_distance), se_log)
 
-        subselected = np.array(seq_sep_subsampled_distances).transpose()
-
-        nu_sub = []
-        R0_sub = []
-        for i in range(0, num_subdivisions_for_error):
-
-            local_distances = subselected[i][inter_residue_min:-end_effect]
-
-            OF = np.polyfit(np.log(fitting_separation), np.log([local_distances[i] for i in logspaced_idx]), 1)
-
-            nu_sub.append(OF[0])
-            R0_sub.append(np.exp(OF[1]))
-
-        if num_subdivisions_for_error < 1:
-            nu_sub.append(np.nan)
-            R0_sub.append(np.nan)
-
-
-        return [nu_best, R0_best, min(nu_sub), max(nu_sub), min(R0_sub), max(R0_sub),  reduced_chi_squared_fitting, reduced_chi_squared_all, np.vstack((np.array(fitting_separation),np.array(fitting_distances))), np.vstack((seq_sep_vals, seq_sep_RMS_distance, sstools.powermodel(seq_sep_vals, nu_best, R0_best)))]
+        return [nu_best, R0_best, nu_ci_low, nu_ci_high, A0_ci_low, A0_ci_high,
+                reduced_chi_squared_fitting, reduced_chi_squared_all,
+                np.vstack((np.array(fitting_separation), np.array(fitting_distances))),
+                np.vstack((seq_sep_vals, seq_sep_RMS_distance, sstools.powermodel(seq_sep_vals, nu_best, R0_best)))]
 
 
 

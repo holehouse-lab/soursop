@@ -264,7 +264,7 @@ def _polymer(p, stochastic_keys: list) -> dict:
         'mean': np.asarray(mean_COM_rms),
     }
 
-    se_keys = ['best_nu', 'best_A0', 'min_nu', 'max_nu', 'min_A0', 'max_A0',
+    se_keys = ['best_nu', 'best_A0', 'nu_ci_low', 'nu_ci_high', 'A0_ci_low', 'A0_ci_high',
                'redchi_fit_region', 'redchi_all_points',
                'fit_region_data', 'all_points_data']
 
@@ -601,9 +601,20 @@ def smoke_check(ref: dict, protein) -> None:
 
     print('--- smoke_check: re-running stochastic methods to verify seeding ---')
 
-    se_keys = ['best_nu', 'best_A0', 'min_nu', 'max_nu', 'min_A0', 'max_A0',
+    se_keys = ['best_nu', 'best_A0', 'nu_ci_low', 'nu_ci_high', 'A0_ci_low', 'A0_ci_high',
                'redchi_fit_region', 'redchi_all_points',
                'fit_region_data', 'all_points_data']
+
+    # This smoke check verifies that re-seeding reproduces the stochastic
+    # methods, not bit-for-bit precision. The derived fit metrics
+    # (redchi_*) are small (~1e-3) and depend on cache warmth - other
+    # observables computed during the build leave the per-residue
+    # distance caches in a different state than the isolated re-run here,
+    # introducing benign ~1e-10 floating-point jitter. Back-to-back calls
+    # in a clean process are bit-identical; the modest atol/rtol below
+    # tolerates that cross-contamination without masking a real seeding
+    # regression (which would shift values by orders of magnitude).
+    SMOKE_RTOL, SMOKE_ATOL = 1e-6, 1e-9
 
     if 'get_scaling_exponent__CA' in ref['polymer']:
         se_CA_2 = _seed_then(protein.get_scaling_exponent, mode='CA', verbose=False)
@@ -611,6 +622,7 @@ def smoke_check(ref: dict, protein) -> None:
         for k, v in ref['polymer']['get_scaling_exponent__CA'].items():
             np.testing.assert_allclose(
                 np.asarray(se_CA_2_dict[k]), np.asarray(v),
+                rtol=SMOKE_RTOL, atol=SMOKE_ATOL,
                 err_msg=f"stochastic re-run mismatch: get_scaling_exponent__CA.{k}",
             )
 
@@ -620,6 +632,7 @@ def smoke_check(ref: dict, protein) -> None:
         for k, v in ref['polymer']['get_scaling_exponent__COM'].items():
             np.testing.assert_allclose(
                 np.asarray(se_COM_2_dict[k]), np.asarray(v),
+                rtol=SMOKE_RTOL, atol=SMOKE_ATOL,
                 err_msg=f"stochastic re-run mismatch: get_scaling_exponent__COM.{k}",
             )
 
@@ -634,7 +647,13 @@ def smoke_check(ref: dict, protein) -> None:
         np.testing.assert_allclose(psd_2[0], ref_entry['map'])
         assert float(psd_2[1]) == ref_entry['nu']
         assert float(psd_2[2]) == ref_entry['A0']
-        assert float(psd_2[3]) == ref_entry['redchi']
+        # redchi forwards get_scaling_exponent's reduced chi-squared, which
+        # carries the same benign cache-warmth jitter described above, so it
+        # is compared with tolerance rather than for exact equality.
+        np.testing.assert_allclose(
+            float(psd_2[3]), ref_entry['redchi'],
+            rtol=SMOKE_RTOL, atol=SMOKE_ATOL,
+        )
 
     if 'get_local_to_global_correlation' in ref['alignment_heterogeneity']:
         # Must use the same stride the build call used (stored in meta);

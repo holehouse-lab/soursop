@@ -18,6 +18,8 @@ import numpy
 import ctypes
 import platform
 import warnings
+from dataclasses import dataclass
+from typing import Optional, Tuple
 from soursop.ssexceptions import SSException
 from threadpoolctl import threadpool_info, threadpool_limits
 
@@ -498,3 +500,349 @@ def weighted_corr(a, b, weights):
     cov = numpy.cov(numpy.vstack((a, b)), ddof=0, aweights=weights)
     denom = numpy.sqrt(cov[0, 0] * cov[1, 1])
     return cov[0, 1] / denom
+
+
+# ======================================================================
+#
+# Reweighting primitives shared by soursop.ssbme (BME / iBME) and
+# soursop.sscoper (COPER / iCOPER). Both modules import these and
+# re-export the public names, so user code and the per-module APIs stay
+# identical regardless of which reweighter is used.
+#
+# ======================================================================
+
+#: Weights below this threshold are treated as zero in relative-entropy
+#: sums (avoids ``log(0)`` for de-populated frames).
+MIN_WEIGHT_THRESHOLD = 1e-50
+
+#: Valid experimental constraint types for :class:`ExperimentalObservable`.
+VALID_CONSTRAINTS = {"equality", "upper", "lower"}
+
+
+# ........................................................................
+#
+@dataclass
+class ExperimentalObservable:
+    """Container for a single experimental observable.
+
+    Shared by :mod:`soursop.ssbme` and :mod:`soursop.sscoper` (both
+    re-export this class), so the user-facing syntax is identical for BME,
+    iBME, COPER and iCOPER.
+
+    Parameters
+    ----------
+    value : float
+        The experimental value of the observable.
+    uncertainty : float
+        The experimental uncertainty (standard deviation). Must be positive.
+    constraint : str, optional
+        Type of constraint, one of:
+
+        - ``"equality"`` (default): observable should match ``value`` within
+          ``uncertainty``.
+        - ``"upper"``: observable should not exceed ``value`` (deviations
+          below ``value`` are not penalized).
+        - ``"lower"``: observable should not fall below ``value`` (deviations
+          above ``value`` are not penalized).
+    name : str, optional
+        Optional human-readable name/description.
+    group : str, optional
+        Optional data-type label. Used by :class:`soursop.sscoper.COPER` to
+        impose a separate per-group chi-squared constraint
+        (``chi2_alpha <= limit`` for each group, as in Leung et al. 2016);
+        ignored by BME / iBME. Observables without a group are pooled into a
+        single default group.
+
+    Raises
+    ------
+    SSException
+        If ``uncertainty`` is not positive or ``constraint`` is invalid.
+    """
+
+    value: float
+    uncertainty: float
+    constraint: str = "equality"
+    name: Optional[str] = None
+    group: Optional[str] = None
+
+    def __post_init__(self):
+        if self.uncertainty <= 0:
+            raise SSException(f"Uncertainty must be positive, got {self.uncertainty}")
+
+        if not isinstance(self.constraint, str):
+            raise SSException(
+                "constraint must be a string ('equality', 'upper', or "
+                f"'lower'), got {type(self.constraint).__name__}"
+            )
+
+        constraint_lower = self.constraint.lower().strip()
+        if constraint_lower not in VALID_CONSTRAINTS:
+            raise SSException(
+                f"Invalid constraint: '{self.constraint}'. "
+                "Must be 'equality', 'upper', or 'lower'"
+            )
+
+        self.constraint = constraint_lower
+
+    def get_bounds(self) -> Tuple[Optional[float], Optional[float]]:
+        """Optimization bounds on the Lagrange multiplier for this observable.
+
+        Returns
+        -------
+        tuple
+            ``(None, None)`` for ``equality``, ``(0.0, None)`` for ``upper``,
+            ``(None, 0.0)`` for ``lower``.
+        """
+        if self.constraint == "equality":
+            return (None, None)
+        elif self.constraint == "upper":
+            return (0.0, None)
+        else:  # "lower"
+            return (None, 0.0)
+
+
+# ........................................................................
+#
+def relative_entropy(w0, w1):
+    """Relative entropy (Kullback-Leibler divergence) of ``w1`` from ``w0``.
+
+    Parameters
+    ----------
+    w0 : numpy.ndarray
+        Reference (prior) weights, normalized to sum to 1.
+    w1 : numpy.ndarray
+        Posterior weights, normalized to sum to 1.
+
+    Returns
+    -------
+    float
+        ``sum_i w1_i * log(w1_i / w0_i)`` over frames with non-negligible
+        posterior weight.
+    """
+    idxs = numpy.where(w1 > MIN_WEIGHT_THRESHOLD)
+    return float(numpy.sum(w1[idxs] * numpy.log(w1[idxs] / w0[idxs])))
+
+
+# ........................................................................
+#
+def weighted_linear_regression(x, y, sample_weight, fit_intercept=True):
+    """Closed-form weighted least-squares regression of ``y`` on ``x``.
+
+    A small numpy replacement for ``sklearn.linear_model.LinearRegression``
+    (SOURSOP does not depend on scikit-learn). Solves
+    ``min_{a,b} sum_i s_i (y_i - (a x_i + b))^2``. Used by the iterative
+    scale/offset reweighters (iBME, iCOPER).
+
+    Parameters
+    ----------
+    x : numpy.ndarray
+        Independent variable, shape ``(n,)``.
+    y : numpy.ndarray
+        Dependent variable, shape ``(n,)``.
+    sample_weight : numpy.ndarray
+        Per-sample weights, shape ``(n,)``.
+    fit_intercept : bool, optional
+        If True fit slope and intercept; if False force the intercept to
+        zero (slope only). Default True.
+
+    Returns
+    -------
+    tuple of float
+        ``(slope, intercept)``. ``intercept`` is ``0.0`` when
+        ``fit_intercept`` is False.
+    """
+    x = numpy.asarray(x, dtype=numpy.float64).ravel()
+    y = numpy.asarray(y, dtype=numpy.float64).ravel()
+    s = numpy.asarray(sample_weight, dtype=numpy.float64).ravel()
+
+    if fit_intercept:
+        sw = numpy.sum(s)
+        x_mean = numpy.sum(s * x) / sw
+        y_mean = numpy.sum(s * y) / sw
+        cov_xy = numpy.sum(s * (x - x_mean) * (y - y_mean))
+        var_x = numpy.sum(s * (x - x_mean) ** 2)
+        slope = cov_xy / var_x
+        intercept = y_mean - slope * x_mean
+    else:
+        slope = numpy.sum(s * x * y) / numpy.sum(s * x * x)
+        intercept = 0.0
+
+    return float(slope), float(intercept)
+
+
+# ........................................................................
+#
+def _find_knee_perpendicular(x, y):
+    """Knee index by maximum perpendicular distance to the endpoint chord."""
+    x_n = (x - x.min()) / (x.max() - x.min() + 1e-10)
+    y_n = (y - y.min()) / (y.max() - y.min() + 1e-10)
+
+    p1 = numpy.array([x_n[0], y_n[0]])
+    p2 = numpy.array([x_n[-1], y_n[-1]])
+    line_vec = p2 - p1
+    line_len = numpy.linalg.norm(line_vec)
+    if line_len < 1e-10:
+        return len(x) // 2
+    line_unit = line_vec / line_len
+
+    distances = []
+    for i in range(len(x_n)):
+        point = numpy.array([x_n[i], y_n[i]])
+        vec = point - p1
+        proj = p1 + numpy.dot(vec, line_unit) * line_unit
+        distances.append(numpy.linalg.norm(point - proj))
+    return int(numpy.argmax(distances))
+
+
+# ........................................................................
+#
+def _find_knee_curvature(x, y):
+    """Knee index by maximum Menger curvature (3-point estimate)."""
+    x_n = (x - x.min()) / (x.max() - x.min() + 1e-10)
+    y_n = (y - y.min()) / (y.max() - y.min() + 1e-10)
+    n = len(x_n)
+    curvature = numpy.zeros(n)
+    for i in range(1, n - 1):
+        p0 = numpy.array([x_n[i - 1], y_n[i - 1]])
+        p1 = numpy.array([x_n[i], y_n[i]])
+        p2 = numpy.array([x_n[i + 1], y_n[i + 1]])
+        v1 = p1 - p0
+        v2 = p2 - p1
+        area = abs(v1[0] * v2[1] - v1[1] * v2[0]) / 2.0
+        a = numpy.linalg.norm(p2 - p1)
+        b = numpy.linalg.norm(p0 - p2)
+        c = numpy.linalg.norm(p1 - p0)
+        if a * b * c > 1e-10:
+            curvature[i] = 4 * area / (a * b * c)
+    if n > 2:
+        curvature[0] = curvature[1]
+        curvature[-1] = curvature[-2]
+    return int(numpy.argmax(curvature))
+
+
+# ........................................................................
+#
+def find_optimal_theta(x_values, y_values, method="perpendicular"):
+    """Select the L-curve knee from two paired metric arrays.
+
+    Generic knee-finder shared by BME's ``theta_scan`` (chi-squared vs.
+    relative entropy across theta) and COPER's ``chi2_limit_scan``
+    (chi-squared vs. relative entropy across the chi-squared limit).
+
+    Parameters
+    ----------
+    x_values : numpy.ndarray
+        First metric per scan point (e.g. final chi-squared).
+    y_values : numpy.ndarray
+        Second metric per scan point (e.g. relative entropy).
+    method : str, optional
+        ``"perpendicular"`` (default) or ``"curvature"``.
+
+    Returns
+    -------
+    tuple
+        ``(optimal_idx, method_name)``.
+
+    Raises
+    ------
+    SSException
+        If ``method`` is unknown.
+    """
+    if method == "curvature":
+        return _find_knee_curvature(x_values, y_values), "Menger curvature"
+    elif method == "perpendicular":
+        return _find_knee_perpendicular(x_values, y_values), "Perpendicular distance"
+    raise SSException(
+        f"Unknown method: {method}, must be 'curvature' or 'perpendicular'"
+    )
+
+
+# ........................................................................
+#
+def validate_reweighting_inputs(observables, calculated_values, initial_weights):
+    """Validate constructor arguments shared by the reweighter classes.
+
+    Used by :class:`soursop.ssbme.BME` / ``iBME`` and
+    :class:`soursop.sscoper.COPER` / ``iCOPER``.
+
+    Parameters
+    ----------
+    observables : list of ExperimentalObservable
+        Experimental observables (non-empty).
+    calculated_values : numpy.ndarray
+        Per-frame calculated values, shape ``(n_frames, n_observables)``.
+    initial_weights : numpy.ndarray or None
+        Optional prior weights, one per frame.
+
+    Raises
+    ------
+    SSException
+        If any argument is malformed or dimensions are inconsistent.
+    """
+    if not isinstance(observables, (list, tuple)) or len(observables) == 0:
+        raise SSException("observables must be a non-empty list")
+    if not all(isinstance(obs, ExperimentalObservable) for obs in observables):
+        raise SSException("All observables must be ExperimentalObservable instances")
+    if not isinstance(calculated_values, numpy.ndarray):
+        raise SSException("calculated_values must be a numpy array")
+    if calculated_values.ndim != 2:
+        raise SSException("calculated_values must be 2D (n_frames, n_observables)")
+    if calculated_values.shape[1] != len(observables):
+        raise SSException(
+            f"Number of observables ({len(observables)}) must match "
+            f"calculated_values columns ({calculated_values.shape[1]})"
+        )
+    if initial_weights is not None:
+        if not isinstance(initial_weights, numpy.ndarray):
+            raise SSException("initial_weights must be a numpy array")
+        if len(initial_weights) != calculated_values.shape[0]:
+            raise SSException("initial_weights length must match number of frames")
+
+
+# ........................................................................
+#
+def constraint_chi_squared(weights, calculated_values, observables, indices=None):
+    """Constraint-aware reduced chi-squared for a weight vector.
+
+    ``equality`` observables always penalize deviations; ``upper`` /
+    ``lower`` only penalize the disallowed side. Shared by BME (total
+    chi-squared) and COPER (per-data-type chi-squared via ``indices``).
+
+    Parameters
+    ----------
+    weights : numpy.ndarray
+        Frame weights, shape ``(n_frames,)``.
+    calculated_values : numpy.ndarray
+        Per-frame calculated values, shape ``(n_frames, n_observables)``.
+    observables : list of ExperimentalObservable
+        The experimental observables (columns of ``calculated_values``).
+    indices : sequence of int, optional
+        Restrict the chi-squared to this subset of observable columns
+        (used for COPER per-group constraints). Defaults to all columns.
+
+    Returns
+    -------
+    float
+        Mean of ``(diff / sigma)^2`` over the selected observables.
+    """
+    if indices is None:
+        indices = range(len(observables))
+    else:
+        indices = list(indices)
+
+    chi_squared = 0.0
+    count = 0
+    for idx in indices:
+        obs = observables[idx]
+        calc_avg = numpy.sum(calculated_values[:, idx] * weights)
+        diff = calc_avg - obs.value
+        if obs.constraint == "equality":
+            penalize = True
+        elif obs.constraint == "upper":
+            penalize = diff > 0
+        else:  # "lower"
+            penalize = diff < 0
+        if penalize:
+            chi_squared += (diff / obs.uncertainty) ** 2
+        count += 1
+    return chi_squared / count
