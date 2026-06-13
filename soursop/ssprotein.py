@@ -58,7 +58,9 @@ class SSProtein:
 
     # ........................................................................
     #
-    def __init__(self, traj, debug=DEBUGGING, check_one_bead_per_residue=True):
+    def __init__(
+        self, traj, debug=DEBUGGING, check_one_bead_per_residue=True, swan=False
+    ):
         """SSProtein objects are initialized with a trajectory subset that
         contains only the atoms a specific, single protein. This means that a
         SSProtein object allows operations to performed on a single protein. A
@@ -100,6 +102,16 @@ class SSProtein:
             makes sense as a 1 bead per residue (number of atoms = number of amino
             acids) and if yes initialize accordingly.
 
+        swan: bool {False}
+            If set to `True` this protein is treated as a SWAN 2-bead (CA
+            backbone / CB sidechain) coarse-grained model. This switches
+            sidechain-vector analyses to use the CA->CB vector for every residue
+            and secondary-structure analysis to use CA/CB idealized-helix and
+            idealized-beta geometry (since SWAN lacks the N/C/O backbone atoms
+            that DSSP and backbone dihedrals require). Normally this is set
+            automatically by ``sstrajectory.SSTrajectory`` when it detects a SWAN
+            topology on load.
+
         """
 
         # This is necessary to support sstrajectory.Trajectory as well as the default `mdtraj`.
@@ -137,6 +149,13 @@ class SSProtein:
         # remember the constructor's CG-detection preference so that
         # reset_cache() can reproduce an identical initialization later
         self.__check_one_bead_per_residue = check_one_bead_per_residue
+
+        # remember whether this is a SWAN 2-bead (CA/CB) coarse-grained model.
+        # SWAN proteins are NOT one-bead-per-residue (they carry a CB for every
+        # non-glycine residue), so they flow through the normal all-atom
+        # initialization path; this flag only switches the behaviour of
+        # sidechain-vector and secondary-structure analyses.
+        self.__swan = bool(swan)
 
         ## DEVELOPMENT NOTES
         # Everything set up by __initialize_memoization_and_topology() is the
@@ -274,6 +293,26 @@ class SSProtein:
         """
 
         return self.__ccap
+
+    @property
+    def is_swan(self):
+        """True if this protein is a SWAN 2-bead (CA/CB) coarse-grained model.
+
+        When True, sidechain-vector analyses use the CA->CB vector for every
+        residue and secondary structure is assigned from CA/CB idealized
+        geometry rather than DSSP / backbone dihedrals (which SWAN lacks the
+        atoms for).
+
+        Returns
+        -------
+        bool
+
+        Example
+        -------
+        >>> protein.is_swan
+        True
+        """
+        return self.__swan
 
     @property
     def n_frames(self):
@@ -3515,6 +3554,14 @@ class SSProtein:
         >>> chi5[1][1]                  # per-frame chi5 angles for that residue
         """
 
+        # SWAN 2-bead models carry only CA/CB beads, so the N/C/O backbone
+        # atoms (phi/psi/omega) and sidechain heavy atoms (chi1-chi5) needed to
+        # define these dihedrals do not exist.
+        if self.__swan:
+            raise SSException(
+                "get_angles() is not defined for SWAN coarse-grained models: backbone (phi/psi/omega) and sidechain (chi1-chi5) dihedrals require N/C/O backbone and sidechain heavy atoms that the CA/CB SWAN representation does not contain."
+            )
+
         # check input ketword selector
         ssutils.validate_keyword_option(
             angle_name,
@@ -4685,16 +4732,26 @@ class SSProtein:
             resname_1 = self.get_amino_acid_sequence(numbered=False)[R1]
             resname_1 = sstools.fix_histadine_name(resname_1)
 
-            try:
-                sidechain_atom_1 = DEFAULT_SIDECHAIN_VECTOR_ATOMS[resname_1]
-
-                if sidechain_atom_1 == "ERROR":
+            # In a SWAN 2-bead model the only sidechain bead is CB, so the
+            # sidechain vector is the CA->CB vector for every residue. Glycine
+            # carries no CB and therefore has no sidechain vector.
+            if self.__swan:
+                if resname_1 == "GLY":
                     raise SSException(f"Residue lacks a valid sidechain ({resname_1})")
+                sidechain_atom_1 = "CB"
+            else:
+                try:
+                    sidechain_atom_1 = DEFAULT_SIDECHAIN_VECTOR_ATOMS[resname_1]
 
-            except KeyError:
-                raise SSException(
-                    f"Cannot parse residue at position {R1} (residue name = {resname_1}) "
-                )
+                    if sidechain_atom_1 == "ERROR":
+                        raise SSException(
+                            f"Residue lacks a valid sidechain ({resname_1})"
+                        )
+
+                except KeyError:
+                    raise SSException(
+                        f"Cannot parse residue at position {R1} (residue name = {resname_1}) "
+                    )
         else:
             raise SSException(
                 'Unsupported sidechain atom name: "%s". Please use: "default".'
@@ -4705,16 +4762,23 @@ class SSProtein:
             resname_2 = self.get_amino_acid_sequence(numbered=False)[R2]
             resname_2 = sstools.fix_histadine_name(resname_2)
 
-            try:
-                sidechain_atom_2 = DEFAULT_SIDECHAIN_VECTOR_ATOMS[resname_2]
-
-                if sidechain_atom_2 == "ERROR":
+            if self.__swan:
+                if resname_2 == "GLY":
                     raise SSException(f"Residue lacks a valid sidechain ({resname_2})")
+                sidechain_atom_2 = "CB"
+            else:
+                try:
+                    sidechain_atom_2 = DEFAULT_SIDECHAIN_VECTOR_ATOMS[resname_2]
 
-            except KeyError:
-                raise SSException(
-                    f"Cannot parse residue at position {R2} (residue name = {resname_2}) "
-                )
+                    if sidechain_atom_2 == "ERROR":
+                        raise SSException(
+                            f"Residue lacks a valid sidechain ({resname_2})"
+                        )
+
+                except KeyError:
+                    raise SSException(
+                        f"Cannot parse residue at position {R2} (residue name = {resname_2}) "
+                    )
         else:
             raise SSException(
                 'Unsupported sidechain atom name: "%s". Please use: "default".'
@@ -4821,6 +4885,14 @@ class SSProtein:
         ## ..................................................
         ## SAFETY FIRST!
         ##
+        # SWAN 2-bead models lack the backbone/sidechain atoms required to
+        # define phi/psi/omega/chi dihedrals, so dihedral mutual information is
+        # undefined.
+        if self.__swan:
+            raise SSException(
+                "get_dihedral_mutual_information() is not defined for SWAN coarse-grained models: the underlying phi/psi/omega/chi dihedrals require N/C/O backbone and sidechain heavy atoms that the CA/CB SWAN representation does not contain."
+            )
+
         # verify binwidth input values
         if bwidth > 2 * np.pi or not (bwidth > 0):
             raise SSException(
@@ -5146,8 +5218,112 @@ class SSProtein:
     # ........................................................................
     #
     #
+    def __swan_secondary_structure(
+        self,
+        R1_real,
+        R2_real,
+        helix_window,
+        helix_rmsd_thresh,
+        beta_window,
+        beta_rmsd_thresh,
+    ):
+        """Assign per-frame secondary structure for a SWAN model from the CA trace.
+
+        SWAN 2-bead (CA/CB) models lack the N/C/O backbone atoms that DSSP and
+        backbone dihedrals require, so secondary structure is assigned purely
+        from the CA coordinates by comparison against idealized templates.
+
+        * Helix: a residue is helical in a frame if it falls inside any
+          ``helix_window``-length CA fragment whose minimal-RMSD superposition
+          onto an idealized SWAN alpha-helix (``ssutils.ideal_helix_ca``) is
+          below ``helix_rmsd_thresh`` Angstroms.
+        * Extended/beta: identically, against an idealized extended strand
+          (``ssutils.ideal_extended_ca``) with its own ``beta_window`` /
+          ``beta_rmsd_thresh``.
+        * Each residue is judged independently (it is helical / extended if it
+          participates in any qualifying fragment); there is no contiguous-region
+          post-processing. Helix takes precedence over beta; everything else is coil.
+
+        Parameters
+        ----------
+        R1_real, R2_real : int
+            First and last (inclusive) residue indices of the region.
+        helix_window, beta_window : int
+            Number of consecutive CA beads in the idealized-helix / idealized-beta
+            comparison fragments.
+        helix_rmsd_thresh, beta_rmsd_thresh : float
+            RMSD cutoff (Angstroms) below which a CA fragment is helical / extended.
+
+        Returns
+        -------
+        numpy.ndarray
+            Array of shape ``(n_frames, n_residues)`` of single-character
+            'H' / 'E' / 'C' codes, matching the layout of ``mdtraj.compute_dssp``.
+        """
+
+        # CA coordinates (Angstroms) for the selected residue range, shape
+        # (n_frames, n_res, 3). Every SWAN residue (including glycine) has a CA.
+        ca_atoms = self.topology.select(f'resid {R1_real} to {R2_real} and name "CA"')
+        ca = self.traj.xyz[:, ca_atoms, :] * 10.0
+        n_frames = ca.shape[0]
+        n_res = ca.shape[1]
+
+        helix = np.zeros((n_frames, n_res), dtype=bool)
+        extended = np.zeros((n_frames, n_res), dtype=bool)
+
+        # idealized templates for the comparison windows (None if the window does
+        # not fit within the selected region)
+        WH = int(helix_window)
+        WE = int(beta_window)
+        helix_template = (
+            ssutils.ideal_helix_ca(WH) if (WH >= 3 and n_res >= WH) else None
+        )
+        beta_template = (
+            ssutils.ideal_extended_ca(WE) if (WE >= 3 and n_res >= WE) else None
+        )
+
+        for f in range(n_frames):
+            frame = ca[f]
+
+            # helix: slide the idealized-helix fragment along the CA trace
+            if helix_template is not None:
+                for s in range(n_res - WH + 1):
+                    if (
+                        ssutils.kabsch_rmsd(frame[s : s + WH], helix_template)
+                        < helix_rmsd_thresh
+                    ):
+                        helix[f, s : s + WH] = True
+
+            # extended/beta: slide the idealized-extended fragment along the trace
+            if beta_template is not None:
+                for s in range(n_res - WE + 1):
+                    if (
+                        ssutils.kabsch_rmsd(frame[s : s + WE], beta_template)
+                        < beta_rmsd_thresh
+                    ):
+                        extended[f, s : s + WE] = True
+
+        # helix wins ties over beta
+        extended = np.logical_and(extended, np.logical_not(helix))
+
+        dssp = np.full((n_frames, n_res), "C", dtype="<U1")
+        dssp[helix] = "H"
+        dssp[extended] = "E"
+        return dssp
+
+    # ........................................................................
+    #
     def get_secondary_structure_DSSP(
-        self, R1=None, R2=None, return_per_frame=False, weights=False, etol=0.0000001
+        self,
+        R1=None,
+        R2=None,
+        return_per_frame=False,
+        weights=False,
+        etol=0.0000001,
+        helix_window=10,
+        helix_rmsd_thresh=0.5,
+        beta_window=5,
+        beta_rmsd_thresh=0.6,
     ):
         """Per-residue secondary structure (helix / extended / coil) via DSSP.
 
@@ -5157,6 +5333,16 @@ class SSProtein:
 
         The three buckets are H (helix), E (extended/beta), C (coil). At
         every residue the three values sum to 1 (default mode).
+
+        **SWAN models:** for a SWAN 2-bead (CA/CB) protein DSSP cannot be used
+        (there is no N/C/O backbone), so secondary structure is assigned from
+        the CA trace instead. A residue is helical in a frame if it falls inside
+        any ``helix_window``-length CA fragment whose RMSD to an idealized SWAN
+        alpha-helix is below ``helix_rmsd_thresh`` (Angstroms), and extended
+        (beta) if it falls inside any ``beta_window``-length fragment matching an
+        idealized extended strand within ``beta_rmsd_thresh`` (Angstroms). The
+        ``helix_window`` / ``helix_rmsd_thresh`` / ``beta_window`` /
+        ``beta_rmsd_thresh`` arguments are ignored for non-SWAN proteins.
 
         Parameters
         ----------
@@ -5179,6 +5365,18 @@ class SSProtein:
             Default ``False`` (unweighted).
         etol : float, optional
             Tolerance on ``|sum(weights) - 1|``. Default ``1e-7``.
+        helix_window : int, optional
+            (SWAN only) Number of consecutive CA beads in the idealized-helix
+            comparison fragment. Default ``10``. Ignored for non-SWAN proteins.
+        helix_rmsd_thresh : float, optional
+            (SWAN only) RMSD cutoff (Angstroms) below which a CA fragment is
+            classed helical. Default ``0.5``. Ignored for non-SWAN proteins.
+        beta_window : int, optional
+            (SWAN only) Number of consecutive CA beads in the idealized-extended
+            comparison fragment. Default ``5``. Ignored for non-SWAN proteins.
+        beta_rmsd_thresh : float, optional
+            (SWAN only) RMSD cutoff (Angstroms) below which a CA fragment is
+            classed extended/beta. Default ``0.6``. Ignored for non-SWAN proteins.
 
         Returns
         -------
@@ -5219,8 +5417,22 @@ class SSProtein:
                 "not a re-weighted ensemble average)."
             )
 
-        # compute DSSP over the selected subtrajectory
-        dssp_data = md.compute_dssp(ats)
+        # compute the per-frame per-residue secondary structure assignment. For
+        # SWAN models this comes from the CA-trace idealized-helix / idealized-beta
+        # detector; for everything else from mdtraj's DSSP. Both return an
+        # (n_frames, n_residues) array of single-character 'H' / 'E' / 'C' codes,
+        # so the downstream collapsing logic is identical.
+        if self.__swan:
+            dssp_data = self.__swan_secondary_structure(
+                R1_real,
+                R2_real,
+                helix_window,
+                helix_rmsd_thresh,
+                beta_window,
+                beta_rmsd_thresh,
+            )
+        else:
+            dssp_data = md.compute_dssp(ats)
         reslist = list(range(R1_real, R2_real + 1))
 
         C_vector = []
@@ -5327,6 +5539,15 @@ class SSProtein:
         >>> classes[4].mean()    # mean right-handed-alpha occupancy across chain
 
         """
+
+        # SWAN 2-bead models lack the N/C backbone atoms needed to compute the
+        # phi/psi angles that the BBSEG2 classification is built on. Use
+        # get_secondary_structure_DSSP() (which has a SWAN-specific CA/CB path)
+        # instead.
+        if self.__swan:
+            raise SSException(
+                "get_secondary_structure_BBSEG() is not defined for SWAN coarse-grained models: it classifies phi/psi angles, which require N/C backbone atoms that the CA/CB SWAN representation does not contain. Use get_secondary_structure_DSSP() instead (it has a SWAN-aware CA/CB path)."
+            )
 
         # build R1/R2 values - NOTE that for BBSEG because we compute from PHI/PSI angles
         # we don't need to specify withCA becayse phi/psi are oNLY between valid peptide

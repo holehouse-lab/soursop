@@ -856,3 +856,198 @@ def constraint_chi_squared(weights, calculated_values, observables, indices=None
             chi_squared += (diff / obs.uncertainty) ** 2
         count += 1
     return chi_squared / count
+
+
+## ------------------------------------------------------------------------
+##
+## SWAN (2-bead CA/CB coarse-grained model) support
+##
+## The constants and ideal-helix geometry below are vendored from the SWAN
+## package (``swan/helix.py`` and ``swan/trajectory.py``) so that SOURSOP can
+## detect SWAN trajectories and assign secondary structure from the CA trace
+## *without* taking a runtime dependency on the ``swan`` package. If SWAN ever
+## changes its ideal alpha-helix parameters these must be kept in sync.
+
+# Ideal alpha-helix parameters (see swan/helix.py)
+SWAN_HELIX_RISE = 1.5  # angstrom per residue along the axis
+SWAN_HELIX_TWIST_DEG = 100.0  # degrees per residue (3.6 residues / turn)
+SWAN_HELIX_CA_RADIUS = 2.3  # angstrom of Calpha from the helix axis
+
+# Ideal extended (beta) strand parameters. SWAN does not generate beta, so there
+# is no SWAN reference geometry; these describe a canonical pleated extended CA
+# strand: a virtual CA-CA bond of ~3.8 A with a CA(i)..CA(i+2) span of ~6.8 A
+# (clearly distinct from the ~5.4 A helical value). Modelled as a planar zigzag
+# with axial spacing SWAN_BETA_AXIAL and transverse amplitude SWAN_BETA_AMPLITUDE.
+SWAN_BETA_AXIAL = 3.4  # angstrom along the strand axis (half of CA(i)..CA(i+2))
+SWAN_BETA_AMPLITUDE = 1.70  # angstrom transverse pleat amplitude
+
+
+def is_swan_topology(topology):
+    """Return ``True`` if a topology is a SWAN 2-bead (CA/CB) coarse-grained model.
+
+    A SWAN topology represents every residue with a single backbone ``CA`` bead
+    and (for every residue except glycine) a single sidechain ``CB`` bead. This
+    is distinct from SOURSOP's existing one-bead-per-residue coarse-grained model
+    (``CA`` only), which is why the presence of at least one ``CB`` bead is
+    required.
+
+    The check is intentionally strict: every atom in the topology must be named
+    ``CA`` or ``CB``, every residue must contain exactly one ``CA``, and every
+    residue must contain exactly one ``CB`` unless it is glycine (which must have
+    none).
+
+    Parameters
+    ----------
+    topology : mdtraj.Topology
+        The topology to inspect.
+
+    Returns
+    -------
+    bool
+        ``True`` if the topology matches the SWAN 2-bead model, ``False``
+        otherwise.
+
+    Example
+    -------
+    >>> is_swan_topology(traj.topology)
+    True
+    """
+
+    n_cb_total = 0
+    for residue in topology.residues:
+        n_ca = 0
+        n_cb = 0
+        for atom in residue.atoms:
+            if atom.name == "CA":
+                n_ca += 1
+            elif atom.name == "CB":
+                n_cb += 1
+            else:
+                # any non-CA/CB atom immediately disqualifies the topology
+                return False
+
+        # every residue must have exactly one CA
+        if n_ca != 1:
+            return False
+
+        # glycine carries no sidechain bead; everything else carries exactly one
+        if residue.name == "GLY":
+            if n_cb != 0:
+                return False
+        else:
+            if n_cb != 1:
+                return False
+
+        n_cb_total += n_cb
+
+    # a topology with no CB at all is the existing CA-only 1-bead CG model, not SWAN
+    return n_cb_total > 0
+
+
+def ideal_helix_ca(
+    n, rise=SWAN_HELIX_RISE, twist_deg=SWAN_HELIX_TWIST_DEG, radius=SWAN_HELIX_CA_RADIUS
+):
+    """Ideal alpha-helix Calpha coordinates about the +z axis.
+
+    Vendored from ``swan.helix.ideal_helix_ca``. Generates the Calpha trace of
+    an idealized SWAN alpha-helix, which is used as the reference fragment when
+    detecting helicity from a CA-only coarse-grained trajectory.
+
+    Parameters
+    ----------
+    n : int
+        Number of consecutive Calpha beads to generate.
+    rise : float, optional
+        Rise per residue along the helix axis, in Angstroms. Default ``1.5``.
+    twist_deg : float, optional
+        Twist per residue, in degrees. Default ``100.0`` (3.6 residues/turn).
+    radius : float, optional
+        Radius of the Calpha from the helix axis, in Angstroms. Default ``2.3``.
+
+    Returns
+    -------
+    numpy.ndarray
+        Array of shape ``(n, 3)`` of ideal Calpha coordinates in Angstroms.
+
+    Example
+    -------
+    >>> ideal_helix_ca(4).shape
+    (4, 3)
+    """
+
+    t = numpy.radians(twist_deg)
+    i = numpy.arange(n, dtype=numpy.float64)
+    return numpy.column_stack(
+        [radius * numpy.cos(i * t), radius * numpy.sin(i * t), rise * i]
+    )
+
+
+def ideal_extended_ca(n, axial=SWAN_BETA_AXIAL, amplitude=SWAN_BETA_AMPLITUDE):
+    """Idealized extended (beta) strand Calpha coordinates.
+
+    Generates the Calpha trace of a canonical planar pleated extended strand,
+    used as the reference fragment when detecting beta content from a CA-only
+    coarse-grained trajectory. The default geometry gives a virtual CA-CA bond
+    of ~3.8 Angstrom and a CA(i)..CA(i+2) span of ~6.8 Angstrom.
+
+    Parameters
+    ----------
+    n : int
+        Number of consecutive Calpha beads to generate.
+    axial : float, optional
+        Spacing along the strand axis, in Angstroms (half of the CA(i)..CA(i+2)
+        span). Default ``3.4``.
+    amplitude : float, optional
+        Transverse pleat amplitude, in Angstroms. Default ``1.70``.
+
+    Returns
+    -------
+    numpy.ndarray
+        Array of shape ``(n, 3)`` of ideal extended-strand Calpha coordinates.
+
+    Example
+    -------
+    >>> ideal_extended_ca(5).shape
+    (5, 3)
+    """
+
+    i = numpy.arange(n, dtype=numpy.float64)
+    x = i * axial
+    y = (i.astype(numpy.int64) % 2) * amplitude
+    z = numpy.zeros(n, dtype=numpy.float64)
+    return numpy.column_stack([x, y, z])
+
+
+def kabsch_rmsd(P, Q):
+    """Minimal root-mean-square deviation between two point sets after optimal superposition.
+
+    Computes the optimal rigid (rotation + translation) alignment of ``P`` onto
+    ``Q`` via the Kabsch algorithm and returns the resulting RMSD. Used to score
+    how closely a fragment of a CA trace matches an idealized alpha-helix.
+
+    Parameters
+    ----------
+    P : numpy.ndarray
+        Array of shape ``(K, 3)`` -- the mobile point set.
+    Q : numpy.ndarray
+        Array of shape ``(K, 3)`` -- the reference point set.
+
+    Returns
+    -------
+    float
+        The minimal RMSD (same units as the inputs) after optimal superposition.
+
+    Example
+    -------
+    >>> float(kabsch_rmsd(ideal_helix_ca(5), ideal_helix_ca(5)))
+    0.0
+    """
+
+    Pc = P - P.mean(axis=0)
+    Qc = Q - Q.mean(axis=0)
+    h = Pc.T @ Qc
+    u, _, vt = numpy.linalg.svd(h)
+    d = numpy.sign(numpy.linalg.det(vt.T @ u.T))
+    rot = vt.T @ numpy.diag([1.0, 1.0, d]) @ u.T
+    Pr = Pc @ rot.T
+    return float(numpy.sqrt(((Pr - Qc) ** 2).sum() / len(P)))

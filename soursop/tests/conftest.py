@@ -16,6 +16,11 @@ ALL_RESIDUES_FILES = ["all_residues_AA.pdb", "all_residues_AA.xtc"]
 GROMACS_1_CHAIN = ["gromacs1chain/top.pdb", "gromacs1chain/traj.xtc"]
 GROMACS_2_CHAINS = ["gromacs2chains/top.pdb", "gromacs2chains/traj.xtc"]
 
+# SWAN 2-bead (CA/CB) coarse-grained trajectories
+SWAN_HELIX_FILES = ["swan_trajectories/helix.pdb", "swan_trajectories/helix.xtc"]
+SWAN_ASH1_FILES = ["swan_trajectories/Ash1.pdb", "swan_trajectories/Ash1.xtc"]
+SWAN_ASYN_FILES = ["swan_trajectories/alpha_syn.pdb", "swan_trajectories/alpha_syn.xtc"]
+
 
 test_data_dir = soursop.get_data("test_data")
 
@@ -134,3 +139,36 @@ class ProteinHelper:
 @pytest.fixture(scope="session", autouse=True)
 def cta_protein_helper():
     return ProteinHelper
+
+
+# ----------------------------------------------------------------------------
+# SWAN 2-bead (CA/CB) coarse-grained fixtures
+# ----------------------------------------------------------------------------
+@pytest.fixture(scope="session")
+def SWAN_HELIX_CO(request):
+    return _load_traj(SWAN_HELIX_FILES)
+
+
+@pytest.fixture(scope="session")
+def SWAN_HELIX_CP(SWAN_HELIX_CO):
+    return SWAN_HELIX_CO.proteinTrajectoryList[0]
+
+
+@pytest.fixture(scope="session")
+def SWAN_ASH1_CO(request):
+    return _load_traj(SWAN_ASH1_FILES)
+
+
+@pytest.fixture(scope="session")
+def SWAN_ASH1_CP(SWAN_ASH1_CO):
+    return SWAN_ASH1_CO.proteinTrajectoryList[0]
+
+
+@pytest.fixture(scope="session")
+def SWAN_ASYN_CO(request):
+    return _load_traj(SWAN_ASYN_FILES)
+
+
+@pytest.fixture(scope="session")
+def SWAN_ASYN_CP(SWAN_ASYN_CO):
+    return SWAN_ASYN_CO.proteinTrajectoryList[0]

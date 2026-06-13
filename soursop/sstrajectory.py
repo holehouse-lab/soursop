@@ -78,6 +78,7 @@ class SSTrajectory:
         extra_valid_residue_names=None,
         explicit_residue_checking=False,
         print_warnings=False,
+        swan_trajectory=None,
     ):
         """
         SSTrajectory is the class used to read in a work with simulation
@@ -115,6 +116,13 @@ class SSTrajectory:
         .traj : mdtraj.trajectory
             The underlying mdtraj.trajectory object enables any/all mdtraj analyses to be performed
             as one might want normally.
+
+        .swan_trajectory : bool
+            True if the trajectory was detected (or forced) to be a SWAN 2-bead
+            (CA backbone / CB sidechain) coarse-grained model. This is auto-detected
+            on load and propagated to every SSProtein in proteinTrajectoryList, which
+            switches sidechain-vector and secondary-structure analyses to SWAN-aware
+            CA/CB definitions.
 
 
         Parameters
@@ -186,6 +194,15 @@ class SSTrajectory:
             generated without CRYSTAL records, but is generally not an issue.
             Default = False
 
+        swan_trajectory : bool or None
+            Controls SWAN 2-bead (CA/CB) coarse-grained handling. If None
+            (default) SOURSOP auto-detects whether the topology is a SWAN model
+            (a single CA per residue plus a single CB per non-glycine residue,
+            and nothing else) on load. Pass True or False to force the behaviour
+            and skip auto-detection. The resulting value is stored as the
+            ``.swan_trajectory`` attribute and propagated to every SSProtein.
+            Default = None
+
         Example
         -----------
         Example of reading in an XTC trajectory file::
@@ -230,6 +247,15 @@ class SSTrajectory:
             self.traj = self.__readTrajectory(
                 trajectory_filename, pdb_filename, pdblead, print_warnings
             )
+
+        # determine whether this is a SWAN 2-bead (CA/CB) coarse-grained model.
+        # This is auto-detected from the topology unless explicitly forced via
+        # the swan_trajectory keyword, and must be resolved BEFORE the per-protein
+        # SSProtein objects are built so the flag can be threaded into them.
+        if swan_trajectory is None:
+            self.swan_trajectory = ssutils.is_swan_topology(self.traj.topology)
+        else:
+            self.swan_trajectory = bool(swan_trajectory)
 
         # Next, having read in the trajectory we parse out into proteins
         # extract a list of protein trajectories where each protein is assumed
@@ -483,7 +509,9 @@ class SSTrajectory:
 
                 protein_atoms.extend(local_atoms)
 
-        return SSProtein(trajectory.atom_slice(protein_atoms))
+        return SSProtein(
+            trajectory.atom_slice(protein_atoms), swan=self.swan_trajectory
+        )
 
     # oxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxo
     #
@@ -583,7 +611,7 @@ class SSTrajectory:
             # add that SSProtein to the ever-growing proteinTrajectory list. NOTE that
             # THIS is the line that is the source of most of the slowness for trajectory
             # loading....
-            proteinTrajectoryList.append(SSProtein(PT))
+            proteinTrajectoryList.append(SSProtein(PT, swan=self.swan_trajectory))
 
         if len(proteinTrajectoryList) == 0:
             ssio.warning_message("No protein chains found in the trajectory")
@@ -681,7 +709,7 @@ class SSTrajectory:
                     "After extracting a protein subtrajectory, the first resid is not 0. This may reflect a bug, or you may not be using MDTraj 1.9.5"
                 )
 
-            proteinTrajectoryList.append(SSProtein(PT))
+            proteinTrajectoryList.append(SSProtein(PT, swan=self.swan_trajectory))
 
         if len(proteinTrajectoryList) == 0:
             ssio.warning_message("No protein chains found in the trajectory")
