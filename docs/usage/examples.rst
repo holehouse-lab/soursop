@@ -141,6 +141,16 @@ deviation, e.g. heteropolymeric structure).
     plt.title('Per-residue α-helix propensity')
     plt.show()
 
+.. note::
+
+   For **SWAN** two-bead (``CA``/``CB``) coarse-grained trajectories,
+   ``get_secondary_structure_DSSP`` automatically assigns helix/β/coil
+   from the ``CA`` trace (DSSP itself needs the full backbone, which SWAN
+   does not have), so the call above works unchanged. The φ/ψ-based
+   functions in this section — ``get_secondary_structure_BBSEG`` and
+   ``get_angles`` — are *not* available for SWAN chains and raise an
+   ``SSException``.
+
 **BBSEG backbone-torsion classification** provides an 8-state assignment based on φ/ψ backbone dihedral regions, which is particularly useful for IDRs where the DSSP labels can be sparse or noisy::
 
     bbseg = protein.get_secondary_structure_BBSEG()
