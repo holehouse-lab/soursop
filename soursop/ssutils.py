@@ -1,4 +1,3 @@
-
 ##     _____  ____  _    _ _____   _____  ____  _____
 ##   / ____|/ __ \| |  | |  __ \ / ____|/ __ \|  __ \
 ##  | (___ | |  | | |  | | |__) | (___ | |  | | |__) |
@@ -24,8 +23,8 @@ from soursop.ssexceptions import SSException
 from threadpoolctl import threadpool_info, threadpool_limits
 
 
-MKL_LIBRARY = 'mkl_rt'
-OPENBLAS_LIBRARY = 'openblas'
+MKL_LIBRARY = "mkl_rt"
+OPENBLAS_LIBRARY = "openblas"
 
 
 def _set_mkl_numpy_threads(mkl_path, num_threads):
@@ -53,21 +52,22 @@ def _set_openblas_numpy_threads(openblas_path, num_threads):
 
 def _locate_libraries(library_name):
     import fnmatch
+
     # Since `threadctl` is hit or miss on a Mac (especially for the latest versions),
     # we implement a custom finder that examines the virtual environment to find
     # library path candidates.
     os_name = platform.system().lower()
-    if os_name == 'darwin':
-        libname = f'*{library_name}*.dylib*' # fuzzy match for filtering with find
-    elif os_name == 'linux':
-        libname = f'*{library_name}*.so*'  # fuzzy match for filtering with find
+    if os_name == "darwin":
+        libname = f"*{library_name}*.dylib*"  # fuzzy match for filtering with find
+    elif os_name == "linux":
+        libname = f"*{library_name}*.so*"  # fuzzy match for filtering with find
     else:
-        warnings.warn(f'Unsupported OS: {os_name}.')
+        warnings.warn(f"Unsupported OS: {os_name}.")
 
     # Checking existing environment variables and stop on the first match. The
     # basis for this approach is that only one should be active.
     virtualized_env = None
-    for env_var in 'CONDA_PREFIX,VIRTUAL_ENV'.split(','):
+    for env_var in "CONDA_PREFIX,VIRTUAL_ENV".split(","):
         env_path = os.environ.get(env_var, None)
         if env_path is not None:
             virtualized_env = env_path
@@ -76,7 +76,7 @@ def _locate_libraries(library_name):
     # If no virtual environment is active, terminate. Support for system-wide
     # Python installations is not yet supported.
     if virtualized_env is None:
-        raise SSException('No Anaconda or Python Virtual Environment found. Exiting.')
+        raise SSException("No Anaconda or Python Virtual Environment found. Exiting.")
 
     lib_locations = list()
     include_filenames = [libname]
@@ -103,7 +103,7 @@ def _identify_library_paths():
     for library in libraries:
         lib_paths = _locate_libraries(library)
         for lib_path in lib_paths:
-            numpy_path_fragment = os.path.join('site-packages', 'numpy') # os-agnostic
+            numpy_path_fragment = os.path.join("site-packages", "numpy")  # os-agnostic
             if numpy_path_fragment in lib_path:
                 candidates.append(lib_path)
             else:
@@ -124,9 +124,11 @@ def _set_numpy_threads(candidate_library_paths, num_threads):
             set_threads = _set_openblas_numpy_threads(lib_path, num_threads)
             library = OPENBLAS_LIBRARY
         else:
-            warnings.warn('Unsupported library. Please install OPENBLAS or the Intel MKL library. No threads set.')
-            library = 'unknown'
-        break # stop on first set library
+            warnings.warn(
+                "Unsupported library. Please install OPENBLAS or the Intel MKL library. No threads set."
+            )
+            library = "unknown"
+        break  # stop on first set library
     return set_threads, library
 
 
@@ -183,8 +185,9 @@ def set_numpy_threads(num_threads):
     # Currently only MKL is supported on Windows as it's installed alongside
     # the other packages via conda. A "traditional" virtual environment requires
     # access to a compiler and other libraries for successful compilation.
-    if platform.system().lower() == 'windows':
+    if platform.system().lower() == "windows":
         import mkl
+
         mkl.set_num_threads(num_threads)
         return mkl.get_max_threads(), MKL_LIBRARY
 
@@ -238,15 +241,21 @@ def validate_keyword_option(keyword, allowed_vals, keyword_name, error_message=N
     >>> validate_keyword_option('xyz', ['CA', 'COM'], 'mode')  # raises SSException
     """
 
-
     if keyword not in allowed_vals:
         message = None
         if error_message is None:
-            message = f'Keyword {keyword_name} passed value [{keyword}], but this is not valid.\nMust be one of :%s'  % (", ".join(allowed_vals))
+            message = (
+                f"Keyword {keyword_name} passed value [{keyword}], but this is not valid.\nMust be one of :%s"
+                % (", ".join(allowed_vals))
+            )
         else:
             error_type = type(error_message)
             if error_type is not str:
-                raise RuntimeError('Invalid error message type: "{}". The error message must be a string.'.format(error_type))
+                raise RuntimeError(
+                    'Invalid error message type: "{}". The error message must be a string.'.format(
+                        error_type
+                    )
+                )
             message = error_message[:]
         raise SSException(message)
 
@@ -345,6 +354,7 @@ def validate_weights(weights, n_frames, stride=1, etol=1e-7):
 
     if stride > 1:
         from soursop import ssio
+
         ssio.warning_message(
             "WARNING: Using stride with weights is ALMOST certainly not a good "
             "idea unless the weights are\ncalculated for every stride-th frame. "

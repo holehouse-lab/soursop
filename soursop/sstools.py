@@ -1,9 +1,9 @@
-##     _____  ____  _    _ _____   _____  ____  _____  
-##   / ____|/ __ \| |  | |  __ \ / ____|/ __ \|  __ \ 
+##     _____  ____  _    _ _____   _____  ____  _____
+##   / ____|/ __ \| |  | |  __ \ / ____|/ __ \|  __ \
 ##  | (___ | |  | | |  | | |__) | (___ | |  | | |__) |
-##   \___ \| |  | | |  | |  _  / \___ \| |  | |  ___/ 
-##   ____) | |__| | |__| | | \ \ ____) | |__| | |     
-##  |_____/ \____/ \____/|_|  \_\_____/ \____/|_|     
+##   \___ \| |  | | |  | |  _  / \___ \| |  | |  ___/
+##   ____) | |__| | |__| | | \ \ ____) | |__| | |
+##  |_____/ \____/ \____/|_|  \_\_____/ \____/|_|
 
 ## Alex Holehouse (Pappu Lab and Holehouse Lab) and Jared Lalmansingh (Pappu lab)
 ## Simulation analysis package
@@ -20,7 +20,6 @@ that are shared by the higher-level analysis modules. None of these
 functions hold state; they operate purely on their arguments.
 """
 
-
 import numpy as np
 from soursop.ssexceptions import SSException
 from soursop import ssutils
@@ -28,6 +27,7 @@ from typing import Union, List
 import os
 from natsort import natsorted
 import pathlib
+
 
 # ........................................................................
 #
@@ -59,11 +59,10 @@ def chunks(l, n):
     [[1, 2], [3, 4]]
     """
 
-
-    maxval = int(round(len(l) - len(l)%n))
+    maxval = int(round(len(l) - len(l) % n))
 
     for i in range(0, maxval, int(n)):
-        yield l[i:i + n]
+        yield l[i : i + n]
 
 
 # ........................................................................
@@ -97,9 +96,9 @@ def fix_histadine_name(name):
     >>> fix_histadine_name('ALA')
     'ALA'
     """
-    
-    if name == 'HIE' or name == 'HID' or name == 'HIP':
-        return 'HIS'
+
+    if name == "HIE" or name == "HID" or name == "HIP":
+        return "HIS"
     else:
         return name
 
@@ -138,13 +137,13 @@ def find_nearest(array, target):
     >>> find_nearest(np.array([0.0, 1.0, 2.0, 3.0]), 2.2)
     (2, 2.0)
     """
-    idx = (np.abs(array-target)).argmin()
-    return (idx,array[idx])
+    idx = (np.abs(array - target)).argmin()
+    return (idx, array[idx])
 
 
 # ........................................................................
 #
-def powermodel(X, nu, R0):            
+def powermodel(X, nu, R0):
     """Evaluate the polymer-scaling power law ``R0 * X**nu``.
 
     Implements the standard polymer-physics scaling relationship used
@@ -174,12 +173,12 @@ def powermodel(X, nu, R0):
     >>> powermodel(4, 0.5, 5.5)
     11.0
     """
-    return R0*np.power(X,nu)
+    return R0 * np.power(X, nu)
 
 
 # ------------------------------------------------------------------
 #
-def get_distance_periodic(distance1, distance2, box_size, box_shape='cube'):
+def get_distance_periodic(distance1, distance2, box_size, box_shape="cube"):
     """Pairwise point distances under the minimum-image convention.
 
     Computes, for two equal-length arrays of 3D coordinates, the distance
@@ -232,17 +231,18 @@ def get_distance_periodic(distance1, distance2, box_size, box_shape='cube'):
     """
 
     if len(distance1) != len(distance2):
-        raise SSException('The two distance vectors in get_distance_periodic() must be the same length')
+        raise SSException(
+            "The two distance vectors in get_distance_periodic() must be the same length"
+        )
 
-    ssutils.validate_keyword_option(box_shape, ['cube'], 'box_shape')
+    ssutils.validate_keyword_option(box_shape, ["cube"], "box_shape")
 
-    
     if len(distance1) != len(distance2):
-        raise SSException('The two distance vectors in get_distance_periodic() must be the same length')
-        
+        raise SSException(
+            "The two distance vectors in get_distance_periodic() must be the same length"
+        )
 
-
-    # should rewrite in cython at some point... 
+    # should rewrite in cython at some point...
     distances = []
     for idx in range(len(distance1)):
         c1 = distance1[idx]
@@ -255,7 +255,8 @@ def get_distance_periodic(distance1, distance2, box_size, box_shape='cube'):
 
         distances.append(np.linalg.norm(delta))
 
-    return distances       
+    return distances
+
 
 # ------------------------------------------------------------------
 #
@@ -264,7 +265,8 @@ def find_trajectory_files(
     num_replicates: int,
     exclude_dirs: Union[None, List] = ["eq", "FULL"],
     traj_name: str = "__traj.xtc",
-    top_name: str = "__START.pdb"):
+    top_name: str = "__START.pdb",
+):
     """Discover matching trajectory/topology file pairs in a directory tree.
 
     Walks ``root_dir`` recursively and collects paired trajectory and
@@ -317,19 +319,18 @@ def find_trajectory_files(
     traj_files = []
     start_files = []
     dir_dict = {}
-    
+
     for dirpath, dirnames, filenames in os.walk(os.path.abspath(root_dir)):
-      
         if any(d in exclude_dirs for d in dirnames):
             # exclude directories in exclude_dirs
             dirnames[:] = [d for d in dirnames if d not in exclude_dirs]
-            
+
         if dirpath.endswith(tuple(str(i) for i in range(0, num_replicates + 1))):
             # extract the parent directory name
             parent_dirname = os.path.basename(os.path.dirname(dirpath))
             traj_file = os.path.join(dirpath, f"{traj_name}")
             start_file = os.path.join(dirpath, f"{top_name}")
-            
+
             if os.path.isfile(traj_file) and os.path.isfile(start_file):
                 if parent_dirname not in dir_dict:
                     # create a new list for the current parent directory name
@@ -337,7 +338,6 @@ def find_trajectory_files(
                 dir_dict[parent_dirname].append((traj_file, start_file))
 
     for parent_dirname in natsorted(dir_dict.keys()):
-      
         # sort the list of files for the current parent directory name
         sorted_files = natsorted(dir_dict[parent_dirname])
         for traj_file, start_file in sorted_files:

@@ -43,10 +43,10 @@ ATOL = 1e-4
 # from the leaf comparison. Other meta keys (R1, R2, save_stride, ...) are
 # compared because they parameterise the observables themselves.
 META_VERSION_KEYS = {
-    'soursop_version',
-    'mdtraj_version',
-    'numpy_version',
-    'python_version',
+    "soursop_version",
+    "mdtraj_version",
+    "numpy_version",
+    "python_version",
 }
 
 
@@ -58,18 +58,18 @@ def _spec_id(spec: dict) -> str:
 
 
 def _load_protein(name: str, resolution: str):
-    pdb = soursop.get_data(f'test_data/{name}_{resolution}.pdb')
-    xtc = soursop.get_data(f'test_data/{name}_{resolution}.xtc')
+    pdb = soursop.get_data(f"test_data/{name}_{resolution}.pdb")
+    xtc = soursop.get_data(f"test_data/{name}_{resolution}.xtc")
     return SSTrajectory(xtc, pdb).proteinTrajectoryList[0]
 
 
 def _load_stored_reference(name: str, resolution: str) -> dict:
-    path = soursop.get_data(f'test_data/{name}_{resolution}_reference.pkl')
-    with open(path, 'rb') as f:
+    path = soursop.get_data(f"test_data/{name}_{resolution}_reference.pkl")
+    with open(path, "rb") as f:
         return pickle.load(f)
 
 
-def _walk_leaves(d: dict, prefix: str = '') -> Iterable[tuple[str, Any]]:
+def _walk_leaves(d: dict, prefix: str = "") -> Iterable[tuple[str, Any]]:
     for key, value in d.items():
         path = f"{prefix}.{key}" if prefix else str(key)
         if isinstance(value, dict):
@@ -87,7 +87,7 @@ def _get_by_path(d: dict, path: str) -> Any:
     member.
     """
     obj: Any = d
-    for part in path.split('.'):
+    for part in path.split("."):
         if not isinstance(obj, dict):
             raise KeyError(f"cannot descend into {type(obj).__name__} at '{part}'")
         if part in obj:
@@ -105,9 +105,9 @@ def _get_by_path(d: dict, path: str) -> Any:
 
 
 def _is_skipped_meta_path(path: str) -> bool:
-    if not path.startswith('meta.'):
+    if not path.startswith("meta."):
         return False
-    return path.split('.', 1)[1] in META_VERSION_KEYS
+    return path.split(".", 1)[1] in META_VERSION_KEYS
 
 
 def _compare_leaf(path: str, expected: Any, actual: Any) -> str | None:
@@ -122,7 +122,7 @@ def _compare_leaf(path: str, expected: Any, actual: Any) -> str | None:
             return f"[{path}] expected ndarray, got {type(actual).__name__}"
         if expected.shape != actual.shape:
             return f"[{path}] shape {expected.shape} != {actual.shape}"
-        if expected.dtype.kind in ('f', 'c'):
+        if expected.dtype.kind in ("f", "c"):
             try:
                 np.testing.assert_allclose(actual, expected, rtol=RTOL, atol=ATOL)
             except AssertionError as e:
@@ -184,18 +184,19 @@ def _compare_leaf(path: str, expected: Any, actual: Any) -> str | None:
 # -- fixtures ------------------------------------------------------------------
 
 
-@pytest.fixture(scope='module')
+@pytest.fixture(scope="module")
 def stored_references() -> dict:
     """Map of ``(name, resolution) -> stored reference dict`` (from pickle)."""
     return {
-        (spec['name'], spec['resolution']): _load_stored_reference(
-            spec['name'], spec['resolution'],
+        (spec["name"], spec["resolution"]): _load_stored_reference(
+            spec["name"],
+            spec["resolution"],
         )
         for spec in TRAJECTORIES
     }
 
 
-@pytest.fixture(scope='module')
+@pytest.fixture(scope="module")
 def fresh_references() -> dict:
     """Map of ``(name, resolution) -> freshly-built reference dict``.
 
@@ -205,10 +206,14 @@ def fresh_references() -> dict:
     """
     out: dict = {}
     for spec in TRAJECTORIES:
-        key = (spec['name'], spec['resolution'])
+        key = (spec["name"], spec["resolution"])
         protein = _load_protein(*key)
         out[key] = build_reference(
-            protein, spec['name'], spec['resolution'], spec['R1'], spec['R2'],
+            protein,
+            spec["name"],
+            spec["resolution"],
+            spec["R1"],
+            spec["R2"],
         )
     return out
 
@@ -216,10 +221,10 @@ def fresh_references() -> dict:
 # -- tests ---------------------------------------------------------------------
 
 
-@pytest.mark.parametrize('spec', TRAJECTORIES, ids=_spec_id)
+@pytest.mark.parametrize("spec", TRAJECTORIES, ids=_spec_id)
 def test_top_level_categories_match(spec, stored_references, fresh_references):
     """The set of top-level categories must be identical."""
-    key = (spec['name'], spec['resolution'])
+    key = (spec["name"], spec["resolution"])
     stored_cats = set(stored_references[key].keys())
     fresh_cats = set(fresh_references[key].keys())
     assert fresh_cats == stored_cats, (
@@ -229,10 +234,10 @@ def test_top_level_categories_match(spec, stored_references, fresh_references):
     )
 
 
-@pytest.mark.parametrize('spec', TRAJECTORIES, ids=_spec_id)
+@pytest.mark.parametrize("spec", TRAJECTORIES, ids=_spec_id)
 def test_leaf_keys_match(spec, stored_references, fresh_references):
     """The set of leaf paths must be identical (no missing or extra keys)."""
-    key = (spec['name'], spec['resolution'])
+    key = (spec["name"], spec["resolution"])
     stored_paths = {p for p, _ in _walk_leaves(stored_references[key])}
     fresh_paths = {p for p, _ in _walk_leaves(fresh_references[key])}
     only_stored = stored_paths - fresh_paths
@@ -256,7 +261,7 @@ def _collect_leaf_params() -> tuple[list, list[str]]:
     ids: list[str] = []
     for spec in TRAJECTORIES:
         try:
-            stored = _load_stored_reference(spec['name'], spec['resolution'])
+            stored = _load_stored_reference(spec["name"], spec["resolution"])
         except FileNotFoundError:
             continue
         for path, _ in _walk_leaves(stored):
@@ -270,10 +275,10 @@ def _collect_leaf_params() -> tuple[list, list[str]]:
 _LEAF_PARAMS, _LEAF_IDS = _collect_leaf_params()
 
 
-@pytest.mark.parametrize('spec,path', _LEAF_PARAMS, ids=_LEAF_IDS)
+@pytest.mark.parametrize("spec,path", _LEAF_PARAMS, ids=_LEAF_IDS)
 def test_observable_value(spec, path, stored_references, fresh_references):
     """One test per observable per trajectory: stored value == freshly recomputed value."""
-    key = (spec['name'], spec['resolution'])
+    key = (spec["name"], spec["resolution"])
     expected = _get_by_path(stored_references[key], path)
     try:
         actual = _get_by_path(fresh_references[key], path)

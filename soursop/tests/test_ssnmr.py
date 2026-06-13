@@ -898,6 +898,7 @@ class TestComputeNOEDistances:
 
     def test_matches_mdtraj_directly(self, GS6_CP):
         import mdtraj as md
+
         pairs = np.array([[0, 10], [0, 20], [5, 15]])
         d_ss = nmr.compute_NOE_distances(GS6_CP, pairs)
         d_md = md.compute_distances(GS6_CP.traj, pairs) * 10.0  # nm -> A
@@ -911,6 +912,6 @@ class TestComputeNOEDistances:
 
     def test_bad_pairs_shape_raises(self, GS6_CP):
         with pytest.raises(SSException):
-            nmr.compute_NOE_distances(GS6_CP, np.array([0, 10]))           # 1D
+            nmr.compute_NOE_distances(GS6_CP, np.array([0, 10]))  # 1D
         with pytest.raises(SSException):
-            nmr.compute_NOE_distances(GS6_CP, np.array([[0, 10, 20]]))     # n_cols != 2
+            nmr.compute_NOE_distances(GS6_CP, np.array([[0, 10, 20]]))  # n_cols != 2

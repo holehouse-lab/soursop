@@ -20,12 +20,16 @@ from scipy.special import expit
 import scipy.optimize as SPO
 from scipy.spatial import ConvexHull
 from .configs import DEBUGGING
-from .ssdata import THREE_TO_ONE, DEFAULT_SIDECHAIN_VECTOR_ATOMS, ALL_VALID_RESIDUE_NAMES
+from .ssdata import (
+    THREE_TO_ONE,
+    DEFAULT_SIDECHAIN_VECTOR_ATOMS,
+    ALL_VALID_RESIDUE_NAMES,
+)
 from .ssexceptions import SSException
 from . import ssmutualinformation, ssio, sstools, sspolymer, ssutils
-#from .sstrajectory import SSTrajectory
+# from .sstrajectory import SSTrajectory
 
-from . _internal_data import BBSEG2
+from ._internal_data import BBSEG2
 
 import scipy.cluster.hierarchy
 
@@ -39,7 +43,6 @@ import scipy.cluster.hierarchy
 
 
 class SSProtein:
-
     ## >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
     ##
     ## A note for the code:
@@ -52,7 +55,6 @@ class SSProtein:
     ## simpler.
     ##
     ## >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-
 
     # ........................................................................
     #
@@ -100,34 +102,37 @@ class SSProtein:
 
         """
 
-        
         # This is necessary to support sstrajectory.Trajectory as well as the default `mdtraj`.
         # note that this is not super elegant - we'd rather use isinstance(), but this would
         # neceisstate a circular import which is not great so
         if str(type(traj)) == "<class 'soursop.sstrajectory.SSTrajectory'>":
-            self.traj       = traj.traj
-            self.topology   = traj.traj.topology
+            self.traj = traj.traj
+            self.topology = traj.traj.topology
 
         elif isinstance(traj, md.core.trajectory.Trajectory):
             # set the trajectory object for easy access
-            self.traj     = traj
+            self.traj = traj
             self.topology = traj.topology
         else:
-            raise RuntimeError('The argument passed as `traj` is not a supported Trajectory object. Please use an mdtraj or SSTrajectory object.')
+            raise RuntimeError(
+                "The argument passed as `traj` is not a supported Trajectory object. Please use an mdtraj or SSTrajectory object."
+            )
 
         if debug:
             ssio.debug_message("Creating protein")
             residues_strings = list()
             for r in self.topology.chain(0).residues:
                 residues_strings.append(str(r))
-            r_string = '-'.join(residues_strings)
-            ssio.debug_message(f"Residue string from residues in self.topology.chain(0).residues: {r_string}")
+            r_string = "-".join(residues_strings)
+            ssio.debug_message(
+                f"Residue string from residues in self.topology.chain(0).residues: {r_string}"
+            )
 
             # delete the vaiable to avoid any possible introduction of this var into the namespace
             del r_string
 
         # initialze various protein-centric data
-        self.__num_residues       = sum( 1 for _ in self.topology.residues)
+        self.__num_residues = sum(1 for _ in self.topology.residues)
 
         # remember the constructor's CG-detection preference so that
         # reset_cache() can reproduce an identical initialization later
@@ -137,9 +142,6 @@ class SSProtein:
         # Everything set up by __initialize_memoization_and_topology() is the
         # state that reset_cache() discards and rebuilds.
         self.__initialize_memoization_and_topology()
-
-        
-        
 
     # <><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><>
     #
@@ -168,7 +170,6 @@ class SSProtein:
 
         self.__initialize_memoization_and_topology()
 
-
     # <><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><>
     #
     def __initialize_memoization_and_topology(self):
@@ -187,15 +188,15 @@ class SSProtein:
         """
 
         # empty values populated on demand by functions that drive local memoization
-        self.__amino_acids_3LTR   = None
-        self.__amino_acids_1LTR   = None
+        self.__amino_acids_3LTR = None
+        self.__amino_acids_1LTR = None
         self.__residue_index_list = None
-        self.__CA_residue_atom    = {}
+        self.__CA_residue_atom = {}
         self.__residue_atom_table = {}
-        self.__residue_COM        = {}
-        self.__residue_atom_COM   = {}
-        self.__SASA_saved         = {}
-        self.__all_angles         = {} # different dihedral (backbone and sidechain) angles
+        self.__residue_COM = {}
+        self.__residue_atom_COM = {}
+        self.__SASA_saved = {}
+        self.__all_angles = {}  # different dihedral (backbone and sidechain) angles
 
         # determine whether __cg_onechain can be set True. This ONLY serves to
         # dramatically speed up initialization but has no effect beyond that.
@@ -211,12 +212,9 @@ class SSProtein:
         self.__ncap = 0 not in self.resid_with_CA
         self.__ccap = (self.n_residues - 1) not in self.resid_with_CA
 
-
-
     # <><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><>
     #
     # Properties
-
 
     @property
     def resid_with_CA(self):
@@ -237,7 +235,6 @@ class SSProtein:
         [1, 2, 3, ..., 92]   # ctl9_AA has ACE at 0 and NME at 93
         """
         return self.__resid_with_CA
-
 
     @property
     def ncap(self):
@@ -340,7 +337,6 @@ class SSProtein:
             self.__residue_index_list = reslist
         return self.__residue_index_list
 
-
     @property
     def unitcell(self):
         """Unit cell box lengths of the first frame, in Angstroms.
@@ -361,20 +357,15 @@ class SSProtein:
         >>> protein.unitcell
         array([60.0, 60.0, 60.0])
         """
-        return self.traj.unitcell_lengths[0]*10
-    
+        return self.traj.unitcell_lengths[0] * 10
 
-
-
-    def  __repr__(self):
+    def __repr__(self):
         return f"SSProtein ({hex(id(self))}): {self.n_residues} res and {self.n_frames} frames"
-
 
     def __len__(self):
         # Edited to mimic the behavior of `mdtraj` trajectory objects.
         # Originally: `return (self.n_residues, self.n_frames)`
         return self.n_frames
-
 
     def length(self):
         """Return a ``(n_residues, n_frames)`` tuple summarising the protein.
@@ -395,9 +386,6 @@ class SSProtein:
         (94, 1000)
         """
         return (self.n_residues, self.n_frames)
-
-
-
 
     # ........................................................................
     #
@@ -434,8 +422,9 @@ class SSProtein:
               ``ceil(n_frames / stride)``.
         """
 
-        return ssutils.validate_weights(weights, self.n_frames, stride=stride, etol=etol)
-
+        return ssutils.validate_weights(
+            weights, self.n_frames, stride=stride, etol=etol
+        )
 
     # ........................................................................
     #
@@ -477,7 +466,9 @@ class SSProtein:
         # this is a defensive sanity check to revert a potentially bug-causing
         # flexibility in a previous version of the code
         if isinstance(R1, bool) or isinstance(R2, bool):
-            raise SSException(f'Deprecation error: Prior to 0.1.9x versions __get_first_and_last() could take boolean values for R1 and R2. Starting with 0.2.0 it can only take integers and None. This message reflects a bug in SOURSOP, please contact Alex directly or raise an issue on GitHub')
+            raise SSException(
+                f"Deprecation error: Prior to 0.1.9x versions __get_first_and_last() could take boolean values for R1 and R2. Starting with 0.2.0 it can only take integers and None. This message reflects a bug in SOURSOP, please contact Alex directly or raise an issue on GitHub"
+            )
 
         # first define as if we're starting from first and last residue with/without caps
         if R1 == None:
@@ -490,7 +481,7 @@ class SSProtein:
             R2 = self.n_residues - 1
             if withCA:
                 if self.ccap:
-                   R2 = self.n_residues - 2
+                    R2 = self.n_residues - 2
 
         # finally flip around if R1 is larger than R2
         if R1 > R2:
@@ -499,13 +490,14 @@ class SSProtein:
             R1 = tmp
 
         if R1 < 0:
-            raise SSException('ERROR: Requested a residue index (resid) less than 0')
+            raise SSException("ERROR: Requested a residue index (resid) less than 0")
 
         if R2 >= self.n_residues:
-            raise SSException(f'ERROR: This protein only has {self.n_residues:d} residues, SO valid indices for selection are between 0 and {self.n_residues-1:d}, yet [{R2}] was passed to function.')
+            raise SSException(
+                f"ERROR: This protein only has {self.n_residues:d} residues, SO valid indices for selection are between 0 and {self.n_residues - 1:d}, yet [{R2}] was passed to function."
+            )
 
         return (R1, R2, f"resid {R1} to {R2}")
-
 
     # ........................................................................
     #
@@ -527,12 +519,12 @@ class SSProtein:
             trajectory, or less than 1.
         """
         if stride > self.n_frames:
-            raise SSException(f'stride ({stride}) is larger than the number of frames ({self.n_frames})')
+            raise SSException(
+                f"stride ({stride}) is larger than the number of frames ({self.n_frames})"
+            )
 
         if stride < 1:
-            raise SSException(f'stride ({stride}) is less than 1')
-
-
+            raise SSException(f"stride ({stride}) is less than 1")
 
     # ........................................................................
     #
@@ -555,10 +547,14 @@ class SSProtein:
         """
 
         if R1 < 0:
-            raise SSException(f"Trying to use a negative residue index [residue index = {R1}]")
+            raise SSException(
+                f"Trying to use a negative residue index [residue index = {R1}]"
+            )
 
-        if R1  >= self.n_residues:
-            raise SSException(f"Trying to use a residue ID greater than the chain length [residue index = {R1}, chain length = {self.n_residues}] ")
+        if R1 >= self.n_residues:
+            raise SSException(
+                f"Trying to use a residue ID greater than the chain length [residue index = {R1}, chain length = {self.n_residues}] "
+            )
 
     # ........................................................................
     #
@@ -579,12 +575,6 @@ class SSProtein:
         # one-letter sequence: the latter raises KeyError on non-standard
         # residue names and would crash construction of CG/non-standard chains.
         return self.traj.n_atoms == self.__num_residues
-
-
-
-
-        
-        
 
     # ........................................................................
     #
@@ -641,7 +631,6 @@ class SSProtein:
         else:
             return traj[::stride]
 
-
     # ........................................................................
     #
     def __get_resid_with_CA(self):
@@ -692,7 +681,7 @@ class SSProtein:
         #     topology order.
         ca_atoms_for_resid = {}
         for atom in self.topology.atoms:
-            if atom.name == 'CA':
+            if atom.name == "CA":
                 ca_atoms_for_resid.setdefault(atom.residue.index, []).append(atom.index)
 
         resid_with_CA = []
@@ -703,14 +692,14 @@ class SSProtein:
             if ridx not in self.__residue_atom_table:
                 self.__residue_atom_table[ridx] = {}
             ca_array = np.array(ca_atoms, dtype=np.int64)
-            self.__residue_atom_table[ridx]['CA'] = ca_array
+            self.__residue_atom_table[ridx]["CA"] = ca_array
 
             if len(ca_array) == 1:
                 resid_with_CA.append(ridx)
                 self.__CA_residue_atom[ridx] = ca_array[0]
 
         return resid_with_CA
-    
+
     def __initialize_cg_atoms(self):
         """Internal function that initializes the CA and 'all atoms' for each residue
         in the topology. This is only called if the chain is a single chain and
@@ -723,10 +712,8 @@ class SSProtein:
 
         for res in self.topology.residues:
             self.__residue_atom_table[res.index] = {}
-            self.__residue_atom_table[res.index]['all_atoms'] = np.array([res.index])
-            self.__residue_atom_table[res.index]['CA'] = np.array([res.index])
-
-        
+            self.__residue_atom_table[res.index]["all_atoms"] = np.array([res.index])
+            self.__residue_atom_table[res.index]["CA"] = np.array([res.index])
 
     # ........................................................................
     #
@@ -738,10 +725,10 @@ class SSProtein:
         atom/residue lookup information into a dynamic O(1) operation, greatly
         improving the performance of a number of different methods in the
         processes.
-        
-        As of Nov 2024, this function also explicitly will short circuit for 
-        coarse grained chains (1 bead per residue) and raise an exception if 
-        the atom name is not 'CA' (since that's the only atom we can select 
+
+        As of Nov 2024, this function also explicitly will short circuit for
+        coarse grained chains (1 bead per residue) and raise an exception if
+        the atom name is not 'CA' (since that's the only atom we can select
         for a coarse grained chain).
 
         Parameters
@@ -769,34 +756,36 @@ class SSProtein:
         # if resid is not yet in table, create an empty dicitionary
         if resid not in self.__residue_atom_table:
             self.__residue_atom_table[resid] = {}
-            
 
         # if we haven't specified an atom look up ALL the atoms associated with this residue
         if atom_name is None:
-
             # if all_atoms not yet associated with this residue
-            if 'all_atoms' not in self.__residue_atom_table[resid]:
-                self.__residue_atom_table[resid]['all_atoms'] = self.topology.select(f'resid {resid}')
+            if "all_atoms" not in self.__residue_atom_table[resid]:
+                self.__residue_atom_table[resid]["all_atoms"] = self.topology.select(
+                    f"resid {resid}"
+                )
 
             # return set of all atoms
-            return self.__residue_atom_table[resid]['all_atoms']
+            return self.__residue_atom_table[resid]["all_atoms"]
 
         # if atom_ame not yet associated with this resid lookup
         # the atom_name from the underlying topology
         if atom_name not in self.__residue_atom_table[resid]:
-
             # if our chain is a single chain and coarse grained (1 bead per residue)
             # we actually raise an exception if that atom name is not CA
             if self.__cg_onechain:
-                if atom_name != 'CA':
-                    raise SSException("Trying to select a single atom for a coarse grained chain, but the atom name is not 'CA'. SOURSOP requires all bead atoms to be defined as 'CA'")
-            
-            self.__residue_atom_table[resid][atom_name] = self.topology.select(f'resid {resid} and name "{atom_name}"')
+                if atom_name != "CA":
+                    raise SSException(
+                        "Trying to select a single atom for a coarse grained chain, but the atom name is not 'CA'. SOURSOP requires all bead atoms to be defined as 'CA'"
+                    )
+
+            self.__residue_atom_table[resid][atom_name] = self.topology.select(
+                f'resid {resid} and name "{atom_name}"'
+            )
 
         # at this point we know the resid-atom_name pair is in the table
         # so goahead and look it up!
         return self.__residue_atom_table[resid][atom_name]
-
 
     # ........................................................................
     #
@@ -834,8 +823,6 @@ class SSProtein:
             When the input region is larger than 2.
         """
 
-
-
         # if a valid regino was passed...
         if region is None:
             R1 = 0
@@ -843,36 +830,48 @@ class SSProtein:
 
             if backbone:
                 if heavy:
-                    selectionatoms = self.topology.select(f'backbone and resid {R1} to {R2} and not type "H"')
+                    selectionatoms = self.topology.select(
+                        f'backbone and resid {R1} to {R2} and not type "H"'
+                    )
                 else:
-                    selectionatoms = self.topology.select(f'backbone and resid {R1} to {R2}')
+                    selectionatoms = self.topology.select(
+                        f"backbone and resid {R1} to {R2}"
+                    )
 
             else:
                 if heavy:
-                    selectionatoms = self.topology.select(f'resid {R1} to {R2} and not type "H"')
+                    selectionatoms = self.topology.select(
+                        f'resid {R1} to {R2} and not type "H"'
+                    )
                 else:
-                    selectionatoms = self.topology.select(f'resid {R1} to {R2}')
+                    selectionatoms = self.topology.select(f"resid {R1} to {R2}")
 
         elif len(region) == 2:
             if backbone:
                 if heavy:
-                    selectionatoms = self.topology.select(f'backbone and resid {region[0]} to {region[1]} and not type "H"')
+                    selectionatoms = self.topology.select(
+                        f'backbone and resid {region[0]} to {region[1]} and not type "H"'
+                    )
                 else:
-                    selectionatoms = self.topology.select(f'backbone and resid {region[0]} to {region[1]}')
+                    selectionatoms = self.topology.select(
+                        f"backbone and resid {region[0]} to {region[1]}"
+                    )
             else:
                 if heavy:
-                    selectionatoms = self.topology.select(f'resid {region[0]} to {region[1]} and not type "H"')
+                    selectionatoms = self.topology.select(
+                        f'resid {region[0]} to {region[1]} and not type "H"'
+                    )
                 else:
-                    selectionatoms = self.topology.select(f'resid {region[0]} to {region[1]}')
+                    selectionatoms = self.topology.select(
+                        f"resid {region[0]} to {region[1]}"
+                    )
 
         else:
-            raise SSException(f"Trying to select a subsection of atoms, but the provided 'region' tuple/list is not of exactly length two [region={region}].\nCould indicate a problem, so be safe raising an exception")
+            raise SSException(
+                f"Trying to select a subsection of atoms, but the provided 'region' tuple/list is not of exactly length two [region={region}].\nCould indicate a problem, so be safe raising an exception"
+            )
 
         return selectionatoms
-
-
-
-
 
     # ........................................................................
     #
@@ -900,16 +899,13 @@ class SSProtein:
         [[0, 'ACE-0'], [1, 'MET-1'], [2, 'ALA-2']]
         """
 
-
         AA = self.get_amino_acid_sequence()
         return_list = []
         for i in range(0, len(AA)):
             if verbose is True:
                 print(f"{i} --> {AA[i]}")
-            return_list.append([i,AA[i]])
+            return_list.append([i, AA[i]])
         return return_list
-
-
 
     # ........................................................................
     #
@@ -942,8 +938,6 @@ class SSProtein:
         """
 
         return self.__residue_atom_lookup(resid, atom_name)
-
-
 
     # ........................................................................
     #
@@ -983,13 +977,12 @@ class SSProtein:
             if resid not in self.__residue_COM:
                 atoms = self.__residue_atom_lookup(resid)
                 TRJ_1 = self.traj.atom_slice(atoms)
-                self.__residue_COM[resid] = 10*md.compute_center_of_mass(TRJ_1)
+                self.__residue_COM[resid] = 10 * md.compute_center_of_mass(TRJ_1)
                 del TRJ_1
 
             return self.__residue_COM[resid]
 
         else:
-
             # if resid is not yet in table, create an empty dicitionary
             if resid not in self.__residue_atom_COM:
                 self.__residue_atom_COM[resid] = {}
@@ -997,14 +990,12 @@ class SSProtein:
             if atom_name not in self.__residue_atom_COM[resid]:
                 atoms = self.__residue_atom_lookup(resid, atom_name)
                 TRJ_1 = self.traj.atom_slice(atoms)
-                self.__residue_atom_COM[resid][atom_name] = 10*md.compute_center_of_mass(TRJ_1)
+                self.__residue_atom_COM[resid][atom_name] = (
+                    10 * md.compute_center_of_mass(TRJ_1)
+                )
                 del TRJ_1
 
             return self.__residue_atom_COM[resid][atom_name]
-
-
-
-
 
     # ........................................................................
     #
@@ -1042,7 +1033,6 @@ class SSProtein:
         """
 
         if oneletter:
-
             if self.__amino_acids_1LTR is None:
                 res = []
                 for i in self.topology.residues:
@@ -1050,11 +1040,10 @@ class SSProtein:
                 self.__amino_acids_1LTR = "".join(res)
 
         else:
-
             if self.__amino_acids_3LTR is None:
                 res = []
                 for i in self.topology.residues:
-                    res.append(str(i)[0:3]+"-"+str(i)[3:])
+                    res.append(str(i)[0:3] + "-" + str(i)[3:])
                 self.__amino_acids_3LTR = res
 
         # if numbered requsted
@@ -1067,10 +1056,9 @@ class SSProtein:
         # else strip out the numbering with list comprehension
         else:
             if oneletter:
-                return [x.split('-')[0] for x in self.__amino_acids_1LTR]
+                return [x.split("-")[0] for x in self.__amino_acids_1LTR]
             else:
-                return [x.split('-')[0] for x in self.__amino_acids_3LTR]
-
+                return [x.split("-")[0] for x in self.__amino_acids_3LTR]
 
     # ........................................................................
     #
@@ -1104,7 +1092,7 @@ class SSProtein:
         """
 
         if resid not in self.__CA_residue_atom:
-            return_val = self.__residue_atom_lookup(resid, 'CA')
+            return_val = self.__residue_atom_lookup(resid, "CA")
 
             if len(return_val) == 1:
                 self.__CA_residue_atom[resid] = return_val[0]
@@ -1112,7 +1100,6 @@ class SSProtein:
                 raise SSException(f"get_CA_index - unable to find residue {resid}")
 
         return self.__CA_residue_atom[resid]
-
 
     # ........................................................................
     #
@@ -1140,7 +1127,6 @@ class SSProtein:
         """
 
         return self.__residue_atom_lookup(resid)
-
 
     # ........................................................................
     #
@@ -1177,7 +1163,7 @@ class SSProtein:
         # then just return the single residue associated
         # with
         if type(resID_list) == int:
-            return ([self.get_CA_index(resID_list)])
+            return [self.get_CA_index(resID_list)]
 
         # if no value passed grab all the residues
         if resID_list == None:
@@ -1193,10 +1179,11 @@ class SSProtein:
 
         return CAlist
 
-
     # ........................................................................
     #
-    def calculate_all_CA_distances(self, residueIndex, mode='CA', only_C_terminal_residues=True, stride=1):
+    def calculate_all_CA_distances(
+        self, residueIndex, mode="CA", only_C_terminal_residues=True, stride=1
+    ):
         """Distances between a reference residue and every other CA residue.
 
         Computes either CA-CA or COM-COM distances from ``residueIndex`` to
@@ -1241,13 +1228,12 @@ class SSProtein:
         """
 
         # validate input
-        ssutils.validate_keyword_option(mode, ['CA', 'COM'], 'mode')
+        ssutils.validate_keyword_option(mode, ["CA", "COM"], "mode")
 
         # determine atomic index of CA atom for the residue you passed in
         try:
             CA_base = self.get_CA_index(residueIndex)
         except SSException:
-
             # if we couldln't find a C-alpha for this residue then nothing
             # makes sense so return -1
             return -1
@@ -1258,10 +1244,8 @@ class SSProtein:
         ##
         ## Block to use if using CA as base for computing distances
         ##
-        if mode == 'CA':
-
+        if mode == "CA":
             for residue in self.resid_with_CA:
-
                 # only compute distances bigger than the residueIndex
                 # such that by default full iteration calculates the
                 # non-redundant map (i.e. the half diagonal)
@@ -1273,20 +1257,21 @@ class SSProtein:
 
             # now we construct a nested list of lists of pairs to compute distances
             # between
-            pairs=[]
+            pairs = []
             for CA in CAlist:
                 pairs.append([CA_base, CA])
 
             if len(pairs) == 0:
                 return np.array([])
 
-
             local_traj = self.__get_subtrajectory(self.traj, stride)
 
             # 10* for angstroms
-            return 10*md.compute_distances(local_traj, np.array(pairs), periodic=False)
+            return 10 * md.compute_distances(
+                local_traj, np.array(pairs), periodic=False
+            )
 
-        if mode == 'COM':
+        if mode == "COM":
             ##
             ## Block to use if using COM as base for computing distances
             ##
@@ -1294,23 +1279,30 @@ class SSProtein:
 
             # cycle over each resid for a residue with a CA atom
             for residue in self.resid_with_CA:
-
                 # only compute distances bigger than the residueIndex
                 # such that by default full iteration calculates the
                 # non-redundant map (i.e. the half diagonal)
                 if residue <= residueIndex and only_C_terminal_residues:
                     continue
 
-                return_distances.append(self.get_inter_residue_COM_distance(residueIndex, residue))
+                return_distances.append(
+                    self.get_inter_residue_COM_distance(residueIndex, residue)
+                )
 
             # finally convert list to numpy array and flip so returns in same format as CA mode
             return np.array(return_distances).transpose()
 
-
-
     # ........................................................................
     #
-    def get_distance_map(self, mode='CA', RMS=False, stride=1, return_instantaneous_maps=False, weights=False, verbose=True):
+    def get_distance_map(
+        self,
+        mode="CA",
+        RMS=False,
+        stride=1,
+        return_instantaneous_maps=False,
+        weights=False,
+        verbose=True,
+    ):
         """Inter-residue distance map (and its standard deviation).
 
         Builds the full N x N matrix of inter-residue distances where N is
@@ -1361,7 +1353,7 @@ class SSProtein:
         >>> rms_map, _ = protein.get_distance_map(mode='COM', RMS=True, verbose=False)
         """
 
-        ssutils.validate_keyword_option(mode, ['CA', 'COM'], 'mode')
+        ssutils.validate_keyword_option(mode, ["CA", "COM"], "mode")
 
         weights = self.__check_weights(weights, stride)
 
@@ -1374,7 +1366,9 @@ class SSProtein:
         # if we want to return ALL the distance maps...
         if return_instantaneous_maps is True:
             # use this to empircally work out dimensions of return dime
-            test_data = self.calculate_all_CA_distances(self.resid_with_CA[0], mode=mode, stride=stride)
+            test_data = self.calculate_all_CA_distances(
+                self.resid_with_CA[0], mode=mode, stride=stride
+            )
             distance_map = np.zeros([n_res, test_data.shape[0], n_res])
 
         # if we want to return JUST the average...
@@ -1389,61 +1383,72 @@ class SSProtein:
         # residue index)
         SM_index = 0
         for resIndex in self.resid_with_CA[0:-1]:
-
-            ssio.status_message(f"On protein residue {SM_index} (overall residue index = {resIndex}) of {int(len(residuesWithCA))} [distance calculations]", verbose)
+            ssio.status_message(
+                f"On protein residue {SM_index} (overall residue index = {resIndex}) of {int(len(residuesWithCA))} [distance calculations]",
+                verbose,
+            )
 
             # get all CA-CA distances between the residue of index resIndex and every other residue.
             # Note this gives the non-redudant upper triangle.
-            full_data = self.calculate_all_CA_distances(resIndex, mode=mode, stride=stride)
+            full_data = self.calculate_all_CA_distances(
+                resIndex, mode=mode, stride=stride
+            )
 
             # if we want root mean square then NOW square each distances
             if RMS:
-                full_data = np.power(full_data,2)
+                full_data = np.power(full_data, 2)
 
             # calculate mean and standard deviation
             if weights is not False:
-                
-                mean_data = np.average(full_data,0,weights=weights)
+                mean_data = np.average(full_data, 0, weights=weights)
 
                 # if we want RMS then NOW take square root of <rij^2>
                 if RMS:
                     mean_data = np.sqrt(mean_data)
-                std_data  = None
+                std_data = None
             else:
-
-                mean_data = np.mean(full_data,0)
+                mean_data = np.mean(full_data, 0)
 
                 # if we want RMS then NOW take square root of <rij^2>
                 if RMS:
                     mean_data = np.sqrt(mean_data)
 
-                std_data = np.std(full_data,0)
-                
+                std_data = np.std(full_data, 0)
+
             # update the maps appropriately and increment the counter
             if return_instantaneous_maps is True:
-                distance_map[SM_index].transpose()[1+SM_index:] = full_data.transpose()
+                distance_map[SM_index].transpose()[1 + SM_index :] = (
+                    full_data.transpose()
+                )
 
             else:
-                distance_map[SM_index][1+SM_index:len(residuesWithCA)] = mean_data
+                distance_map[SM_index][1 + SM_index : len(residuesWithCA)] = mean_data
 
             # updated std map
-            std_distance_map[SM_index][1+SM_index:len(residuesWithCA)] = std_data
+            std_distance_map[SM_index][1 + SM_index : len(residuesWithCA)] = std_data
 
             SM_index = SM_index + 1
 
         if return_instantaneous_maps is True:
-
             # note we have to transpose the distance map so the 1st index is the
             # frame index
-            return (np.transpose(distance_map, axes=[1,0,2]), std_distance_map)
+            return (np.transpose(distance_map, axes=[1, 0, 2]), std_distance_map)
         else:
             return (distance_map, std_distance_map)
 
-
-
     # ........................................................................
     #
-    def get_polymer_scaled_distance_map(self, nu=None, A0=None, min_separation=10, mode='fractional-change', stride=1, weights=False, etol=0.0000001, verbose=True):
+    def get_polymer_scaled_distance_map(
+        self,
+        nu=None,
+        A0=None,
+        min_separation=10,
+        mode="fractional-change",
+        stride=1,
+        weights=False,
+        etol=0.0000001,
+        verbose=True,
+    ):
         """Quantify how each inter-residue distance deviates from a homopolymer model.
 
         For a standard polymer the equilibrium distance scales as
@@ -1524,7 +1529,16 @@ class SSProtein:
         """
 
         # First validate keyword
-        ssutils.validate_keyword_option(mode, ['fractional-change','scaled', 'signed-fractional-change', 'signed-absolute-change'], 'mode')
+        ssutils.validate_keyword_option(
+            mode,
+            [
+                "fractional-change",
+                "scaled",
+                "signed-fractional-change",
+                "signed-absolute-change",
+            ],
+            "mode",
+        )
 
         # next check that the minimum separation requested makes sense... (this is only a partial check)
         if min_separation < 1:
@@ -1538,22 +1552,30 @@ class SSProtein:
 
             # remind that this is the old get_scaling_exponent_v2()
             # ALSO note this uses COM which is also how the distance map is computed
-            SE = self.get_scaling_exponent(verbose=False, weights = weights, stride = stride, etol=etol)
+            SE = self.get_scaling_exponent(
+                verbose=False, weights=weights, stride=stride, etol=etol
+            )
             nu = SE[0]
             A0 = SE[1]
             REDCHI = SE[7]
 
         elif nu is None:
-            raise SSException(f"A0 parameter provided [{A0:.5f}] but nu was not. Must provide BOTH or neither (in which case fitting is done)")
+            raise SSException(
+                f"A0 parameter provided [{A0:.5f}] but nu was not. Must provide BOTH or neither (in which case fitting is done)"
+            )
 
         elif A0 is None:
-            raise SSException(f"nu parameter provided [{nu:.5f}] but A0 was not. Must provide BOTH or neither (in which case fitting is done)")
+            raise SSException(
+                f"nu parameter provided [{nu:.5f}] but A0 was not. Must provide BOTH or neither (in which case fitting is done)"
+            )
 
         # else both were provided so we double check they're valid..
         else:
             # sanity check nu
             if nu <= 0 or nu > 1:
-                raise SSException("Nu parameter must be in interval 0 < nu <= 1 (and probably should be between 0.33 and 1.0...)")
+                raise SSException(
+                    "Nu parameter must be in interval 0 < nu <= 1 (and probably should be between 0.33 and 1.0...)"
+                )
 
             # sanity check A0
             if A0 <= 0:
@@ -1566,27 +1588,31 @@ class SSProtein:
         # traditional polymer scaling behaviour. This just saves us having if/then statements that get evaluated
         # on each loop of the analysis script below, and also makes it easy to add in additional 'modes'
 
-        if mode  == 'fractional-change':
+        if mode == "fractional-change":
+
             def d_funct(dMap_val, p_val):
-                return abs(dMap_val - p_val)/p_val
+                return abs(dMap_val - p_val) / p_val
 
             default_val = 0
 
-        elif mode == 'signed-fractional-change':
+        elif mode == "signed-fractional-change":
+
             def d_funct(dMap_val, p_val):
-                return (dMap_val - p_val)/p_val
+                return (dMap_val - p_val) / p_val
 
             default_val = 0
 
-        elif mode == 'signed-absolute-change':
+        elif mode == "signed-absolute-change":
+
             def d_funct(dMap_val, p_val):
-                return (dMap_val - p_val)
+                return dMap_val - p_val
 
             default_val = 0
 
-        elif mode == 'scaled':
+        elif mode == "scaled":
+
             def d_funct(dMap_val, p_val):
-                return dMap_val/p_val
+                return dMap_val / p_val
 
             default_val = 1
 
@@ -1594,34 +1620,44 @@ class SSProtein:
 
         # first compute and get the distance map (note [0] means we get first element
         # which is mean distance ([1] is STDEV)
-        distance_map = self.get_distance_map(mode='COM', RMS=True, stride=stride, weights=weights, verbose=False)[0]
+        distance_map = self.get_distance_map(
+            mode="COM", RMS=True, stride=stride, weights=weights, verbose=False
+        )[0]
 
         # get distance map dimensions (will be a square so just take X-dim)
         dimensions = distance_map.shape[0]
 
         if dimensions <= min_separation:
-            raise SSException('The minimum separation is shorter than the chain length')
+            raise SSException("The minimum separation is shorter than the chain length")
 
         # compute expected distance given the standard polymer scaling model
-        expected_distances = sstools.powermodel(list(range(0,dimensions)), nu, A0)
+        expected_distances = sstools.powermodel(list(range(0, dimensions)), nu, A0)
 
         # initialize the return matrix and then populate for distances that are
         # above the minimum threshold. We only populate upper right triangle
         return_matrix = np.zeros((dimensions, dimensions))
-        for i in range(0,dimensions):
-            for j in range(0,dimensions):
-                if j-i < min_separation:
-                    return_matrix[i,j] = default_val
+        for i in range(0, dimensions):
+            for j in range(0, dimensions):
+                if j - i < min_separation:
+                    return_matrix[i, j] = default_val
                 else:
-                    return_matrix[i,j] = d_funct(distance_map[i,j], expected_distances[(j-i)])
+                    return_matrix[i, j] = d_funct(
+                        distance_map[i, j], expected_distances[(j - i)]
+                    )
 
         return (return_matrix, nu, A0, REDCHI)
 
-
-
     # ........................................................................
     #
-    def get_local_heterogeneity(self, fragment_size=10, bins=None, stride=20, verbose=True, weights=False, etol=0.0000001):
+    def get_local_heterogeneity(
+        self,
+        fragment_size=10,
+        bins=None,
+        stride=20,
+        verbose=True,
+        weights=False,
+        etol=0.0000001,
+    ):
         """Sliding-window heterogeneity: per-position distribution of intra-window RMSDs.
 
         At each starting residue ``i`` (from 0 to ``n_residues - fragment_size``)
@@ -1684,32 +1720,37 @@ class SSProtein:
 
         # validate bins
         if bins is None:
-            bins = np.arange(0,10,0.01)
+            bins = np.arange(0, 10, 0.01)
         else:
             try:
-                if len(bins)  < 2:
-                    raise SSException('Bins should be a numpy defined vector of values - e.g. np.arange(0,1,0.01)')
+                if len(bins) < 2:
+                    raise SSException(
+                        "Bins should be a numpy defined vector of values - e.g. np.arange(0,1,0.01)"
+                    )
             except TypeError:
-                raise SSException('Bins should be a list, vector, or numpy array of evenly spaced values')
+                raise SSException(
+                    "Bins should be a list, vector, or numpy array of evenly spaced values"
+                )
 
             try:
                 bins = np.array(bins, dtype=float)
             except ValueError:
-                raise SSException('Passed bins could not be converted to a numpy array of floats')
+                raise SSException(
+                    "Passed bins could not be converted to a numpy array of floats"
+                )
 
         # check stride is ok
         self.__check_stride(stride)
 
         # get the residue IDXs were going to use
-        #res_idx_list = self.residue_index_list
+        # res_idx_list = self.residue_index_list
         n_frames = self.n_frames
-
 
         # check the fragment_size is appropriate
         if fragment_size > self.n_residues:
-            raise SSException('fragment_size is larger than the number of residues')
+            raise SSException("fragment_size is larger than the number of residues")
         if fragment_size < 2:
-            raise SSException('fragment_size must be 2 or larger')
+            raise SSException("fragment_size must be 2 or larger")
 
         # This is a pairwise frame-vs-frame measure (each value is an RMSD
         # between a reference frame and a comparison frame), so a single
@@ -1727,8 +1768,8 @@ class SSProtein:
             )
 
         meanData = []
-        stdData  = []
-        histo    = []
+        stdData = []
+        histo = []
 
         # cycle over each sub-region in the sequence
 
@@ -1741,18 +1782,18 @@ class SSProtein:
             # all other sub-regions (i.e. we're doing a 1-vs-all RMSD calculation for EACH
             # frame (after adjusting for stride) for a subregion of the protein
             for j in range(0, n_frames, stride):
-                tmp.extend(self.get_RMSD(j ,-1, region=[frag_idx, frag_idx+fragment_size]))
+                tmp.extend(
+                    self.get_RMSD(j, -1, region=[frag_idx, frag_idx + fragment_size])
+                )
 
             # compute a histogram for this large dataset
-            (b,c) = np.histogram(tmp,bins)
+            (b, c) = np.histogram(tmp, bins)
             histo.append(b)
 
             meanData.append(np.mean(tmp))
             stdData.append(np.std(tmp))
 
         return (meanData, stdData, histo, bins)
-
-
 
     # ........................................................................
     #
@@ -1801,28 +1842,36 @@ class SSProtein:
 
         # compute number of frames exactly (this is empirical, but ensures we're always consistent with the projected
         # dimensions in the first for-loop)
-        tmp = self.calculate_all_CA_distances(residuesWithCA[0], stride=stride, only_C_terminal_residues=True)
-        n_frames =  np.shape(tmp)[0]
+        tmp = self.calculate_all_CA_distances(
+            residuesWithCA[0], stride=stride, only_C_terminal_residues=True
+        )
+        n_frames = np.shape(tmp)[0]
 
         all_distances = np.zeros([len(residuesWithCA), len(residuesWithCA), n_frames])
 
         # first compute upper triangle only (lower traingle is identical and doesn't change the answer
         # so we stick with the upper traingle only)
-        SM_index=0
+        SM_index = 0
         for resIndex in residuesWithCA[0:-1]:
-            ssio.status_message(f"Calculating non redundant distance for res. {resIndex} ", verbose)
+            ssio.status_message(
+                f"Calculating non redundant distance for res. {resIndex} ", verbose
+            )
 
-            vals = self.calculate_all_CA_distances(resIndex, stride=stride, only_C_terminal_residues=True)
+            vals = self.calculate_all_CA_distances(
+                resIndex, stride=stride, only_C_terminal_residues=True
+            )
 
             # have to include a -1 here because we don't have a self:self distance
-            all_distances[SM_index][0:(len(residuesWithCA)-1)-SM_index] = vals.transpose()
-            SM_index=SM_index+1
+            all_distances[SM_index][0 : (len(residuesWithCA) - 1) - SM_index] = (
+                vals.transpose()
+            )
+            SM_index = SM_index + 1
 
         # number of residues we're calculating distances between
         n_res = np.shape(all_distances)[0]
 
         # reshape to n_frame x n_rij 2D array
-        all_distance_tmp = all_distances.transpose().reshape(n_frames,n_res*n_res)
+        all_distance_tmp = all_distances.transpose().reshape(n_frames, n_res * n_res)
 
         # find the idx of non-zero elements in the first frame (will be true for all frames - zeros
         # originate because we only computed the upper triangle, so 1/2 of elements in each row of
@@ -1830,15 +1879,16 @@ class SSProtein:
         non_zero_idx = np.nonzero(all_distance_tmp[0])[0]
 
         # finally extract out the positions that are nonzero, setting us up for the phi analysis
-        non_zero_distance = all_distance_tmp[:,non_zero_idx]
+        non_zero_distance = all_distance_tmp[:, non_zero_idx]
 
         # calculate the D-vector of all frames
         D_vector = []
         for A in range(0, n_frames):
-            ssio.status_message(f"Running PHI calculation on frame {A} of {n_frames}", verbose)
+            ssio.status_message(
+                f"Running PHI calculation on frame {A} of {n_frames}", verbose
+            )
 
-            for B in range(A+1, n_frames):
-
+            for B in range(A + 1, n_frames):
                 """# This is the old less efficient implementation of the
                 algorithm, kept in case,
 
@@ -1870,11 +1920,11 @@ class SSProtein:
                 VB = non_zero_distance[B]
 
                 # and compute the D value for comparing these two frames
-                D_vector.append(1 - np.dot(VA,VB)/(np.linalg.norm(VA)*np.linalg.norm(VB)))
+                D_vector.append(
+                    1 - np.dot(VA, VB) / (np.linalg.norm(VA) * np.linalg.norm(VB))
+                )
 
         return np.array(D_vector)
-
-
 
     # ........................................................................
     #
@@ -1925,34 +1975,30 @@ class SSProtein:
         ref = self.traj
 
         # if a second frame number was provided with which we're going to work with
-        if frame2 > -1 and isinstance( frame2, int ):
-
+        if frame2 > -1 and isinstance(frame2, int):
             # our target is now a single (i.e. doing RMSD of two structures)
             target = self.traj.slice(frame2)
         else:
-
             # else we're going to carry out an RMSD comparison between *every* stride-th
             # frame and frame 1
             target = self.__get_subtrajectory(self.traj, stride)
 
         # return the RMSD comparison in Angstroms
-        return 10*md.rmsd(target, ref, frame1, atom_indices=selectionatoms)
-
-
+        return 10 * md.rmsd(target, ref, frame1, atom_indices=selectionatoms)
 
     # ........................................................................
     #
-    def get_Q(self,
-              protein_average = True,
-              region = None,
-              beta_const = 50.0,
-              lambda_const = 1.8,
-              native_contact_threshold = 4.5,
-              stride = 1,
-              native_state_reference_frame=0,
-              weights = False):
-
-
+    def get_Q(
+        self,
+        protein_average=True,
+        region=None,
+        beta_const=50.0,
+        lambda_const=1.8,
+        native_contact_threshold=4.5,
+        stride=1,
+        native_state_reference_frame=0,
+        weights=False,
+    ):
         """Fraction-of-native-contacts order parameter :math:`Q` (Best et al.).
 
         Native contacts are defined from the reference frame (frame 0) as
@@ -2071,29 +2117,40 @@ class SSProtein:
         native = self.traj.slice(native_state_reference_frame)
 
         try:
-            BETA_CONST = float(beta_const)       # in reciprocal nm (1/nm)
-            LAMBDA_CONST = float(lambda_const)    # For all-atom simulations
+            BETA_CONST = float(beta_const)  # in reciprocal nm (1/nm)
+            LAMBDA_CONST = float(lambda_const)  # For all-atom simulations
 
             # Native contact threshold distance in nm (note param is passed in Angstroms but the calculation
             # happens expecting nanometers so have to update (hence divide by 10). NB: This breaks standard
             # soursop convention and we probably should rescale the various parameters so this works in
             # A instead of bm
-            NATIVE_CUTOFF = float(native_contact_threshold)/10
+            NATIVE_CUTOFF = float(native_contact_threshold) / 10
 
         except ValueError as e:
-            raise SSException(f'Could not convert constant into float for setting constants in get_Q().\nSee below:\n\n{e}')
+            raise SSException(
+                f"Could not convert constant into float for setting constants in get_Q().\nSee below:\n\n{e}"
+            )
 
         # native contacts are heavy-atom pairs >3 residues apart and within
         # NATIVE_CUTOFF in the reference structure; r0 is their reference
         # distance. Both come purely from the extracted reference frame.
         heavy_pairs = np.array(
-            [(i,j) for (i,j) in combinations(selectionatoms, 2)
-             if abs(native.topology.atom(i).residue.index - \
-                    native.topology.atom(j).residue.index) > 3])
+            [
+                (i, j)
+                for (i, j) in combinations(selectionatoms, 2)
+                if abs(
+                    native.topology.atom(i).residue.index
+                    - native.topology.atom(j).residue.index
+                )
+                > 3
+            ]
+        )
 
         ## NB: This breaks soursop convention of converting nm->A at the site of
         ## where it's calculated.
-        heavy_pairs_distances = md.compute_distances(native[0], heavy_pairs, periodic=False)[0]
+        heavy_pairs_distances = md.compute_distances(
+            native[0], heavy_pairs, periodic=False
+        )[0]
         native_contacts = heavy_pairs[heavy_pairs_distances < NATIVE_CUTOFF]
         r0 = md.compute_distances(native[0], native_contacts, periodic=False)
 
@@ -2108,7 +2165,7 @@ class SSProtein:
         # cased: the reference frame's job was done in STEP 1.
         # =================================================================
         weights = self.__check_weights(weights, stride)
-        target  = self.__get_subtrajectory(self.traj, stride)
+        target = self.__get_subtrajectory(self.traj, stride)
 
         # align the analysis frames onto the extracted reference. (This
         # does not change the pairwise contact distances below, which are
@@ -2122,14 +2179,15 @@ class SSProtein:
         # If we're just computing the protein average then this returns the Q value for the whole protein on a per-frame basis
         if protein_average:
             if weights is not False:
-                raise SSException('Reweighting for frame averaged should be done with trajectory weights OUTSIDE of SOURSOP')
+                raise SSException(
+                    "Reweighting for frame averaged should be done with trajectory weights OUTSIDE of SOURSOP"
+                )
 
             q = np.mean(expit(-BETA_CONST * (r - LAMBDA_CONST * r0)), axis=1)
 
             return q
 
         else:
-
             # if the analysis is to be re-weighted use the weights here on
             # a per-frame basis. `weights` is the validated, stride-
             # subsampled, renormalised vector and aligns 1:1 with the
@@ -2145,14 +2203,17 @@ class SSProtein:
                 q = np.mean(expit(-BETA_CONST * (r - LAMBDA_CONST * r0)), axis=0)
 
             # get the set of unqiue atoms which are involved in native contacts
-            unique_native_contact_atoms = np.unique(np.hstack((np.transpose(native_contacts)[0],np.transpose(native_contacts)[1])))
+            unique_native_contact_atoms = np.unique(
+                np.hstack(
+                    (np.transpose(native_contacts)[0], np.transpose(native_contacts)[1])
+                )
+            )
 
             res2at = {}
             res2res = {}
 
             # for each unqiue atom
             for atom in unique_native_contact_atoms:
-
                 # determine the name of the residue it's from and update the res2at dictionary
                 # if needed
                 local_res = str(self.topology.atom(atom).residue)
@@ -2183,22 +2244,23 @@ class SSProtein:
             # interaction, and increment the associated positions on the nres by
             # nres matrix, keeping count of how many such increments we make in the
             # res_res_matrix_count matrix
-            for pair_idx in range(0,len(native_contacts)):
-
+            for pair_idx in range(0, len(native_contacts)):
                 pair = native_contacts[pair_idx]
                 R1 = self.topology.atom(pair[0]).residue.index
                 R2 = self.topology.atom(pair[1]).residue.index
 
-                res_res_matrix[R1,R2] = q[pair_idx] + res_res_matrix[R1,R2]
-                res_res_matrix[R2,R1] = q[pair_idx] + res_res_matrix[R2,R1]
+                res_res_matrix[R1, R2] = q[pair_idx] + res_res_matrix[R1, R2]
+                res_res_matrix[R2, R1] = q[pair_idx] + res_res_matrix[R2, R1]
 
-                res_res_matrix_count[R1,R2] = 1 + res_res_matrix_count[R1,R2]
-                res_res_matrix_count[R2,R1] = 1 + res_res_matrix_count[R2,R1]
+                res_res_matrix_count[R1, R2] = 1 + res_res_matrix_count[R1, R2]
+                res_res_matrix_count[R2, R1] = 1 + res_res_matrix_count[R2, R1]
 
             # pairwise division accounts for residues with more atoms; safe_count
             # replaces zero entries with 1 to avoid 0/0, those positions are zeroed out by np.where
             safe_count = np.where(res_res_matrix_count != 0, res_res_matrix_count, 1)
-            normalized_res_matrix = np.where(res_res_matrix_count != 0, res_res_matrix / safe_count, 0.0)
+            normalized_res_matrix = np.where(
+                res_res_matrix_count != 0, res_res_matrix / safe_count, 0.0
+            )
 
             # just as a convenience, build a sorted list of the residues which makes
             # the data a bit easier to play with going forward.
@@ -2211,13 +2273,20 @@ class SSProtein:
 
             # finally, return all the things mentioned in the function description (note we nan-to-num
             # to remove all the NaNs from the norlaized res matrix (generated by dividiving by zeor)
-            return (q, native_contacts, res2at, sorted_residues, np.nan_to_num(normalized_res_matrix,0))
-
+            return (
+                q,
+                native_contacts,
+                res2at,
+                sorted_residues,
+                np.nan_to_num(normalized_res_matrix, 0),
+            )
 
     # ........................................................................
     #
     #
-    def get_contact_map(self, distance_thresh=5.0, mode='closest-heavy', stride=1, weights=False):
+    def get_contact_map(
+        self, distance_thresh=5.0, mode="closest-heavy", stride=1, weights=False
+    ):
         """Inter-residue contact map and per-residue contact-order vector.
 
         For every pair of residues this returns the fraction of frames in
@@ -2283,7 +2352,11 @@ class SSProtein:
         (92, 92)
         """
 
-        ssutils.validate_keyword_option(mode, ['closest-heavy', 'ca', 'closest', 'sidechain', 'sidechain-heavy'] , 'mode')
+        ssutils.validate_keyword_option(
+            mode,
+            ["closest-heavy", "ca", "closest", "sidechain", "sidechain-heavy"],
+            "mode",
+        )
 
         # Validate the weight vector against the FULL trajectory (one
         # weight per trajectory frame, len == n_frames). __check_weights
@@ -2294,7 +2367,7 @@ class SSProtein:
         weights = self.__check_weights(weights, stride)
 
         # set the distance threshold to a value in nm (we use A by default)
-        distance_thresh_in_nm = float(distance_thresh/10.0)
+        distance_thresh_in_nm = float(distance_thresh / 10.0)
 
         # build a substractectory based on the stride argument
         subtraj = self.__get_subtrajectory(self.traj, stride)
@@ -2302,7 +2375,9 @@ class SSProtein:
         # ensure we only select main chain atoms (no termini) - NOTE, this
         # is a REALLY useful design pattern - should consider re-writing the
         # code to use this...
-        mainchain_atoms = self.topology.select('(not resname "NME") and (not resname "ACE")')
+        mainchain_atoms = self.topology.select(
+            '(not resname "NME") and (not resname "ACE")'
+        )
 
         # compute the contactmap and square-form it (map per frame)
         # CMAP is a [N_FRAMES x N_RES x N_RES] array
@@ -2310,20 +2385,29 @@ class SSProtein:
         # sidechain-heavy fails for GLY (no heavy sidechain atoms); check explicitly
         # so the behavior is consistent regardless of mdtraj version (older versions
         # raised ValueError; 1.11+ emits a warning and uses sidechain-H instead)
-        if mode == 'sidechain-heavy':
-            gly_atoms = self.topology.select('resname GLY and (not resname "NME") and (not resname "ACE")')
+        if mode == "sidechain-heavy":
+            gly_atoms = self.topology.select(
+                'resname GLY and (not resname "NME") and (not resname "ACE")'
+            )
             if len(gly_atoms) > 0:
                 msg = "Failed computing contacts. This is likely because one of the residues has a glycine and\nthere are no heavy sidechain residues in glycine. Raising exception..."
                 raise SSException(msg)
 
         try:
-            CMAP_nonsquare = md.compute_contacts(subtraj.atom_slice(mainchain_atoms), scheme=mode)
+            CMAP_nonsquare = md.compute_contacts(
+                subtraj.atom_slice(mainchain_atoms), scheme=mode
+            )
         except ValueError as e:
-            if str(e) == 'zero-size array to reduction operation minimum which has no identity':
-                if mode == 'sidechain-heavy':
+            if (
+                str(e)
+                == "zero-size array to reduction operation minimum which has no identity"
+            ):
+                if mode == "sidechain-heavy":
                     msg = "Failed computing contacts. This is likely because one of the residues has a glycine and\nthere are no heavy sidechain residues in glycine. Raising exception..."
 
-                    ssio.exception_message(msg, e, with_frills=True, raise_exception=False)
+                    ssio.exception_message(
+                        msg, e, with_frills=True, raise_exception=False
+                    )
                     raise SSException(msg)
 
             raise e
@@ -2335,29 +2419,36 @@ class SSProtein:
         normalization_factor = np.shape(CMAP)[0]
 
         # build a MASK where distance is not zero (i.e. where distances were calculated
-        MASK =  (CMAP[0] != 0)*1
+        MASK = (CMAP[0] != 0) * 1
 
         # if no weights...
         if weights is False:
-
             # for each frame set true/false if less than threshold,
             # then convert bools to ints and sum over all frames
             # and finally normalize by the normalization factor. This
             # gives us the _normalized_ contact map (i.e. each element is between 0 and 1)
-            normalized_contact_map = (np.sum(1*(CMAP < distance_thresh_in_nm),0)*MASK) / float(normalization_factor)
+            normalized_contact_map = (
+                np.sum(1 * (CMAP < distance_thresh_in_nm), 0) * MASK
+            ) / float(normalization_factor)
 
         # else, if weights...
         else:
-
             # Deterministic weighted mean of the per-frame contact maps.
             # `weights` has already been stride-subsampled + renormalised
             # by __check_weights, so it aligns 1:1 with the strided frames
             # of CMAP and sums to 1 - hence no division by a normalization
             # factor here (cf. the unweighted branch above).
             n_frames = CMAP.shape[0]
-            normalized_contact_map = np.zeros((CMAP.shape[1],CMAP.shape[1]))
-            for fid in range(0,n_frames):
-                normalized_contact_map = normalized_contact_map + (np.ndarray.astype((CMAP[fid]<distance_thresh_in_nm),int)*MASK)*weights[fid]
+            normalized_contact_map = np.zeros((CMAP.shape[1], CMAP.shape[1]))
+            for fid in range(0, n_frames):
+                normalized_contact_map = (
+                    normalized_contact_map
+                    + (
+                        np.ndarray.astype((CMAP[fid] < distance_thresh_in_nm), int)
+                        * MASK
+                    )
+                    * weights[fid]
+                )
 
         # we can further reduce the dimensionality to ask which residues are most involved in contacts with outher
         # residues in general (i.e. without caring about what those residues are). This gives us a normalized
@@ -2374,12 +2465,15 @@ class SSProtein:
         # which means for MOST residues the max possible is n_res-5, but for those at the end and start
         # there is no i-1/i-2 for the 0th residues, so the line below builds a vector that for each residues
         # calculates the TRUE max fractional contacts
-        contact_order_normalization_vector = n_res - np.hstack((np.hstack(([3,4],np.repeat(5,n_res-4))),[4,3]))
+        contact_order_normalization_vector = n_res - np.hstack(
+            (np.hstack(([3, 4], np.repeat(5, n_res - 4))), [4, 3])
+        )
 
-        normalized_contact_order = np.sum(normalized_contact_map,0)/contact_order_normalization_vector
+        normalized_contact_order = (
+            np.sum(normalized_contact_map, 0) / contact_order_normalization_vector
+        )
 
         return (normalized_contact_map, normalized_contact_order)
-
 
     # ........................................................................
     #
@@ -2436,9 +2530,9 @@ class SSProtein:
 
         # build an empty distance matrix
         if self.n_frames % stride == 0:
-            distance_dims = int(self.n_frames/stride)
+            distance_dims = int(self.n_frames / stride)
         else:
-            distance_dims = int((self.n_frames/stride))+1
+            distance_dims = int((self.n_frames / stride)) + 1
 
         distances = np.zeros((distance_dims, distance_dims))
 
@@ -2447,8 +2541,10 @@ class SSProtein:
         # build an all vs. all RMSD matrix based on the parameters provided for every
         # stride-th frame
         for i in range(0, self.n_frames, stride):
-            distances[idx] = self.get_RMSD(i, stride=stride, region=region, backbone=backbone)
-            idx=idx+1
+            distances[idx] = self.get_RMSD(
+                i, stride=stride, region=region, backbone=backbone
+            )
+            idx = idx + 1
 
         # CLUSTERING
         # having computed the RMSD distance matrix we do Ward based hierachical clustering
@@ -2459,7 +2555,9 @@ class SSProtein:
         linkage = scipy.cluster.hierarchy.ward(distances)
 
         # linkage is the hierachical clustering encoded as a linkage matrix
-        labels = scipy.cluster.hierarchy.fcluster(linkage, t=n_clusters, criterion='maxclust')
+        labels = scipy.cluster.hierarchy.fcluster(
+            linkage, t=n_clusters, criterion="maxclust"
+        )
 
         # get a subtrajectory which corresponds to the trajectory examined
         # in the all vs. all comparison (i.e. a trajectory made of every stride-th
@@ -2485,11 +2583,10 @@ class SSProtein:
 
         # for each cluster
         for i in final_labels:
-
             # determine the indices associated with frames which are associated
             # with the i-th cluster
-            IDXs=np.where(labels == i)
-            IDXs=IDXs[0]
+            IDXs = np.where(labels == i)
+            IDXs = IDXs[0]
             cluster_frames.append(IDXs)
 
             # record how many frames are associated with the i-th cluster
@@ -2499,16 +2596,15 @@ class SSProtein:
             cluster_trajs.append(subtraj.slice(IDXs))
 
             # create the appropriate submatrix
-            cluster_distances=np.zeros((len(IDXs), len(IDXs)))
+            cluster_distances = np.zeros((len(IDXs), len(IDXs)))
 
             # initial distances is a subset of the all vs all RMSD distance
             # matrix which now only includes rows associated with the frames
             # from the i-th cluster
-            initial_dist=distances[IDXs]
+            initial_dist = distances[IDXs]
 
             # for each frame associated with the i-th cluster
-            for k in range(0,len(IDXs)):
-
+            for k in range(0, len(IDXs)):
                 # add the full all vs. all set of distances between each of the frames from
                 # the i-th cluster and all the other frames from the i-th clster
                 cluster_distances[k] = initial_dist[k][IDXs]
@@ -2524,15 +2620,24 @@ class SSProtein:
             if std == 0:
                 cluster_centroids.append(0)
             else:
-                cluster_centroids.append(np.exp(-1*cluster_distances / std).sum(axis=1).argmax())
+                cluster_centroids.append(
+                    np.exp(-1 * cluster_distances / std).sum(axis=1).argmax()
+                )
 
-        return (cluster_members, cluster_trajs, cluster_distance_matricies, cluster_centroids, cluster_frames)
-
+        return (
+            cluster_members,
+            cluster_trajs,
+            cluster_distance_matricies,
+            cluster_centroids,
+            cluster_frames,
+        )
 
     # ........................................................................
     #
     #
-    def get_inter_residue_COM_distance(self, R1, R2, stride=1, weights=False, etol=0.0000001):
+    def get_inter_residue_COM_distance(
+        self, R1, R2, stride=1, weights=False, etol=0.0000001
+    ):
         """Per-frame distance between two residues' centres of mass.
 
         Distances are in Angstroms.
@@ -2575,22 +2680,18 @@ class SSProtein:
         COM_1 = self.get_residue_COM(R1)[::stride]
         COM_2 = self.get_residue_COM(R2)[::stride]
 
-
-
         # calculate distance
         # note 10* to get angstroms was done at the get_residue_COM level
         distances = np.linalg.norm(COM_1 - COM_2, axis=1)
 
         # old way
-        #d = np.sqrt(np.square(np.transpose(COM_1)[0] - np.transpose(COM_2)[0]) + np.square(np.transpose(COM_1)[1] - np.transpose(COM_2)[1])+np.square(np.transpose(COM_1)[2] - np.transpose(COM_2)[2]))
+        # d = np.sqrt(np.square(np.transpose(COM_1)[0] - np.transpose(COM_2)[0]) + np.square(np.transpose(COM_1)[1] - np.transpose(COM_2)[1])+np.square(np.transpose(COM_1)[2] - np.transpose(COM_2)[2]))
 
         # optional deterministic frame re-weighting (collapses frame axis)
         weights = self.__check_weights(weights, stride, etol)
         if weights is False:
             return distances
         return ssutils.weighted_mean(distances, weights)
-
-
 
     # ........................................................................
     #
@@ -2630,13 +2731,22 @@ class SSProtein:
         COM_2 = self.get_residue_COM(R2)
 
         # note 10* to get Angstroms is done at the get_residue_COM level
-        return (COM_1 - COM_2)
-
+        return COM_1 - COM_2
 
     # ........................................................................
     #
     #
-    def get_inter_residue_atomic_distance(self, R1, R2, A1='CA', A2='CA', mode='atom', stride=1, weights=False, etol=0.0000001):
+    def get_inter_residue_atomic_distance(
+        self,
+        R1,
+        R2,
+        A1="CA",
+        A2="CA",
+        mode="atom",
+        stride=1,
+        weights=False,
+        etol=0.0000001,
+    ):
         """Per-frame distance between two residues, with mode-dependent semantics.
 
         For ``mode='atom'`` the distance is between the named atoms ``A1`` of
@@ -2702,53 +2812,66 @@ class SSProtein:
         """
 
         # check mode keyword is valid
-        ssutils.validate_keyword_option(mode, ['atom', 'ca', 'closest-heavy', 'closest', 'sidechain', 'sidechain-heavy'] , 'mode')
+        ssutils.validate_keyword_option(
+            mode,
+            ["atom", "ca", "closest-heavy", "closest", "sidechain", "sidechain-heavy"],
+            "mode",
+        )
 
         ## if mode is atom...
         ##
 
-        if mode == 'atom':
+        if mode == "atom":
             try:
-                atom1 = self.__residue_atom_lookup(R1,A1)
+                atom1 = self.__residue_atom_lookup(R1, A1)
                 if len(atom1) == 0:
-                    raise SSException(f'Unable to find atom [{A1}] in residue R1 ({R1})')
-
+                    raise SSException(
+                        f"Unable to find atom [{A1}] in residue R1 ({R1})"
+                    )
 
                 TRJ_1 = self.traj.atom_slice(atom1)
                 TRJ_1 = self.__get_subtrajectory(TRJ_1, stride)
 
-                atom2 = self.__residue_atom_lookup(R2,A2)
+                atom2 = self.__residue_atom_lookup(R2, A2)
                 if len(atom2) == 0:
-                    raise SSException(f'Unable to find atom [{A2}] in residue R1 ({R2})')
+                    raise SSException(
+                        f"Unable to find atom [{A2}] in residue R1 ({R2})"
+                    )
 
                 TRJ_2 = self.traj.atom_slice(atom2)
                 TRJ_2 = self.__get_subtrajectory(TRJ_2, stride)
 
-                COM_1 = 10*md.compute_center_of_mass(TRJ_1)
-                COM_2 = 10*md.compute_center_of_mass(TRJ_2)
+                COM_1 = 10 * md.compute_center_of_mass(TRJ_1)
+                COM_2 = 10 * md.compute_center_of_mass(TRJ_2)
 
-
-                # 
+                #
                 distances = np.linalg.norm(COM_1 - COM_2, axis=1)
 
                 # old way
-                #distances = np.sqrt(np.square(np.transpose(COM_1)[0] - np.transpose(COM_2)[0]) + np.square(np.transpose(COM_1)[1] - np.transpose(COM_2)[1])+np.square(np.transpose(COM_1)[2] - np.transpose(COM_2)[2]))
+                # distances = np.sqrt(np.square(np.transpose(COM_1)[0] - np.transpose(COM_2)[0]) + np.square(np.transpose(COM_1)[1] - np.transpose(COM_2)[1])+np.square(np.transpose(COM_1)[2] - np.transpose(COM_2)[2]))
 
             except IndexError as e:
-                ssio.exception_message(f"This is likely because one of [{A1}] or [{A2}] is not a valid atom type for the residue in question. Full error printed below\n{e}", e, with_frills=True)
+                ssio.exception_message(
+                    f"This is likely because one of [{A1}] or [{A2}] is not a valid atom type for the residue in question. Full error printed below\n{e}",
+                    e,
+                    with_frills=True,
+                )
 
         # if ANY of the other modes are passed
         else:
             subtraj = self.__get_subtrajectory(self.traj, stride)
-            distances = 10*md.compute_contacts(subtraj, [[R1,R2]], scheme=mode, periodic=False)[0].ravel()
+            distances = (
+                10
+                * md.compute_contacts(subtraj, [[R1, R2]], scheme=mode, periodic=False)[
+                    0
+                ].ravel()
+            )
 
         # optional deterministic frame re-weighting (collapses frame axis)
         weights = self.__check_weights(weights, stride, etol)
         if weights is False:
             return distances
         return ssutils.weighted_mean(distances, weights)
-
-
 
     # ........................................................................
     #
@@ -2776,7 +2899,7 @@ class SSProtein:
         """
 
         # get the atoms associated with the resite of interest
-        res_atoms = self.topology.select(f'resid {R1}')
+        res_atoms = self.topology.select(f"resid {R1}")
 
         totalMass = 0
 
@@ -2785,11 +2908,12 @@ class SSProtein:
 
         return totalMass
 
-
     # ........................................................................
     #
     #
-    def get_asphericity(self, R1=None, R2=None, verbose=True, weights=False, etol=0.0000001):
+    def get_asphericity(
+        self, R1=None, R2=None, verbose=True, weights=False, etol=0.0000001
+    ):
         """Per-frame asphericity of the chain (or a sub-region).
 
         Asphericity is a dimensionless shape descriptor computed from the
@@ -2839,12 +2963,14 @@ class SSProtein:
         # finally for each gyration tensor value compute the asphericity
         asph_vector = []
         for gyr in gyration_tensor_vector:
-
             # calculate the eigenvalues of the gyration tensor!
             (EIG, norm) = LA.eig(gyr)
 
             # finally calculate the instantanous asphericity and append to the growing vector
-            asph = 1 - 3*((EIG[0]*EIG[1] + EIG[1]*EIG[2] + EIG[2]*EIG[0])/np.power(EIG[0]+EIG[1]+EIG[2],2))
+            asph = 1 - 3 * (
+                (EIG[0] * EIG[1] + EIG[1] * EIG[2] + EIG[2] * EIG[0])
+                / np.power(EIG[0] + EIG[1] + EIG[2], 2)
+            )
 
             asph_vector.append(asph)
 
@@ -2856,11 +2982,12 @@ class SSProtein:
             return asph_vector
         return ssutils.weighted_mean(asph_vector, weights)
 
-
     # ........................................................................
     #
     #
-    def get_gyration_tensor(self, R1=None, R2=None, verbose=True, weights=False, etol=0.0000001):
+    def get_gyration_tensor(
+        self, R1=None, R2=None, verbose=True, weights=False, etol=0.0000001
+    ):
         """Per-frame ``3 x 3`` gyration tensor of the chain (or a sub-region).
 
         The gyration tensor :math:`T_{ab} = (1/N) \\sum_i (r_{i,a} - R_a)(r_{i,b} - R_b)`
@@ -2899,23 +3026,27 @@ class SSProtein:
         >>> T.shape
         (1000, 3, 3)
         """
-        (R1,R2, _) = self.__get_first_and_last(R1,R2, withCA=False)
+        (R1, R2, _) = self.__get_first_and_last(R1, R2, withCA=False)
 
-        all_positions_all_frames = self.traj.atom_slice(self.topology.select(f'resid {R1} to {R2}'))
+        all_positions_all_frames = self.traj.atom_slice(
+            self.topology.select(f"resid {R1} to {R2}")
+        )
 
         gyration_tensor_vector = []
         count = 1
 
         for frame in all_positions_all_frames:
-
             # quick status update...
             if count % 500 == 0:
-                ssio.status_message(f"On frame {count} of {len(all_positions_all_frames)} [computing gyration tensor]", verbose)
+                ssio.status_message(
+                    f"On frame {count} of {len(all_positions_all_frames)} [computing gyration tensor]",
+                    verbose,
+                )
 
             count = count + 1
 
             # compute the center of mass for the relevant atoms
-            COM = 10*md.compute_center_of_mass(frame)
+            COM = 10 * md.compute_center_of_mass(frame)
 
             # calculate the COM to position difference matrix. Note
             # we have to multiply the frame positions by 10 so that the COM
@@ -2924,7 +3055,7 @@ class SSProtein:
             ## unitless. HOWEVER, for consistency we're following the convention of converting ANY
             ## nm-based values to angstroms at the point at which the numbers enter soursop...
 
-            DIF = 10*frame.xyz[0] - COM
+            DIF = 10 * frame.xyz[0] - COM
 
             # old slow method
             """
@@ -2939,7 +3070,9 @@ class SSProtein:
             """
 
             # compute the gyration tensor - this syntax is WAY faster than the above
-            T_new = np.sum(np.einsum('ij...,i...->ij...',DIF,DIF),axis=0)/len(frame.xyz[0])
+            T_new = np.sum(np.einsum("ij...,i...->ij...", DIF, DIF), axis=0) / len(
+                frame.xyz[0]
+            )
 
             gyration_tensor_vector.append(T_new)
 
@@ -2951,11 +3084,10 @@ class SSProtein:
             return gyration_tensor_vector
         return ssutils.weighted_mean(gyration_tensor_vector, weights, axis=0)
 
-
     # ........................................................................
     #
     #
-    def get_end_to_end_distance(self, mode='COM', weights=False, etol=0.0000001):
+    def get_end_to_end_distance(self, mode="COM", weights=False, etol=0.0000001):
         """Per-frame end-to-end distance between the first and last CA residues.
 
         Caps (ACE / NME) are excluded — the "ends" are the first and last
@@ -2989,23 +3121,22 @@ class SSProtein:
         (30.1, 4.4)
         """
 
-        ssutils.validate_keyword_option(mode, ['CA', 'COM'], 'mode')
+        ssutils.validate_keyword_option(mode, ["CA", "COM"], "mode")
 
         # extract first and last residue that contain CA
         start = self.resid_with_CA[0]
         end = self.resid_with_CA[-1]
 
-        if mode == 'CA':
+        if mode == "CA":
             distance = self.get_inter_residue_atomic_distance(start, end, stride=1)
 
-        elif mode == 'COM':
+        elif mode == "COM":
             distance = self.get_inter_residue_COM_distance(start, end, stride=1)
 
         weights = self.__check_weights(weights, 1, etol)
         if weights is False:
             return distance
         return ssutils.weighted_mean(distance, weights)
-
 
     # ........................................................................
     #
@@ -3041,10 +3172,13 @@ class SSProtein:
         (1000, 3)
         """
 
-        (R1_new, R2_new, selection_string) = self.__get_first_and_last(R1, R2, withCA=False)
+        (R1_new, R2_new, selection_string) = self.__get_first_and_last(
+            R1, R2, withCA=False
+        )
 
-        return 10*md.compute_center_of_mass(self.traj.atom_slice(self.topology.select(selection_string)))
-
+        return 10 * md.compute_center_of_mass(
+            self.traj.atom_slice(self.topology.select(selection_string))
+        )
 
     # ........................................................................
     #
@@ -3088,21 +3222,33 @@ class SSProtein:
         33.4
         """
 
-        (_, _, selection_string) = self.__get_first_and_last(R1,R2, withCA=False)
+        (_, _, selection_string) = self.__get_first_and_last(R1, R2, withCA=False)
 
         # in angstroms (per-frame)
-        rg = 10*md.compute_rg(self.traj.atom_slice(self.topology.select(selection_string)))
+        rg = 10 * md.compute_rg(
+            self.traj.atom_slice(self.topology.select(selection_string))
+        )
 
         weights = self.__check_weights(weights, 1, etol)
         if weights is False:
             return rg
         return ssutils.weighted_mean(rg, weights)
 
-
     # ........................................................................
     #
     #
-    def get_hydrodynamic_radius(self, R1=None, R2=None, mode='nygaard', alpha1=0.216, alpha2=4.06, alpha3=0.821, distance_mode='CA', weights=False, etol=0.0000001):
+    def get_hydrodynamic_radius(
+        self,
+        R1=None,
+        R2=None,
+        mode="nygaard",
+        alpha1=0.216,
+        alpha2=4.06,
+        alpha3=0.821,
+        distance_mode="CA",
+        weights=False,
+        etol=0.0000001,
+    ):
         """Per-frame apparent hydrodynamic radius :math:`R_h` (in Angstroms).
 
         Two estimators are available:
@@ -3169,15 +3315,13 @@ class SSProtein:
         """
 
         # check a valid mode was passed and FREAK OUT if not!
-        ssutils.validate_keyword_option(mode, ['nygaard', 'kr'], 'mode')
+        ssutils.validate_keyword_option(mode, ["nygaard", "kr"], "mode")
 
         # optional deterministic frame re-weighting (collapses frame axis)
         wv = self.__check_weights(weights, 1, etol)
 
-
         # if we're using the nygaard mode
-        if mode == 'nygaard':
-
+        if mode == "nygaard":
             # first compute the rg
             rg = self.get_radius_of_gyration(R1, R2)
 
@@ -3185,15 +3329,15 @@ class SSProtein:
             N_033 = np.power(self.n_residues, 0.33)
             N_060 = np.power(self.n_residues, 0.60)
 
-            Rg_over_Rh = ((alpha1*(rg - alpha2*N_033)) / (N_060 - N_033)) + alpha3
+            Rg_over_Rh = ((alpha1 * (rg - alpha2 * N_033)) / (N_060 - N_033)) + alpha3
 
-            Rh = (1/Rg_over_Rh)*rg
+            Rh = (1 / Rg_over_Rh) * rg
             if wv is False:
                 return Rh
             return ssutils.weighted_mean(Rh, wv)
 
         # if we're using the Kirkwood-Riseman mode
-        elif mode == 'kr':
+        elif mode == "kr":
             all_rij = []
 
             # build empty lists associated with each frame
@@ -3208,11 +3352,9 @@ class SSProtein:
 
                 # this breaks rij down into each frame
                 for idx, f in enumerate(rij):
-
                     # extend the contribugion for each residue's set of non-redundant
                     # inverse distances
-                    all_rij[idx].extend((1/f).tolist())
-
+                    all_rij[idx].extend((1 / f).tolist())
 
             # finally, take per-frame inverse of the inverse distance
             # to get Rh
@@ -3221,9 +3363,6 @@ class SSProtein:
             if wv is False:
                 return Rh
             return ssutils.weighted_mean(Rh, wv)
-
-
-
 
     # ........................................................................
     #
@@ -3251,13 +3390,15 @@ class SSProtein:
         >>> v.mean()
         1.45e+05
         """
-        NM_TO_ANGSTROM = 1000 # 1000 A^3 / nm^3
+        NM_TO_ANGSTROM = 1000  # 1000 A^3 / nm^3
 
         # in angstroms cubued
-        volumes = np.array([ConvexHull(xyz,**kwargs).volume for xyz in self.traj.xyz])*NM_TO_ANGSTROM
+        volumes = (
+            np.array([ConvexHull(xyz, **kwargs).volume for xyz in self.traj.xyz])
+            * NM_TO_ANGSTROM
+        )
 
         return volumes
-
 
     # ........................................................................
     #
@@ -3313,12 +3454,12 @@ class SSProtein:
         c_length = n_res * 3.6
 
         # next define the exponent
-        exponent = 4.0/(np.power(n_res,0.3333))
+        exponent = 4.0 / (np.power(n_res, 0.3333))
 
         # define a function which returns the instantaneous t value for
         # a given rg
         def inst_t(i):
-            return 2.5*np.power((1.75*(i/(c_length))),exponent)
+            return 2.5 * np.power((1.75 * (i / (c_length))), exponent)
 
         # compile into a vectorized version
         K = np.vectorize(inst_t)
@@ -3331,7 +3472,6 @@ class SSProtein:
         if weights is False:
             return t
         return ssutils.weighted_mean(t, weights)
-
 
     # ........................................................................
     #
@@ -3375,22 +3515,26 @@ class SSProtein:
         >>> chi5[1][1]                  # per-frame chi5 angles for that residue
         """
 
-
         # check input ketword selector
-        ssutils.validate_keyword_option(angle_name, ['chi1', 'chi2','chi3', 'chi4','chi5','phi', 'psi', 'omega'], 'angle_name')
+        ssutils.validate_keyword_option(
+            angle_name,
+            ["chi1", "chi2", "chi3", "chi4", "chi5", "phi", "psi", "omega"],
+            "angle_name",
+        )
 
         # construct the selector dictionary - enables mapping of an angle name to an internal function
-        selector = {"phi":md.compute_phi,
-                    "omega":md.compute_omega,
-                    "psi":md.compute_psi,
-                    "chi1":md.compute_chi1,
-                    "chi2":md.compute_chi2,
-                    "chi3":md.compute_chi3,
-                    "chi4":md.compute_chi4,
-                    "chi5":md.compute_chi5}
+        selector = {
+            "phi": md.compute_phi,
+            "omega": md.compute_omega,
+            "psi": md.compute_psi,
+            "chi1": md.compute_chi1,
+            "chi2": md.compute_chi2,
+            "chi3": md.compute_chi3,
+            "chi4": md.compute_chi4,
+            "chi5": md.compute_chi5,
+        }
 
         if angle_name not in self.__all_angles:
-
             # compute all phi angles
             fx = selector[angle_name]
             tmp = fx(self.traj)
@@ -3401,7 +3545,9 @@ class SSProtein:
 
             # sanity check
             if len(atoms) != len(angles):
-                raise SSException('ERROR: This is a bug in how angle selection happens in get_angles - please open an Issue on GitHub')
+                raise SSException(
+                    "ERROR: This is a bug in how angle selection happens in get_angles - please open an Issue on GitHub"
+                )
 
             all_atom_names = []
             for res_atoms in atoms:
@@ -3414,8 +3560,6 @@ class SSProtein:
             self.__all_angles[angle_name] = [all_atom_names, angles]
 
         return self.__all_angles[angle_name]
-
-
 
     # ........................................................................
     #
@@ -3437,9 +3581,9 @@ class SSProtein:
 
         def _ca(r):
             if r not in cache:
-                atom = self.__residue_atom_lookup(r, 'CA')
+                atom = self.__residue_atom_lookup(r, "CA")
                 if len(atom) == 0:
-                    raise SSException(f'Unable to find atom [CA] in residue R1 ({r})')
+                    raise SSException(f"Unable to find atom [CA] in residue R1 ({r})")
                 TRJ = self.traj.atom_slice(atom)
                 TRJ = self.__get_subtrajectory(TRJ, stride)
                 cache[r] = 10 * md.compute_center_of_mass(TRJ)
@@ -3447,12 +3591,20 @@ class SSProtein:
 
         return _ca
 
-
-
     # ........................................................................
     #
     #
-    def get_internal_scaling(self, R1=None, R2=None, mode='COM', mean_vals=False, stride=1, weights=False, etol=0.0000001, verbose=True):
+    def get_internal_scaling(
+        self,
+        R1=None,
+        R2=None,
+        mode="COM",
+        mean_vals=False,
+        stride=1,
+        weights=False,
+        etol=0.0000001,
+        verbose=True,
+    ):
         """Internal scaling profile: sequence separation vs. inter-residue distance.
 
         For every sequence separation :math:`|i-j|` from 0 to ``R2-R1``, this
@@ -3529,7 +3681,9 @@ class SSProtein:
 
         if weights is not False:
             if int(stride) != 1:
-                raise SSException("For get_scaling_exponent with weights stride MUST be set to 1. If this is a HUGE deal for you please contact alex and he'll try and update the code to accomodate this, but for now we suggest creating a sub-sampled trajectory and loading that")
+                raise SSException(
+                    "For get_scaling_exponent with weights stride MUST be set to 1. If this is a HUGE deal for you please contact alex and he'll try and update the code to accomodate this, but for now we suggest creating a sub-sampled trajectory and loading that"
+                )
 
         # check weights are correct
         weights = self.__check_weights(weights, stride, etol)
@@ -3538,10 +3692,10 @@ class SSProtein:
         self.__check_stride(stride)
 
         # check mode is OK
-        ssutils.validate_keyword_option(mode, ['CA', 'COM'], 'mode')
+        ssutils.validate_keyword_option(mode, ["CA", "COM"], "mode")
 
         # process the R1/R2 to set the positions
-        out =  self.__get_first_and_last(R1, R2, withCA = True)
+        out = self.__get_first_and_last(R1, R2, withCA=True)
         R1 = out[0]
         R2 = out[1]
 
@@ -3570,31 +3724,33 @@ class SSProtein:
         # get_inter_residue_atomic_distance recomputes each residue's CA
         # center-of-mass from scratch on every call; caching it per
         # residue is byte-identical but O(n) rather than O(n^2).
-        if mode == 'CA':
+        if mode == "CA":
             _ca = self.__ca_position_cache(stride)
 
         for seq_sep in range(0, max_seq_sep):
-            ssio.status_message(f"Internal Scaling - on sequence separation {seq_sep} of {max_seq_sep-1}", verbose)
+            ssio.status_message(
+                f"Internal Scaling - on sequence separation {seq_sep} of {max_seq_sep - 1}",
+                verbose,
+            )
 
             tmp = []
             tmp_w = []
             seq_sep_vals.append(seq_sep)
-            for pos in range(0, max_seq_sep-seq_sep):
-
+            for pos in range(0, max_seq_sep - seq_sep):
                 # define the two positions
                 A = R1 + pos
                 B = R1 + pos + seq_sep
 
                 # get the distance for every stride-th frame between those two positions using either the CA
                 # mode or the COM mode
-                if mode == 'CA':
+                if mode == "CA":
                     # byte-identical to get_inter_residue_atomic_distance(A, B, stride=stride)
                     distance = np.linalg.norm(_ca(A) - _ca(B), axis=1)
 
-                elif mode == 'COM':
+                elif mode == "COM":
                     distance = self.get_inter_residue_COM_distance(A, B, stride=stride)
 
-                tmp = np.concatenate((tmp,distance))
+                tmp = np.concatenate((tmp, distance))
 
                 # deterministic re-weighting: pool the (validated, per-frame)
                 # weights alongside the distances rather than stochastically
@@ -3608,19 +3764,29 @@ class SSProtein:
 
         if mean_vals:
             if weights is not False:
-                mean_is = [ssutils.weighted_mean(d, w/np.sum(w)) for d, w in zip(seq_sep_distances, seq_sep_weights)]
+                mean_is = [
+                    ssutils.weighted_mean(d, w / np.sum(w))
+                    for d, w in zip(seq_sep_distances, seq_sep_weights)
+                ]
             else:
                 mean_is = [np.mean(i) for i in seq_sep_distances]
             return (seq_sep_vals, mean_is)
         else:
             return (seq_sep_vals, seq_sep_distances)
 
-
-
     # ........................................................................
     #
     #
-    def get_internal_scaling_RMS(self, R1=None, R2=None, mode='COM', stride=1, weights=False, etol=0.0000001, verbose=True):
+    def get_internal_scaling_RMS(
+        self,
+        R1=None,
+        R2=None,
+        mode="COM",
+        stride=1,
+        weights=False,
+        etol=0.0000001,
+        verbose=True,
+    ):
         """Root-mean-square internal scaling profile: separation vs. RMS distance.
 
         Like :meth:`get_internal_scaling` but reports
@@ -3680,11 +3846,20 @@ class SSProtein:
         w = self.__check_weights(weights, stride, etol)
 
         # compute the non RMS internal scaling behaviour (unweighted pools)
-        (seq_sep_vals, seq_sep_distances) = self.get_internal_scaling(R1=R1, R2=R2, mode=mode, mean_vals=False, stride=stride, weights=False, etol=etol, verbose=verbose)
+        (seq_sep_vals, seq_sep_distances) = self.get_internal_scaling(
+            R1=R1,
+            R2=R2,
+            mode=mode,
+            mean_vals=False,
+            stride=stride,
+            weights=False,
+            etol=etol,
+            verbose=verbose,
+        )
 
         # calculate RMS for each distance
         if w is False:
-            mean_is = [np.sqrt(np.mean(i*i)) for i in seq_sep_distances]
+            mean_is = [np.sqrt(np.mean(i * i)) for i in seq_sep_distances]
         else:
             # each separation's distance pool is n_pairs copies of a
             # len(w) per-pair block; tile + renormalise the validated
@@ -3694,7 +3869,7 @@ class SSProtein:
             for i in seq_sep_distances:
                 i = np.asarray(i)
                 if i.size == 0 or n_w == 0 or (i.size % n_w) != 0:
-                    mean_is.append(np.sqrt(np.mean(i*i)))
+                    mean_is.append(np.sqrt(np.mean(i * i)))
                     continue
                 pooled = np.tile(w, i.size // n_w)
                 pooled = pooled / np.sum(pooled)
@@ -3702,22 +3877,23 @@ class SSProtein:
 
         return (seq_sep_vals, mean_is)
 
-
     # ........................................................................
     #
-    def get_scaling_exponent(self,
-                             inter_residue_min=15,
-                             end_effect=5,
-                             n_bootstrap=200,
-                             confidence_interval=95.0,
-                             mode='COM',
-                             num_fitting_points=40,
-                             fraction_of_points=0.5,
-                             fraction_override=False,
-                             etol=0.0000001,
-                             stride=1,
-                             weights=False,
-                             verbose=True):
+    def get_scaling_exponent(
+        self,
+        inter_residue_min=15,
+        end_effect=5,
+        n_bootstrap=200,
+        confidence_interval=95.0,
+        mode="COM",
+        num_fitting_points=40,
+        fraction_of_points=0.5,
+        fraction_override=False,
+        etol=0.0000001,
+        stride=1,
+        weights=False,
+        verbose=True,
+    ):
         """Fit the apparent polymer scaling exponent and prefactor by loglog regression.
 
         Fits the homopolymer scaling relationship
@@ -3833,36 +4009,45 @@ class SSProtein:
         >>> result = protein.get_scaling_exponent(verbose=False)
         >>> nu, A0 = result[0], result[1]
         """
-                    
 
         # check weights are OK
         weights = self.__check_weights(weights, stride, etol)
 
         # check mode is OK
-        ssutils.validate_keyword_option(mode, ['CA', 'COM'], 'mode')
+        ssutils.validate_keyword_option(mode, ["CA", "COM"], "mode")
 
         # compute max |i-j| distance being used...
         first = self.resid_with_CA[0]
         last = self.resid_with_CA[-1]
-        max_separation = (last-first)+1
+        max_separation = (last - first) + 1
 
         #  if we're not using fraction override check the number of points requested makes sense given sequence length
-        if not fraction_override and (max_separation - (end_effect+inter_residue_min)) < num_fitting_points:
-            fraction_of_points=1.0
-            ssio.warning_message(f"For scaling exponent calculation, sequence not long enough to use {num_fitting_points} points (only {max_separation - (end_effect+inter_residue_min)} valid positions once end effects and low |i-j| are accounted for), switching to using the fraction of points mode (will use {int(fraction_of_points*(max_separation - (end_effect+inter_residue_min)))} points instead)")
+        if (
+            not fraction_override
+            and (max_separation - (end_effect + inter_residue_min)) < num_fitting_points
+        ):
+            fraction_of_points = 1.0
+            ssio.warning_message(
+                f"For scaling exponent calculation, sequence not long enough to use {num_fitting_points} points (only {max_separation - (end_effect + inter_residue_min)} valid positions once end effects and low |i-j| are accounted for), switching to using the fraction of points mode (will use {int(fraction_of_points * (max_separation - (end_effect + inter_residue_min)))} points instead)"
+            )
 
             fraction_override = True
 
         if fraction_override:
             if fraction_of_points > 1.0:
-                raise SSException("Using fraction_overide to define the number of points to fit in the linear loglog analysis, but requested over 1.0 fraction (fraction_of_points must lie between >=0 and 1.0")
+                raise SSException(
+                    "Using fraction_overide to define the number of points to fit in the linear loglog analysis, but requested over 1.0 fraction (fraction_of_points must lie between >=0 and 1.0"
+                )
             # again note int to round down here
-            num_fitting_points = int(fraction_of_points*(max_separation - (end_effect + inter_residue_min)))
+            num_fitting_points = int(
+                fraction_of_points * (max_separation - (end_effect + inter_residue_min))
+            )
             if num_fitting_points < 3:
                 raise SSException("Less than three points - cannot fit a straight line")
             if num_fitting_points < 10:
-                ssio.warning_message(f"Warning: Scaling fit has only {num_fitting_points} points - likely finite size effects!")
-
+                ssio.warning_message(
+                    f"Warning: Scaling fit has only {num_fitting_points} points - likely finite size effects!"
+                )
 
         # validate the requested confidence-interval width
         if not 0.0 < confidence_interval < 100.0:
@@ -3871,8 +4056,8 @@ class SSProtein:
                 f"interval (0, 100), got {confidence_interval}"
             )
 
-        seq_sep_vals          = []
-        seq_sep_RMS_distance  = []
+        seq_sep_vals = []
+        seq_sep_RMS_distance = []
 
         # Per-separation bootstrap RMS distances: seq_sep_boot_RMS[k] is a
         # length-n_bootstrap array of RMS distances for the k-th sequence
@@ -3893,13 +4078,15 @@ class SSProtein:
         # residue is byte-identical but O(n) rather than O(n^2). The
         # hoist consumes no RNG, so the np.random error-bootstrap below
         # sees an identical stream and its output is unchanged.
-        if mode == 'CA':
+        if mode == "CA":
             _ca = self.__ca_position_cache(stride)
 
         # for each possible sequence separation  (|i-j| value)
         for seq_sep in range(1, max_separation):
-
-            ssio.status_message(f"Internal Scaling - on sequence separation {seq_sep} of {max_separation}", verbose)
+            ssio.status_message(
+                f"Internal Scaling - on sequence separation {seq_sep} of {max_separation}",
+                verbose,
+            )
 
             tmp_rows = []
             seq_sep_vals.append(seq_sep)
@@ -3907,18 +4094,16 @@ class SSProtein:
             # collect the per-frame distance vector for every residue pair at
             # this sequence separation: one row per (A, B) pair, one column
             # per (strided) frame.
-            for pos in range(0, max_separation-seq_sep):
-
+            for pos in range(0, max_separation - seq_sep):
                 # define the two positions
                 A = first + pos
                 B = first + pos + seq_sep
 
-
-                if mode == 'CA':
+                if mode == "CA":
                     # byte-identical to get_inter_residue_atomic_distance(A, B, stride=stride)
                     distance = np.linalg.norm(_ca(A) - _ca(B), axis=1)
 
-                elif mode == 'COM':
+                elif mode == "COM":
                     distance = self.get_inter_residue_COM_distance(A, B, stride=stride)
 
                 tmp_rows.append(np.asarray(distance, dtype=np.float64))
@@ -3957,19 +4142,19 @@ class SSProtein:
             # to a frame-wise reduction that we then index by boot_frames.
             if weights is not False:
                 w_per_frame = np.asarray(weights, dtype=np.float64)
-                ws = (sq * w_per_frame).sum(axis=0)                  # sum_pairs w*d^2 -> (n_frames,)
-                num = ws[boot_frames].sum(axis=1)                    # (n_bootstrap,)
+                ws = (sq * w_per_frame).sum(axis=0)  # sum_pairs w*d^2 -> (n_frames,)
+                num = ws[boot_frames].sum(axis=1)  # (n_bootstrap,)
                 den = n_pairs * w_per_frame[boot_frames].sum(axis=1)
                 rms_boot = np.sqrt(num / den)
             else:
-                col_mean_sq = sq.mean(axis=0)                        # mean over pairs -> (n_frames,)
+                col_mean_sq = sq.mean(axis=0)  # mean over pairs -> (n_frames,)
                 rms_boot = np.sqrt(col_mean_sq[boot_frames].mean(axis=1))
 
             seq_sep_boot_RMS.append(rms_boot)
 
         # sub-select the region of the curve we actually fit: drop the
         # short-separation steric regime and the chain-end regime.
-        seq_sep_vals         = seq_sep_vals[inter_residue_min:-end_effect]
+        seq_sep_vals = seq_sep_vals[inter_residue_min:-end_effect]
         seq_sep_RMS_distance = seq_sep_RMS_distance[inter_residue_min:-end_effect]
 
         ## next find indices for evenly spaced points in logspace. This whole section
@@ -3977,12 +4162,12 @@ class SSProtein:
         # list indices that will give evenly spaced points when plotted in log space
         y_data = np.log(seq_sep_vals)
         y_data_offset = y_data - y_data[0]
-        interval = y_data_offset[-1]/num_fitting_points
-        integer_vals = y_data_offset/interval
+        interval = y_data_offset[-1] / num_fitting_points
+        integer_vals = y_data_offset / interval
 
         logspaced_idx = []
-        for i in range(0,num_fitting_points):
-            [local_ix,_] = sstools.find_nearest(integer_vals, i)
+        for i in range(0, num_fitting_points):
+            [local_ix, _] = sstools.find_nearest(integer_vals, i)
             if local_ix in logspaced_idx:
                 continue
             else:
@@ -3991,7 +4176,7 @@ class SSProtein:
         # finally using those evenly-spaced log indices we extract out new lists
         # that have values which will be evenly spaced in logspace.
         fitting_separation = [seq_sep_vals[i] for i in logspaced_idx]
-        fitting_distances  = [seq_sep_RMS_distance[i] for i in logspaced_idx]
+        fitting_distances = [seq_sep_RMS_distance[i] for i in logspaced_idx]
 
         # fit the homopolymer power law in log-log space
         log_sep_fit = np.log(fitting_separation)
@@ -4008,7 +4193,6 @@ class SSProtein:
         reduced_chi_squared_all = np.nan
 
         if do_bootstrap and len(seq_sep_boot_RMS) > 0:
-
             # (n_sep, n_bootstrap), aligned to the sub-selected fit region
             boot_RMS = np.array(seq_sep_boot_RMS)[inter_residue_min:-end_effect]
             log_boot = np.log(boot_RMS)
@@ -4023,8 +4207,8 @@ class SSProtein:
             # parameter CI: re-fit every frame-resample over the same
             # log-spaced fit region (np.polyfit vectorises over the columns),
             # then take percentiles of the resulting nu / A0 distributions.
-            log_boot_fit = log_boot[logspaced_idx, :]            # (n_fit, n_bootstrap)
-            coeffs = np.polyfit(log_sep_fit, log_boot_fit, 1)    # (2, n_bootstrap)
+            log_boot_fit = log_boot[logspaced_idx, :]  # (n_fit, n_bootstrap)
+            coeffs = np.polyfit(log_sep_fit, log_boot_fit, 1)  # (2, n_bootstrap)
             nu_boot = coeffs[0]
             A0_boot = np.exp(coeffs[1])
             lower_p = (100.0 - confidence_interval) / 2.0
@@ -4036,30 +4220,47 @@ class SSProtein:
             # uncertainty. Points with zero SE (no spread) are dropped and
             # the degrees-of-freedom count adjusted, avoiding division by zero.
             def _reduced_chi2(sep_vals, rms_vals, se):
-                resid = np.log(rms_vals) - (nu_best*np.log(sep_vals) + logR0_best)
+                resid = np.log(rms_vals) - (nu_best * np.log(sep_vals) + logR0_best)
                 ok = se > 0
                 dof = int(np.sum(ok)) - 2
                 if dof <= 0:
                     return np.nan
-                return float(np.sum((resid[ok]/se[ok])**2) / dof)
+                return float(np.sum((resid[ok] / se[ok]) ** 2) / dof)
 
             reduced_chi_squared_fitting = _reduced_chi2(
-                np.array(fitting_separation), np.array(fitting_distances),
-                se_log[logspaced_idx])
+                np.array(fitting_separation),
+                np.array(fitting_distances),
+                se_log[logspaced_idx],
+            )
             reduced_chi_squared_all = _reduced_chi2(
-                np.array(seq_sep_vals), np.array(seq_sep_RMS_distance), se_log)
+                np.array(seq_sep_vals), np.array(seq_sep_RMS_distance), se_log
+            )
 
-        return [nu_best, R0_best, nu_ci_low, nu_ci_high, A0_ci_low, A0_ci_high,
-                reduced_chi_squared_fitting, reduced_chi_squared_all,
-                np.vstack((np.array(fitting_separation), np.array(fitting_distances))),
-                np.vstack((seq_sep_vals, seq_sep_RMS_distance, sstools.powermodel(seq_sep_vals, nu_best, R0_best)))]
-
-
+        return [
+            nu_best,
+            R0_best,
+            nu_ci_low,
+            nu_ci_high,
+            A0_ci_low,
+            A0_ci_high,
+            reduced_chi_squared_fitting,
+            reduced_chi_squared_all,
+            np.vstack((np.array(fitting_separation), np.array(fitting_distances))),
+            np.vstack(
+                (
+                    seq_sep_vals,
+                    seq_sep_RMS_distance,
+                    sstools.powermodel(seq_sep_vals, nu_best, R0_best),
+                )
+            ),
+        ]
 
     # ........................................................................
     #
     #
-    def get_all_SASA(self, probe_radius=1.4, mode='residue', stride=20, weights=False, etol=0.0000001):
+    def get_all_SASA(
+        self, probe_radius=1.4, mode="residue", stride=20, weights=False, etol=0.0000001
+    ):
         """Solvent-accessible surface area (SASA) per residue or per atom.
 
         Internally uses mdtraj's Shrake-Rupley implementation (Golden-Spiral
@@ -4115,7 +4316,7 @@ class SSProtein:
         ## internal function
         def get_sasa_based_on_type(basis, passed_mode):
             # get all reas
-            all_areas = basis[0]*100
+            all_areas = basis[0] * 100
             all_atoms = list(basis[1])
 
             # define initial SASA
@@ -4123,24 +4324,27 @@ class SSProtein:
 
             # for each residue with a CA atom...
             for i in self.resid_with_CA:
-
                 # get the atomic indices
-                if passed_mode == 'sidechain':
-                    
+                if passed_mode == "sidechain":
                     # for some reason 'sidechain' selection includes the backbone hydrogen atoms??!?!
-                    relevant_atom_idx = self.topology.select(f'resid {i} and {passed_mode} and (not name "H" "HA" "HA2" "HA3")')
+                    relevant_atom_idx = self.topology.select(
+                        f'resid {i} and {passed_mode} and (not name "H" "HA" "HA2" "HA3")'
+                    )
 
-                if passed_mode == 'backbone':
+                if passed_mode == "backbone":
                     # for some reason 'backbone' ignores the backbone hydrogen atoms ?!?!?
-                    relevant_atom_idx = self.topology.select(f'(resid {i} and {passed_mode}) or (resid {i} and name "H" "HA" "HA2" "HA3")')
+                    relevant_atom_idx = self.topology.select(
+                        f'(resid {i} and {passed_mode}) or (resid {i} and name "H" "HA" "HA2" "HA3")'
+                    )
 
                 # no atoms so create an empty list
                 if len(relevant_atom_idx) == 0:
                     per_res = list(np.zeros(len(all_areas.transpose()[0])))
                 else:
-
                     # get SASA index of first atom index...
-                    per_res = all_areas.transpose()[all_atoms.index(relevant_atom_idx[0])]
+                    per_res = all_areas.transpose()[
+                        all_atoms.index(relevant_atom_idx[0])
+                    ]
 
                     for atom in relevant_atom_idx[1:]:
                         per_res = per_res + all_areas.transpose()[all_atoms.index(atom)]
@@ -4155,7 +4359,9 @@ class SSProtein:
         ##
 
         # validate input mode
-        ssutils.validate_keyword_option(mode, ['residue', 'atom','backbone','sidechain','all'], 'mode')
+        ssutils.validate_keyword_option(
+            mode, ["residue", "atom", "backbone", "sidechain", "all"], "mode"
+        )
 
         # optional deterministic frame re-weighting. The weights are
         # validated against the STRIDED frame axis (the validator applies
@@ -4164,7 +4370,7 @@ class SSProtein:
         wv = self.__check_weights(weights, stride, etol)
 
         # build a specific memoized name for this request
-        memoized_name = f'SASA_{stride}_{mode}_{probe_radius}'
+        memoized_name = f"SASA_{stride}_{mode}_{probe_radius}"
 
         # return already computed SASA is available...
         if wv is False and memoized_name in self.__SASA_saved:
@@ -4174,36 +4380,43 @@ class SSProtein:
         target = self.__get_subtrajectory(self.traj, stride)
 
         # 100* to convert from nm^2 to A^2, and *0.1 for probe radius to convert from A to nm
-        if mode == 'residue':
-            return_data = 100*md.shrake_rupley(target, mode='residue', probe_radius=probe_radius*0.1)
+        if mode == "residue":
+            return_data = 100 * md.shrake_rupley(
+                target, mode="residue", probe_radius=probe_radius * 0.1
+            )
 
-        if mode == 'atom':
-            return_data = 100*md.shrake_rupley(target, mode='atom', probe_radius=probe_radius*0.1)
+        if mode == "atom":
+            return_data = 100 * md.shrake_rupley(
+                target, mode="atom", probe_radius=probe_radius * 0.1
+            )
 
-        if mode == 'sidechain' or mode == 'backbone' or mode == 'all':
-
+        if mode == "sidechain" or mode == "backbone" or mode == "all":
             # run calculation for on the whole trajectory
-            basis =  md.shrake_rupley(target, mode='atom', probe_radius=probe_radius*0.1, get_mapping=True)
+            basis = md.shrake_rupley(
+                target, mode="atom", probe_radius=probe_radius * 0.1, get_mapping=True
+            )
 
             # extract sidechains
-            if mode == 'sidechain' or mode == 'all':
-                SC_SASA = get_sasa_based_on_type(basis, 'sidechain')
+            if mode == "sidechain" or mode == "all":
+                SC_SASA = get_sasa_based_on_type(basis, "sidechain")
 
             # extract backbone
-            if mode == 'backbone' or mode == 'all':
-                BB_SASA = get_sasa_based_on_type(basis, 'backbone')
+            if mode == "backbone" or mode == "all":
+                BB_SASA = get_sasa_based_on_type(basis, "backbone")
 
-            if mode == 'all':
-                ALL_SASA = 100*md.shrake_rupley(target, mode='residue', probe_radius=probe_radius*0.1)
+            if mode == "all":
+                ALL_SASA = 100 * md.shrake_rupley(
+                    target, mode="residue", probe_radius=probe_radius * 0.1
+                )
 
-            if mode == 'sidechain':
+            if mode == "sidechain":
                 return_data = SC_SASA
 
-            if mode == 'backbone':
+            if mode == "backbone":
                 return_data = BB_SASA
 
-            if mode == 'all':
-                return_data =  (ALL_SASA, SC_SASA, BB_SASA)
+            if mode == "all":
+                return_data = (ALL_SASA, SC_SASA, BB_SASA)
 
         # unweighted: cache + return exactly as before (byte-identical)
         if wv is False:
@@ -4211,16 +4424,22 @@ class SSProtein:
             return return_data
 
         # weighted: collapse the (strided) frame axis; do not cache
-        if mode == 'all':
+        if mode == "all":
             return tuple(ssutils.weighted_mean(x, wv, axis=0) for x in return_data)
         return ssutils.weighted_mean(return_data, wv, axis=0)
-
-
 
     # ........................................................................
     #
     #
-    def get_site_accessibility(self, input_list, probe_radius=1.4, mode='residue_type', stride=20, weights=False, etol=0.0000001):
+    def get_site_accessibility(
+        self,
+        input_list,
+        probe_radius=1.4,
+        mode="residue_type",
+        stride=20,
+        weights=False,
+        etol=0.0000001,
+    ):
         """Mean & std SASA for selected residue types or specific residue indices.
 
         Under ``mode='residue_type'``, ``input_list`` is interpreted as
@@ -4273,21 +4492,20 @@ class SSProtein:
         """
 
         ## First check mode is valid and then sanity check input
-        ssutils.validate_keyword_option(mode, ['residue_type', 'resid'], 'mode')
-
+        ssutils.validate_keyword_option(mode, ["residue_type", "resid"], "mode")
 
         # empty list of residues we're going to examine (resids)
         resid_list = []
 
         # if we're in 'residue_type' mode
-        if mode == 'residue_type':
-
+        if mode == "residue_type":
             ## First check all the passed residue types are valid...
             # set the list of valid residues to the 20 AAs + the caps
             for res in input_list:
                 if res not in ALL_VALID_RESIDUE_NAMES:
-                    raise SSException(f"Error: Tried to use get_site_accessibility in 'residue_type' mode but residue {res} not found in list of valid residues {ALL_VALID_RESIDUE_NAMES}")
-
+                    raise SSException(
+                        f"Error: Tried to use get_site_accessibility in 'residue_type' mode but residue {res} not found in list of valid residues {ALL_VALID_RESIDUE_NAMES}"
+                    )
 
             # get AA list and convert into an ordered list of each
             # AA residue type
@@ -4303,13 +4521,14 @@ class SSProtein:
                     resid_list.append(idx)
                 idx = idx + 1
 
-
         # if we're in resid mode
-        elif mode == 'resid':
+        elif mode == "resid":
             resid_list = input_list
 
         # next compute ALL SASA for all residues (need the full protein based SASA
-        ALL_SASA = np.transpose(self.get_all_SASA(stride=stride, probe_radius=probe_radius))
+        ALL_SASA = np.transpose(
+            self.get_all_SASA(stride=stride, probe_radius=probe_radius)
+        )
 
         lookup = self.get_amino_acid_sequence()
 
@@ -4322,15 +4541,19 @@ class SSProtein:
             if wv is False:
                 return_data[lookup[i]] = [np.mean(ALL_SASA[i]), np.std(ALL_SASA[i])]
             else:
-                return_data[lookup[i]] = [ssutils.weighted_mean(ALL_SASA[i], wv),
-                                          ssutils.weighted_std(ALL_SASA[i], wv)]
+                return_data[lookup[i]] = [
+                    ssutils.weighted_mean(ALL_SASA[i], wv),
+                    ssutils.weighted_std(ALL_SASA[i], wv),
+                ]
 
         return return_data
 
     # ........................................................................
     #
     #
-    def get_regional_SASA(self, R1, R2, probe_radius=1.4, stride=20, weights=False, etol=0.0000001):
+    def get_regional_SASA(
+        self, R1, R2, probe_radius=1.4, stride=20, weights=False, etol=0.0000001
+    ):
         """Mean total SASA summed over a contiguous residue range.
 
         Calls :meth:`get_all_SASA` (whose result is memoised) and sums the
@@ -4390,11 +4613,12 @@ class SSProtein:
         # return the mean sum of SASA for all atoms
         return regional_SASA
 
-
     # ........................................................................
     #
     #
-    def get_sidechain_alignment_angle(self, R1, R2, sidechain_atom_1='default', sidechain_atom_2='default'):
+    def get_sidechain_alignment_angle(
+        self, R1, R2, sidechain_atom_1="default", sidechain_atom_2="default"
+    ):
         """Per-frame angle between two residues' sidechain orientation vectors.
 
         For each residue a "sidechain vector" is the CA-to-tip vector, where
@@ -4444,54 +4668,73 @@ class SSProtein:
         82.4
         """
 
-
         # The initial section is responsible for selecting/defining the sidechain atom and catching any
         # bad inputs. It's a litte drawn out but useful for code clarity reasons.
         # note need to do this with the un-corrected residue index values, hence why it comes first
         if R1 not in self.__residue_atom_table:
-            raise SSException(f'Residue index for R1: {R1:d} does not exist in the protein.')
+            raise SSException(
+                f"Residue index for R1: {R1:d} does not exist in the protein."
+            )
 
         if R2 not in self.__residue_atom_table:
-            raise SSException(f'Residue index for R2: {R2:d} does not exist in the protein.')
+            raise SSException(
+                f"Residue index for R2: {R2:d} does not exist in the protein."
+            )
 
-
-        if sidechain_atom_1 == 'default':
+        if sidechain_atom_1 == "default":
             resname_1 = self.get_amino_acid_sequence(numbered=False)[R1]
             resname_1 = sstools.fix_histadine_name(resname_1)
 
             try:
                 sidechain_atom_1 = DEFAULT_SIDECHAIN_VECTOR_ATOMS[resname_1]
 
-                if sidechain_atom_1 == 'ERROR':
-                    raise SSException(f'Residue lacks a valid sidechain ({resname_1})')
+                if sidechain_atom_1 == "ERROR":
+                    raise SSException(f"Residue lacks a valid sidechain ({resname_1})")
 
             except KeyError:
-                raise SSException(f'Cannot parse residue at position {R1} (residue name = {resname_1}) ')
+                raise SSException(
+                    f"Cannot parse residue at position {R1} (residue name = {resname_1}) "
+                )
         else:
-            raise SSException('Unsupported sidechain atom name: "%s". Please use: "default".' % sidechain_atom_1)
+            raise SSException(
+                'Unsupported sidechain atom name: "%s". Please use: "default".'
+                % sidechain_atom_1
+            )
 
-        if sidechain_atom_2 == 'default':
+        if sidechain_atom_2 == "default":
             resname_2 = self.get_amino_acid_sequence(numbered=False)[R2]
             resname_2 = sstools.fix_histadine_name(resname_2)
 
             try:
                 sidechain_atom_2 = DEFAULT_SIDECHAIN_VECTOR_ATOMS[resname_2]
 
-                if sidechain_atom_2 == 'ERROR':
-                    raise SSException(f'Residue lacks a valid sidechain ({resname_2})')
+                if sidechain_atom_2 == "ERROR":
+                    raise SSException(f"Residue lacks a valid sidechain ({resname_2})")
 
             except KeyError:
-                raise SSException(f'Cannot parse residue at position {R2} (residue name = {resname_2}) ')
+                raise SSException(
+                    f"Cannot parse residue at position {R2} (residue name = {resname_2}) "
+                )
         else:
-            raise SSException('Unsupported sidechain atom name: "%s". Please use: "default".' % sidechain_atom_1)
+            raise SSException(
+                'Unsupported sidechain atom name: "%s". Please use: "default".'
+                % sidechain_atom_1
+            )
 
         ### At this point we have reasonable atom names defined!
-        TRJ_1_SC = self.traj.atom_slice(self.topology.select(f'resid {R1} and name "{sidechain_atom_1}"'))
-        TRJ_1_CA = self.traj.atom_slice(self.topology.select(f'resid {R1} and name "CA"'))
+        TRJ_1_SC = self.traj.atom_slice(
+            self.topology.select(f'resid {R1} and name "{sidechain_atom_1}"')
+        )
+        TRJ_1_CA = self.traj.atom_slice(
+            self.topology.select(f'resid {R1} and name "CA"')
+        )
 
-        TRJ_2_SC = self.traj.atom_slice(self.topology.select(f'resid {R2} and name "{sidechain_atom_2}"'))
-        TRJ_2_CA = self.traj.atom_slice(self.topology.select(f'resid {R2} and name "CA"'))
-
+        TRJ_2_SC = self.traj.atom_slice(
+            self.topology.select(f'resid {R2} and name "{sidechain_atom_2}"')
+        )
+        TRJ_2_CA = self.traj.atom_slice(
+            self.topology.select(f'resid {R2} and name "CA"')
+        )
 
         # compute CA-SC vector
         R1_vector = TRJ_1_SC.xyz - TRJ_1_CA.xyz
@@ -4500,24 +4743,29 @@ class SSProtein:
         # finally compute the alignment for each frame and return
         # a vector of alignments
         nframes = R1_vector.shape[0]
-        alignment=[]
+        alignment = []
         for i in range(0, nframes):
-
             # convert to unit vector
             V1 = R1_vector[i][0] / np.linalg.norm(R1_vector[i][0])
             V2 = R2_vector[i][0] / np.linalg.norm(R2_vector[i][0])
 
             # compute dot product and take arccos and do rad->deg to get angle
             # between the unit vectors
-            alignment.append(np.rad2deg(np.arccos(np.dot(V1,V2))))
+            alignment.append(np.rad2deg(np.arccos(np.dot(V1, V2))))
 
         return np.array(alignment)
-
 
     # ........................................................................
     #
     #
-    def get_dihedral_mutual_information(self, angle_name='psi', bwidth=np.pi/5.0, stride=1, weights=False, normalize=False):
+    def get_dihedral_mutual_information(
+        self,
+        angle_name="psi",
+        bwidth=np.pi / 5.0,
+        stride=1,
+        weights=False,
+        normalize=False,
+    ):
         """Mutual-information matrix between every pair of a chosen dihedral.
 
         For each pair of dihedrals :math:`(\\phi_i, \\phi_j)` of the same
@@ -4570,13 +4818,14 @@ class SSProtein:
         (92, 92)
         """
 
-
         ## ..................................................
         ## SAFETY FIRST!
         ##
         # verify binwidth input values
-        if bwidth > 2*np.pi or not (bwidth > 0):
-           raise SSException(f'The bwidth parameter must be between 2*pi and greater than 0. Received {bwidth}')
+        if bwidth > 2 * np.pi or not (bwidth > 0):
+            raise SSException(
+                f"The bwidth parameter must be between 2*pi and greater than 0. Received {bwidth}"
+            )
 
         # if stride was passed make sure it's ok
         self.__check_stride(stride)
@@ -4585,19 +4834,28 @@ class SSProtein:
         weights = self.__check_weights(weights, stride)
 
         # check input keyword selector
-        ssutils.validate_keyword_option(angle_name, ['chi1', 'phi', 'psi', 'omega'], 'angle_name')
+        ssutils.validate_keyword_option(
+            angle_name, ["chi1", "phi", "psi", "omega"], "angle_name"
+        )
 
         ## ..................................................
 
         # define histogram bins based on passed bin width
-        bins = np.arange(-np.pi, np.pi+bwidth, bwidth)
+        bins = np.arange(-np.pi, np.pi + bwidth, bwidth)
 
         # construct the selector dictionary
-        selector = {"phi":md.compute_phi, "omega":md.compute_omega, "psi":md.compute_psi, "chi1":md.compute_chi1}
+        selector = {
+            "phi": md.compute_phi,
+            "omega": md.compute_omega,
+            "psi": md.compute_psi,
+            "chi1": md.compute_chi1,
+        }
 
         # check the angle_name is an allowed name
         if angle_name not in list(selector.keys()):
-            raise SSException(f'The variable angle_name was set to {angle_name}, which is not one of phi, omega, psi, chi1')
+            raise SSException(
+                f"The variable angle_name was set to {angle_name}, which is not one of phi, omega, psi, chi1"
+            )
 
         # select and compute the relevant angles of the subtrajectory
         fx = selector[angle_name]
@@ -4605,27 +4863,33 @@ class SSProtein:
 
         # construct empty matrices
         SIZE = len(angles[0])
-        MI_mat = np.zeros((SIZE,SIZE))
+        MI_mat = np.zeros((SIZE, SIZE))
 
         # populate matrices note we only compute the upper right triangle
         # but can populate the lower half because it's a symmetrical matrix
-        for i in range(0,SIZE):
-            for j in range(i,SIZE):
-
+        for i in range(0, SIZE):
+            for j in range(i, SIZE):
                 X = np.transpose(angles[1])[j]
                 Y = np.transpose(angles[1])[i]
-                MI = ssmutualinformation.calc_MI(X,Y, bins, weights,normalize)
+                MI = ssmutualinformation.calc_MI(X, Y, bins, weights, normalize)
 
-                MI_mat[i,j] = MI
-                MI_mat[j,i] = MI
+                MI_mat[i, j] = MI
+                MI_mat[j, i] = MI
 
         return MI_mat
-
 
     # ........................................................................
     #
     #
-    def get_local_to_global_correlation(self, mode='COM', n_cycles=100, max_num_pairs=10, stride=20, weights=False, verbose=True):
+    def get_local_to_global_correlation(
+        self,
+        mode="COM",
+        n_cycles=100,
+        max_num_pairs=10,
+        stride=20,
+        weights=False,
+        verbose=True,
+    ):
         """How well finite subsets of inter-residue distances predict global Rg.
 
         For each ``k`` in ``[1, max_num_pairs)``, this randomly picks ``k``
@@ -4688,8 +4952,7 @@ class SSProtein:
 
         weights = self.__check_weights(weights, stride)
 
-
-        ssutils.validate_keyword_option(mode, ['CA', 'COM'], 'mode')
+        ssutils.validate_keyword_option(mode, ["CA", "COM"], "mode")
 
         # define first and last residue that has a CA
         start = self.resid_with_CA[0]
@@ -4703,7 +4966,7 @@ class SSProtein:
         # residue is byte-identical but O(n) rather than O(n^2). The
         # hoist consumes no RNG, so the downstream pair-resampling sees
         # an identical stream and its output is unchanged.
-        if mode == 'CA':
+        if mode == "CA":
             _ca = self.__ca_position_cache(stride)
 
         # start with a sequence separation of 1
@@ -4711,18 +4974,17 @@ class SSProtein:
             ssio.status_message(f"On sequence separation {seq_sep}", verbose)
 
             for pos in range(start, end - seq_sep):
-
                 # define the two positions
                 A = pos
                 B = pos + seq_sep
 
                 # get the distance for every stride-th frame between those two positions using either the CA
                 # mode or the COM mode
-                if mode == 'CA':
+                if mode == "CA":
                     # byte-identical to get_inter_residue_atomic_distance(A, B, stride=stride)
                     distance = np.linalg.norm(_ca(A) - _ca(B), axis=1)
 
-                elif mode == 'COM':
+                elif mode == "COM":
                     distance = self.get_inter_residue_COM_distance(A, B, stride=stride)
 
                 if FIRST_CHECK:
@@ -4731,19 +4993,20 @@ class SSProtein:
                 else:
                     all_distances = np.vstack((all_distances, distance))
 
-
         full_rg = self.get_radius_of_gyration()
         stride_rg = full_rg[0::stride]
 
         if len(stride_rg) != len(all_distances[0]):
-            raise SSException('Something when wrong when comparing stride-derived Rg and internal distances, this is a bug in the code...)')
+            raise SSException(
+                "Something when wrong when comparing stride-derived Rg and internal distances, this is a bug in the code...)"
+            )
 
         # total number of distance pairs
         n_pairs = len(all_distances)
 
-        pair_selection_vector = np.arange(1,max_num_pairs,1)
+        pair_selection_vector = np.arange(1, max_num_pairs, 1)
 
-        return_data = np.zeros((len(pair_selection_vector)*n_cycles,2))
+        return_data = np.zeros((len(pair_selection_vector) * n_cycles, 2))
 
         # Default (unweighted) behaviour: uniform weights, so the weighted
         # covariance path below reduces to the ordinary Pearson
@@ -4753,13 +5016,12 @@ class SSProtein:
         # directly (previously they were silently discarded here, so the
         # weighted path was a no-op - that bug is fixed).
         if weights is False:
-            weights = np.repeat(1.0/len(stride_rg), len(stride_rg))
+            weights = np.repeat(1.0 / len(stride_rg), len(stride_rg))
 
-        idx=0
+        idx = 0
         for n_selected in pair_selection_vector:
             ssio.status_message(f"On {n_selected} pairs selected", verbose)
-            for i in range(0,n_cycles):
-
+            for i in range(0, n_cycles):
                 # select n_select different values between 0 and n_pairs
                 idx_selection = np.random.randint(0, n_pairs, n_selected)
 
@@ -4767,7 +5029,9 @@ class SSProtein:
                 # we calculate the squared value of each distance, then for each conformation SUM all the pairs
                 # and then for each of those n_frame summs divide by 2 * n_selected squared
                 # this gives a series of values for EACH conformation (so local mean is a 1xn_configurations vector)
-                local_mean_square = np.sum(np.power(all_distances[idx_selection],2),0)/(2*(n_selected*n_selected))
+                local_mean_square = np.sum(
+                    np.power(all_distances[idx_selection], 2), 0
+                ) / (2 * (n_selected * n_selected))
 
                 # correlation between local mean square and rg_square - returns a SINGLE value
 
@@ -4776,39 +5040,61 @@ class SSProtein:
 
                 if weights is not False:
                     try:
-                        cov_matrix = np.cov(np.vstack((local_mean_square, np.power(stride_rg,2))), ddof=0, aweights=weights)
+                        cov_matrix = np.cov(
+                            np.vstack((local_mean_square, np.power(stride_rg, 2))),
+                            ddof=0,
+                            aweights=weights,
+                        )
                     except TypeError:
                         # this probaby happend because the version of numpy doesn't support aweights. If this is the case try again
                         # without weights assuming weights are equal
                         if len(set(weights)) == 1:
-                            cov_matrix = np.cov(np.vstack((local_mean_square, np.power(stride_rg,2))))
+                            cov_matrix = np.cov(
+                                np.vstack((local_mean_square, np.power(stride_rg, 2)))
+                            )
                         else:
-                            raise SSException(f'Weights being passed to get_global_from_local but the current version of numpy ({np.version.full_version}) may not support weights via the "aweights" keyword...')
+                            raise SSException(
+                                f'Weights being passed to get_global_from_local but the current version of numpy ({np.version.full_version}) may not support weights via the "aweights" keyword...'
+                            )
 
                     # this computes the upper right square from the correlation matrix from the covariance matrix using (Rij = (Cij/(sqrt(Cii - Cjj))) where i and j are
                     # 0 and 1 respectively
-                    c = cov_matrix[0,1]/(np.sqrt(cov_matrix[0,0]*cov_matrix[1,1]))
+                    c = cov_matrix[0, 1] / (
+                        np.sqrt(cov_matrix[0, 0] * cov_matrix[1, 1])
+                    )
                 else:
                     # this is the correlation matrix and was the old way of doing this
-                    c = np.corrcoef(local_mean_square, np.power(stride_rg,2))[0][1]
+                    c = np.corrcoef(local_mean_square, np.power(stride_rg, 2))[0][1]
 
                 return_data[idx] = [n_selected, c]
-                idx=idx+1
+                idx = idx + 1
 
         # leaving this here incase we want to re-introduce the 2D histogram information in later versions...
         # np.histogram2d(np.transpose(return_data)[0],np.transpose(return_data)[1], bins=[np.arange(1,n_pairs), np.arange(0,1,0.01)]))
 
-        return  (return_data,
-                 pair_selection_vector,
-                 np.mean(np.reshape(np.transpose(return_data)[1], (len(pair_selection_vector),n_cycles)),1),
-                 np.std(np.reshape(np.transpose(return_data)[1], (len(pair_selection_vector),n_cycles)),1))
-
-
+        return (
+            return_data,
+            pair_selection_vector,
+            np.mean(
+                np.reshape(
+                    np.transpose(return_data)[1], (len(pair_selection_vector), n_cycles)
+                ),
+                1,
+            ),
+            np.std(
+                np.reshape(
+                    np.transpose(return_data)[1], (len(pair_selection_vector), n_cycles)
+                ),
+                1,
+            ),
+        )
 
     # ........................................................................
     #
     #
-    def get_end_to_end_vs_rg_correlation(self, mode='COM', weights=False, etol=0.0000001):
+    def get_end_to_end_vs_rg_correlation(
+        self, mode="COM", weights=False, etol=0.0000001
+    ):
         """Pearson correlation between per-frame :math:`R_e^2` and :math:`R_g^2`.
 
         For a Gaussian chain Debye's result gives :math:`R_e^2 = 6 R_g^2`,
@@ -4835,7 +5121,7 @@ class SSProtein:
         """
 
         # validate the keyword
-        ssutils.validate_keyword_option(mode, ['CA', 'COM'], 'mode')
+        ssutils.validate_keyword_option(mode, ["CA", "COM"], "mode")
 
         # get end-to-end distance
         distance = self.get_end_to_end_distance(mode)
@@ -4847,20 +5133,22 @@ class SSProtein:
         # about fractality more than a specific chain model, because examining correlation the scalar factor doesn't
         # matter , ie really this is Rg^2 vs Re^2 - scalar is irrelevant. But, this approach is consistent with
         # the approach in the get_local_to_global_correlation() function
-        local_mean_square = np.power(distance,2)/(2)
+        local_mean_square = np.power(distance, 2) / (2)
 
         weights = self.__check_weights(weights, 1, etol)
         if weights is False:
-            c = np.corrcoef(local_mean_square, np.power(full_rg,2))[0][1]
+            c = np.corrcoef(local_mean_square, np.power(full_rg, 2))[0][1]
         else:
-            c = ssutils.weighted_corr(local_mean_square, np.power(full_rg,2), weights)
+            c = ssutils.weighted_corr(local_mean_square, np.power(full_rg, 2), weights)
 
         return c
 
     # ........................................................................
     #
     #
-    def get_secondary_structure_DSSP(self, R1=None, R2=None, return_per_frame=False, weights=False, etol=0.0000001):
+    def get_secondary_structure_DSSP(
+        self, R1=None, R2=None, return_per_frame=False, weights=False, etol=0.0000001
+    ):
         """Per-residue secondary structure (helix / extended / coil) via DSSP.
 
         Calls ``mdtraj.compute_dssp`` on the chosen residue range and
@@ -4918,7 +5206,7 @@ class SSProtein:
         R2_real = out[1]
 
         # select the relevant subtrajectory (out[2] is the 'resid %i to %i' where %i and %i are R1 and R2)
-        ats = self.traj.atom_slice(self.topology.select(f'{out[2]}'))
+        ats = self.traj.atom_slice(self.topology.select(f"{out[2]}"))
 
         # validate optional per-frame re-weighting (only meaningful for the
         # collapsed per-residue fractions; a per-frame mask is not an
@@ -4933,7 +5221,7 @@ class SSProtein:
 
         # compute DSSP over the selected subtrajectory
         dssp_data = md.compute_dssp(ats)
-        reslist    = list(range(R1_real, R2_real+1))
+        reslist = list(range(R1_real, R2_real + 1))
 
         C_vector = []
         E_vector = []
@@ -4942,35 +5230,47 @@ class SSProtein:
         # if we want per-frame
         if return_per_frame is True:
             for f in dssp_data:
-                C_vector.append(np.array(f=='C',dtype=int).tolist())
-                E_vector.append(np.array(f=='E',dtype=int).tolist())
-                H_vector.append(np.array(f=='H',dtype=int).tolist())
+                C_vector.append(np.array(f == "C", dtype=int).tolist())
+                E_vector.append(np.array(f == "E", dtype=int).tolist())
+                H_vector.append(np.array(f == "H", dtype=int).tolist())
 
             return (reslist, np.array(H_vector), np.array(E_vector), np.array(C_vector))
 
         # note the + 1 because the R1 and R2 positions are INCLUSIVE whereas
         else:
-            n_frames   = self.n_frames
+            n_frames = self.n_frames
 
             for i in range(len(reslist)):
                 if wv is False:
-                    C_vector.append(float(sum(dssp_data.transpose()[i] == 'C'))/n_frames)
-                    E_vector.append(float(sum(dssp_data.transpose()[i] == 'E'))/n_frames)
-                    H_vector.append(float(sum(dssp_data.transpose()[i] == 'H'))/n_frames)
+                    C_vector.append(
+                        float(sum(dssp_data.transpose()[i] == "C")) / n_frames
+                    )
+                    E_vector.append(
+                        float(sum(dssp_data.transpose()[i] == "E")) / n_frames
+                    )
+                    H_vector.append(
+                        float(sum(dssp_data.transpose()[i] == "H")) / n_frames
+                    )
                 else:
                     col = dssp_data.transpose()[i]
-                    C_vector.append(ssutils.weighted_mean((col == 'C').astype(float), wv))
-                    E_vector.append(ssutils.weighted_mean((col == 'E').astype(float), wv))
-                    H_vector.append(ssutils.weighted_mean((col == 'H').astype(float), wv))
-
+                    C_vector.append(
+                        ssutils.weighted_mean((col == "C").astype(float), wv)
+                    )
+                    E_vector.append(
+                        ssutils.weighted_mean((col == "E").astype(float), wv)
+                    )
+                    H_vector.append(
+                        ssutils.weighted_mean((col == "H").astype(float), wv)
+                    )
 
             return (reslist, np.array(H_vector), np.array(E_vector), np.array(C_vector))
-
 
     # ........................................................................
     #
     #
-    def get_secondary_structure_BBSEG(self, R1=None, R2=None, return_per_frame=False, weights=False, etol=0.0000001):
+    def get_secondary_structure_BBSEG(
+        self, R1=None, R2=None, return_per_frame=False, weights=False, etol=0.0000001
+    ):
         """Per-residue secondary structure via the BBSEG2 phi/psi classification.
 
         Classifies each (phi, psi) pair into one of 9 BBSEG2 bins using a
@@ -5037,12 +5337,15 @@ class SSProtein:
         out_selector = self.__get_first_and_last(R1, R2, withCA=True)
         R1_real = out_selector[0]
         R2_real = out_selector[1]
-        reslist    = list(range(R1_real, R2_real+1))
-
+        reslist = list(range(R1_real, R2_real + 1))
 
         # extract the phi/psi angles in degrees
-        phi_data = np.degrees(md.compute_phi(self.traj.atom_slice(self.topology.select(f'{out[2]}')))[1])
-        psi_data = np.degrees(md.compute_psi(self.traj.atom_slice(self.topology.select(f'{out[2]}')))[1])
+        phi_data = np.degrees(
+            md.compute_phi(self.traj.atom_slice(self.topology.select(f"{out[2]}")))[1]
+        )
+        psi_data = np.degrees(
+            md.compute_psi(self.traj.atom_slice(self.topology.select(f"{out[2]}")))[1]
+        )
 
         # extract the relevant information (note shape of phi_data and psi_data will be identical)
         # shape info here is (number_of_frames, number_of_residues) sized
@@ -5053,7 +5356,6 @@ class SSProtein:
         # sized matrix where each elements reflects the BBSEG classification of that residue
         # in a given frame
         for f in range(0, shape_info[0]):
-
             # so each step through the loop we're passing two vectors, each of which
             # is nres residues long
             all_classes.append(self.__phi_psi_bbseg(phi_data[f], psi_data[f]))
@@ -5074,34 +5376,32 @@ class SSProtein:
 
         # if we want per-frame BBSEG secondary structure info
         if return_per_frame:
-
             # initialize the empty lists to be appended to
             for c in range(0, 9):
                 return_bbseg[c] = []
 
             # cycle over each frame
             for f in all_classes:
-
                 # cycle over each class in each frame to binarize the per-frame/per residue vector
-                for c in range(0,9):
-                    return_bbseg[c].append(np.array(f==c, dtype=int).tolist())
+                for c in range(0, 9):
+                    return_bbseg[c].append(np.array(f == c, dtype=int).tolist())
 
             for c in return_bbseg:
                 return_bbseg[c] = np.array(return_bbseg[c])
             return (reslist, return_bbseg)
         else:
-
             # finally cycle through each BBSEG classification type and average
             # over each frame (shape_info[0] is number of frames)
 
-            for c in range(0,9):
+            for c in range(0, 9):
                 if wv is False:
-                    return_bbseg[c] = np.sum((all_classes == c)*1,0)/shape_info[0]
+                    return_bbseg[c] = np.sum((all_classes == c) * 1, 0) / shape_info[0]
                 else:
-                    return_bbseg[c] = ssutils.weighted_mean((all_classes == c).astype(float), wv, axis=0)
+                    return_bbseg[c] = ssutils.weighted_mean(
+                        (all_classes == c).astype(float), wv, axis=0
+                    )
 
             return (reslist, return_bbseg)
-
 
     # ........................................................................
     #
@@ -5140,8 +5440,8 @@ class SSProtein:
             phi = phi_vector[i]
             psi = psi_vector[i]
 
-            fixed_phi = phi-(phi%10)
-            fixed_psi = psi-(psi%10)
+            fixed_phi = phi - (phi % 10)
+            fixed_psi = psi - (psi % 10)
 
             # following corrections for edge cases if we hit
             if fixed_phi == 180.0:
@@ -5154,7 +5454,6 @@ class SSProtein:
             classes.append(BBSEG2[fixed_phi][fixed_psi])
 
         return classes
-
 
     # ........................................................................
     #
@@ -5177,15 +5476,21 @@ class SSProtein:
         0.0042
         """
 
-        return sspolymer.get_overlap_concentration(np.mean(self.get_radius_of_gyration()))
-
-
+        return sspolymer.get_overlap_concentration(
+            np.mean(self.get_radius_of_gyration())
+        )
 
     # ........................................................................
     #
     #
-    def get_angle_decay(self, atom1='C', atom2='N', return_all_pairs=False, weights=False, etol=0.0000001):
-
+    def get_angle_decay(
+        self,
+        atom1="C",
+        atom2="N",
+        return_all_pairs=False,
+        weights=False,
+        etol=0.0000001,
+    ):
         """Bond-vector autocorrelation along the chain (persistence-length proxy).
 
         For each residue we form a single intra-residue vector
@@ -5244,50 +5549,55 @@ class SSProtein:
         CN_lengths = []
 
         for i in self.resid_with_CA:
-
             # this extracts the C->N vector for each frame for each residue
-            value = np.squeeze(self.traj.atom_slice(self.__residue_atom_lookup(i, atom1)).xyz) - np.squeeze(self.traj.atom_slice(self.__residue_atom_lookup(i, atom2)).xyz)
+            value = np.squeeze(
+                self.traj.atom_slice(self.__residue_atom_lookup(i, atom1)).xyz
+            ) - np.squeeze(
+                self.traj.atom_slice(self.__residue_atom_lookup(i, atom2)).xyz
+            )
 
             # CN_vectors becomes a list where each element is [3 x nframes] array where 3 is the x/y/z
-            # vector coordinates. 
+            # vector coordinates.
             CN_vectors.append(value)
 
             # CN_lengths extracts the ||v|| length of each vector (should be basically the same). We need
             # this for the final linalg operation later
-            CN_lengths.append(np.linalg.norm(value,axis=1))
+            CN_lengths.append(np.linalg.norm(value, axis=1))
 
         # calculate the number of residues for which we have C->N vectors
         npos = len(CN_vectors)
 
         # initialize an empty dictionary - the keys for this are i-j sequence separation,
         # and values are the cos(theta) angle between pairs of vectors
-        all_vals={}
+        all_vals = {}
         for i in range(1, npos):
             all_vals[i] = []
 
-        # precompute || u || * || v || wich 
+        # precompute || u || * || v || wich
         length_multiplier = {}
-        for i1 in range(0, npos-1):
+        for i1 in range(0, npos - 1):
             length_multiplier[i1] = {}
-            for j1 in range(i1+1, npos):
-                length_multiplier[i1][j1] = CN_lengths[i1]*CN_lengths[j1]
+            for j1 in range(i1 + 1, npos):
+                length_multiplier[i1][j1] = CN_lengths[i1] * CN_lengths[j1]
 
         # we then cycle over the non-redudant set of pairwise residues in the protein
-        for i1 in range(0, npos-1):
-            for j1 in range(i1+1, npos):
-
+        for i1 in range(0, npos - 1):
+            for j1 in range(i1 + 1, npos):
                 # for each frame calculate (u . v) / (||u|| * ||v||)
                 # where u and v are vectors and "." is the dot product between each pair. We're only
                 # calculating PAIR-WISE dot product of each [x,y,z] with [x,y,z] vector, so doing
                 # np.sum(Matrix*matrix) is SO SO SO much faster than anything else. We also take the
                 # average to avoid storing a ton of numbers and generating these giant vectors
-                # 
+                #
 
-                per_frame_cos = np.sum(CN_vectors[i1]*CN_vectors[j1],axis=1)/length_multiplier[i1][j1]
+                per_frame_cos = (
+                    np.sum(CN_vectors[i1] * CN_vectors[j1], axis=1)
+                    / length_multiplier[i1][j1]
+                )
                 if wv is False:
-                    all_vals[j1-i1].append(np.mean(per_frame_cos))
+                    all_vals[j1 - i1].append(np.mean(per_frame_cos))
                 else:
-                    all_vals[j1-i1].append(ssutils.weighted_mean(per_frame_cos, wv))
+                    all_vals[j1 - i1].append(ssutils.weighted_mean(per_frame_cos, wv))
 
         return_matrix = []
         return_matrix.append([0, 1.0, 0.0])
@@ -5297,11 +5607,9 @@ class SSProtein:
         # convert to a matrix at the end
         return_matrix = np.array(return_matrix)
 
-        
         # if we each possible inter-residue autocorrelation, this generates a dictionary
         # where each unique res1-res2 pair value is represented
         if return_all_pairs:
-
             # minus 1 because return matrix includes the obligate self correlation which
             # is always 1
             all_pairs_dict = {}
@@ -5312,26 +5620,25 @@ class SSProtein:
             # build the self correlation pairs first
             for i in all_vals:
                 all_pairs_dict[f"{i}-{i}"] = 1.0
-            all_pairs_dict[f"{i+1}-{i+1}"] = 1.0
+            all_pairs_dict[f"{i + 1}-{i + 1}"] = 1.0
 
             # i here is the |i-j| distance
             for i in all_vals:
                 idx = 1
                 for x in all_vals[i]:
-                    all_pairs_dict[f"{idx}-{idx+i}"] = x
+                    all_pairs_dict[f"{idx}-{idx + i}"] = x
                     idx = idx + 1
-
 
             return (return_matrix, all_pairs_dict)
         else:
             return np.array(return_matrix)
 
-
-
-    #oxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxo
+    # oxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxo
     #
     #
-    def get_local_collapse(self, window_size=10, bins=None, verbose=True, weights=False, etol=0.0000001):
+    def get_local_collapse(
+        self, window_size=10, bins=None, verbose=True, weights=False, etol=0.0000001
+    ):
         """Sliding-window local radius of gyration profile.
 
         At every starting residue ``i`` the local Rg is computed over the
@@ -5399,18 +5706,24 @@ class SSProtein:
         """
         # validate bins
         if bins is None:
-            bins = np.arange(0,10,0.01)
+            bins = np.arange(0, 10, 0.01)
         else:
             try:
-                if len(bins)  < 2:
-                    raise SSException('Bins should be a numpy defined vector of values - e.g. np.arange(0,1,0.01)')
+                if len(bins) < 2:
+                    raise SSException(
+                        "Bins should be a numpy defined vector of values - e.g. np.arange(0,1,0.01)"
+                    )
             except TypeError:
-                raise SSException('Bins should be a list, vector, or numpy array of evenly spaced values')
+                raise SSException(
+                    "Bins should be a list, vector, or numpy array of evenly spaced values"
+                )
 
             try:
                 bins = np.array(bins, dtype=float)
             except ValueError:
-                raise SSException('Passed bins could not be converted to a numpy array of floats')
+                raise SSException(
+                    "Passed bins could not be converted to a numpy array of floats"
+                )
 
             # Check whether the bins are evenly spaced. If the bins are evenly spaced, subtracting the leading
             # value of the discrete difference from itself should yield a sum of 0 (within the floating point epsilon).
@@ -5419,30 +5732,31 @@ class SSProtein:
             fpe = np.finfo(diff[0].dtype).eps
             evenly_spaced = np.isclose(np.sum(bins_delta), 0, rtol=fpe)
             if not evenly_spaced:
-                raise SSException(f'The spacing between bins is uneven, or you may using bins widths less than: {fpe:f}')
+                raise SSException(
+                    f"The spacing between bins is uneven, or you may using bins widths less than: {fpe:f}"
+                )
 
         n_residues = self.n_residues
-        n_frames   = self.n_frames
+        n_frames = self.n_frames
 
         # check the window is an appropriate size
         if window_size > n_residues:
-            raise SSException('window_size is larger than the number of residues')
+            raise SSException("window_size is larger than the number of residues")
 
         # optional deterministic frame re-weighting (collapses the
         # per-window frame distribution)
         wv = self.__check_weights(weights, 1, etol)
 
         meanData = []
-        stdData  = []
-        histo    = []
+        stdData = []
+        histo = []
 
         for i in range(window_size - 1, n_residues):
-
             ssio.status_message(f"On range {i}", verbose)
 
             # get radius of gyration (now by default is in Angstroms
             # - in previous versions we performed a conversion here)
-            tmp = self.get_radius_of_gyration(i - (window_size-1), i)
+            tmp = self.get_radius_of_gyration(i - (window_size - 1), i)
 
             if wv is False:
                 (b, c) = np.histogram(tmp, bins)
@@ -5455,16 +5769,4 @@ class SSProtein:
                 meanData.append(ssutils.weighted_mean(tmp, wv))
                 stdData.append(ssutils.weighted_std(tmp, wv))
 
-
         return (meanData, stdData, histo, bins)
-
-
-
-
-
-
-
-
-
-
-

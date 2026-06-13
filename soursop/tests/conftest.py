@@ -7,17 +7,17 @@ from soursop import sstrajectory
 from soursop import ssprotein
 
 
-GS6_FILES=['gs6_AA.pdb','gs6_AA.xtc']
-CTL9_FILES=['ctl9_AA.pdb','ctl9_AA.xtc']
-NTL9_FILES=['ntl9_AA.pdb','ntl9_AA.xtc']
-SIGA_CG_FILES=['sigA_CG.pdb','sigA_CG.xtc']
-SYNTH_1_CG_FILES=['synth_1_CG.pdb','synth_1_CG.xtc']
-ALL_RESIDUES_FILES=['all_residues_AA.pdb','all_residues_AA.xtc']
-GROMACS_1_CHAIN=['gromacs1chain/top.pdb','gromacs1chain/traj.xtc']
-GROMACS_2_CHAINS=['gromacs2chains/top.pdb','gromacs2chains/traj.xtc']
+GS6_FILES = ["gs6_AA.pdb", "gs6_AA.xtc"]
+CTL9_FILES = ["ctl9_AA.pdb", "ctl9_AA.xtc"]
+NTL9_FILES = ["ntl9_AA.pdb", "ntl9_AA.xtc"]
+SIGA_CG_FILES = ["sigA_CG.pdb", "sigA_CG.xtc"]
+SYNTH_1_CG_FILES = ["synth_1_CG.pdb", "synth_1_CG.xtc"]
+ALL_RESIDUES_FILES = ["all_residues_AA.pdb", "all_residues_AA.xtc"]
+GROMACS_1_CHAIN = ["gromacs1chain/top.pdb", "gromacs1chain/traj.xtc"]
+GROMACS_2_CHAINS = ["gromacs2chains/top.pdb", "gromacs2chains/traj.xtc"]
 
 
-test_data_dir = soursop.get_data('test_data')
+test_data_dir = soursop.get_data("test_data")
 
 
 def _load_traj(files):
@@ -27,17 +27,17 @@ def _load_traj(files):
     )
 
 
-@pytest.fixture(scope='session', autouse=True)
+@pytest.fixture(scope="session", autouse=True)
 def CTL9_CO(request):
     return _load_traj(CTL9_FILES)
 
 
-@pytest.fixture(scope='session', autouse=True)
+@pytest.fixture(scope="session", autouse=True)
 def CTL9_CP(CTL9_CO):
     return CTL9_CO.proteinTrajectoryList[0]
 
 
-@pytest.fixture(scope='session', autouse=True)
+@pytest.fixture(scope="session", autouse=True)
 def GS6_CO(request):
     topology_path = os.path.join(test_data_dir, GS6_FILES[0])
     trajectory_path = os.path.join(test_data_dir, GS6_FILES[1])
@@ -45,7 +45,7 @@ def GS6_CO(request):
     return GS6_CO
 
 
-@pytest.fixture(scope='session', autouse=True)
+@pytest.fixture(scope="session", autouse=True)
 def GS6_CP(request):
     topology_path = os.path.join(test_data_dir, GS6_FILES[0])
     trajectory_path = os.path.join(test_data_dir, GS6_FILES[1])
@@ -54,7 +54,7 @@ def GS6_CP(request):
     return GS6_CP
 
 
-@pytest.fixture(scope='session', autouse=True)
+@pytest.fixture(scope="session", autouse=True)
 def NTL9_CO(request):
     topology_path = os.path.join(test_data_dir, NTL9_FILES[0])
     trajectory_path = os.path.join(test_data_dir, NTL9_FILES[1])
@@ -62,7 +62,7 @@ def NTL9_CO(request):
     return NTL9_CO
 
 
-@pytest.fixture(scope='session', autouse=True)
+@pytest.fixture(scope="session", autouse=True)
 def NTL9_CP(request):
     topology_path = os.path.join(test_data_dir, NTL9_FILES[0])
     trajectory_path = os.path.join(test_data_dir, NTL9_FILES[1])
@@ -70,27 +70,28 @@ def NTL9_CP(request):
     NTL9_CP = NTL9_CO.proteinTrajectoryList[0]
     return NTL9_CP
 
-@pytest.fixture(scope='session', autouse=True)
+
+@pytest.fixture(scope="session", autouse=True)
 def GMX_2CHAINS(request):
     return _load_traj(GROMACS_2_CHAINS)
 
 
-@pytest.fixture(scope='session', autouse=True)
+@pytest.fixture(scope="session", autouse=True)
 def GMX_1CHAIN_CO(request):
     return _load_traj(GROMACS_1_CHAIN)
 
 
-@pytest.fixture(scope='session', autouse=True)
+@pytest.fixture(scope="session", autouse=True)
 def SIGA_CG_CO(request):
     return _load_traj(SIGA_CG_FILES)
 
 
-@pytest.fixture(scope='session', autouse=True)
+@pytest.fixture(scope="session", autouse=True)
 def SYNTH_1_CG_CO(request):
     return _load_traj(SYNTH_1_CG_FILES)
 
 
-@pytest.fixture(scope='session', autouse=True)
+@pytest.fixture(scope="session", autouse=True)
 def ALL_RESIDUES_CO(request):
     return _load_traj(ALL_RESIDUES_FILES)
 
@@ -106,7 +107,7 @@ class ProteinHelper:
             name_parts = [prefix]
             if len(name) > 0:
                 name_parts.append(name)
-            savename = '%s.%s' % ('_'.join(name_parts), extension)
+            savename = "%s.%s" % ("_".join(name_parts), extension)
             expected_filenames.append(savename)
         return expected_filenames
 
@@ -121,11 +122,15 @@ class ProteinHelper:
     def validate_exported_csv_data(savename):
         assert os.path.getsize(savename) > 0  # implicit check for file existence
         with open(savename) as f:
-            data = np.loadtxt(f, delimiter=',')  # numpy is operating on a buffer b/c of the temporaryfile.
-            d = np.frombuffer(data).reshape(data.shape)  # convert the buffer back to an array, and compare.
+            data = np.loadtxt(
+                f, delimiter=","
+            )  # numpy is operating on a buffer b/c of the temporaryfile.
+            d = np.frombuffer(data).reshape(
+                data.shape
+            )  # convert the buffer back to an array, and compare.
             assert np.allclose(data, d)
 
 
-@pytest.fixture(scope='session', autouse=True)
+@pytest.fixture(scope="session", autouse=True)
 def cta_protein_helper():
     return ProteinHelper

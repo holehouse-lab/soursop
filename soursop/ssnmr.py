@@ -2201,10 +2201,7 @@ def compute_NOE_distances(protein, atom_pairs, stride=1):
 
     pairs = np.asarray(atom_pairs, dtype=int)
     if pairs.ndim != 2 or pairs.shape[1] != 2:
-        raise SSException(
-            "atom_pairs must have shape (n_pairs, 2), got "
-            f"{pairs.shape}"
-        )
+        raise SSException(f"atom_pairs must have shape (n_pairs, 2), got {pairs.shape}")
 
     traj = protein.traj[::stride] if stride != 1 else protein.traj
     # mdtraj returns nm; soursop convention is Angstroms.

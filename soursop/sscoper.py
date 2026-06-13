@@ -896,7 +896,7 @@ class COPER:
                     inv_sig2.append(1.0 / obs.uncertainty**2)
                     diffs.append(diff)
             if cols:
-                A = np.column_stack(cols)             # (N, k) active columns
+                A = np.column_stack(cols)  # (N, k) active columns
                 inv_sig2 = np.asarray(inv_sig2)
                 grad_w = (2.0 / m) * (A @ (np.asarray(diffs) * inv_sig2))
 

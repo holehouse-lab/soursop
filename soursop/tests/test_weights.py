@@ -22,7 +22,6 @@ from soursop.ssexceptions import SSException
 # ssutils.validate_weights
 # --------------------------------------------------------------------------
 class TestValidateWeights:
-
     def test_false_and_none_are_noops(self):
         assert ssutils.validate_weights(False, 10) is False
         assert ssutils.validate_weights(None, 10) is False
@@ -51,7 +50,7 @@ class TestValidateWeights:
 
     def test_sum_not_one_raises(self):
         with pytest.raises(SSException):
-            ssutils.validate_weights(np.full(10, 0.05), 10)   # sums to 0.5
+            ssutils.validate_weights(np.full(10, 0.05), 10)  # sums to 0.5
 
     def test_nonfinite_raises(self):
         bad = np.full(10, 0.1)
@@ -68,17 +67,17 @@ class TestValidateWeights:
 
     def test_etol_band(self):
         w = np.full(10, 0.1)
-        w[0] += 1e-9          # sum within default etol (1e-7)
+        w[0] += 1e-9  # sum within default etol (1e-7)
         assert ssutils.validate_weights(w, 10) is not False
         w2 = np.full(10, 0.1)
-        w2[0] += 1e-3         # sum outside default etol
+        w2[0] += 1e-3  # sum outside default etol
         with pytest.raises(SSException):
             ssutils.validate_weights(w2, 10)
 
     def test_stride_subsample_then_renormalise(self):
         n, stride = 12, 3
         raw = np.arange(1, n + 1, dtype=float)
-        raw = raw / raw.sum()                       # valid full-length vector
+        raw = raw / raw.sum()  # valid full-length vector
         out = ssutils.validate_weights(raw, n, stride=stride)
         expected = raw[::stride] / raw[::stride].sum()
         assert len(out) == len(raw[::stride])
@@ -90,7 +89,6 @@ class TestValidateWeights:
 # deterministic reduction helpers
 # --------------------------------------------------------------------------
 class TestWeightedHelpers:
-
     def test_weighted_mean_matches_numpy_average(self):
         x = np.array([1.0, 3.0, 5.0, 7.0])
         w = np.array([0.1, 0.2, 0.3, 0.4])
@@ -125,13 +123,12 @@ class TestWeightedHelpers:
 # per-frame getters: uniform == unweighted mean ; one-hot == that frame
 # --------------------------------------------------------------------------
 class TestPerFrameGetters:
-
     def _scalar_getters(self, P):
         return {
-            'rg':   lambda **k: P.get_radius_of_gyration(**k),
-            'asph': lambda **k: P.get_asphericity(verbose=False, **k),
-            'e2e':  lambda **k: P.get_end_to_end_distance(**k),
-            'Rh':   lambda **k: P.get_hydrodynamic_radius(**k),
+            "rg": lambda **k: P.get_radius_of_gyration(**k),
+            "asph": lambda **k: P.get_asphericity(verbose=False, **k),
+            "e2e": lambda **k: P.get_end_to_end_distance(**k),
+            "Rh": lambda **k: P.get_hydrodynamic_radius(**k),
         }
 
     def test_uniform_equals_unweighted_mean(self, NTL9_CP):
@@ -151,39 +148,56 @@ class TestPerFrameGetters:
             for k in range(n):
                 oneh = np.zeros(n)
                 oneh[k] = 1.0
-                assert np.isclose(fn(weights=oneh), base[k], rtol=1e-9, atol=1e-9), (name, k)
+                assert np.isclose(fn(weights=oneh), base[k], rtol=1e-9, atol=1e-9), (
+                    name,
+                    k,
+                )
 
     def test_gyration_tensor_uniform_and_onehot(self, GS6_CP):
         P = GS6_CP
         n = P.n_frames
         gt = np.asarray(P.get_gyration_tensor(verbose=False))
         uni = np.full(n, 1.0 / n)
-        assert np.allclose(P.get_gyration_tensor(verbose=False, weights=uni),
-                           gt.mean(axis=0), rtol=1e-5, atol=1e-6)
-        oneh = np.zeros(n); oneh[1] = 1.0
-        assert np.allclose(P.get_gyration_tensor(verbose=False, weights=oneh),
-                           gt[1], rtol=1e-9, atol=1e-9)
+        assert np.allclose(
+            P.get_gyration_tensor(verbose=False, weights=uni),
+            gt.mean(axis=0),
+            rtol=1e-5,
+            atol=1e-6,
+        )
+        oneh = np.zeros(n)
+        oneh[1] = 1.0
+        assert np.allclose(
+            P.get_gyration_tensor(verbose=False, weights=oneh),
+            gt[1],
+            rtol=1e-9,
+            atol=1e-9,
+        )
 
     def test_invalid_weights_through_public_method_raises(self, GS6_CP):
         P = GS6_CP
         with pytest.raises(SSException):
-            P.get_radius_of_gyration(weights=np.full(P.n_frames + 1, 1.0 / (P.n_frames + 1)))
+            P.get_radius_of_gyration(
+                weights=np.full(P.n_frames + 1, 1.0 / (P.n_frames + 1))
+            )
         with pytest.raises(SSException):
-            P.get_asphericity(verbose=False, weights=np.full(P.n_frames, 0.5 / P.n_frames))
+            P.get_asphericity(
+                verbose=False, weights=np.full(P.n_frames, 0.5 / P.n_frames)
+            )
 
 
 # --------------------------------------------------------------------------
 # collapsing functions: uniform weights == unweighted result
 # --------------------------------------------------------------------------
 class TestCollapsingWeighted:
-
     def test_internal_scaling_mean_vals_uniform(self, NTL9_CP):
         P = NTL9_CP
         n = P.n_frames
         uni = np.full(n, 1.0 / n)
         s0, m0 = P.get_internal_scaling(mean_vals=True, verbose=False)
         s1, m1 = P.get_internal_scaling(mean_vals=True, weights=uni, verbose=False)
-        assert np.allclose(np.asarray(m0, float), np.asarray(m1, float), rtol=1e-5, atol=1e-5)
+        assert np.allclose(
+            np.asarray(m0, float), np.asarray(m1, float), rtol=1e-5, atol=1e-5
+        )
 
     def test_internal_scaling_RMS_uniform(self, NTL9_CP):
         P = NTL9_CP
@@ -191,7 +205,9 @@ class TestCollapsingWeighted:
         uni = np.full(n, 1.0 / n)
         _, r0 = P.get_internal_scaling_RMS(verbose=False)
         _, r1 = P.get_internal_scaling_RMS(weights=uni, verbose=False)
-        assert np.allclose(np.asarray(r0, float), np.asarray(r1, float), rtol=1e-5, atol=1e-5)
+        assert np.allclose(
+            np.asarray(r0, float), np.asarray(r1, float), rtol=1e-5, atol=1e-5
+        )
 
     def test_scaling_exponent_uniform(self, NTL9_CP):
         P = NTL9_CP
@@ -208,8 +224,12 @@ class TestCollapsingWeighted:
         P = NTL9_CP
         n = P.n_frames
         uni = np.full(n, 1.0 / n)
-        assert np.isclose(P.get_end_to_end_vs_rg_correlation(weights=uni),
-                          P.get_end_to_end_vs_rg_correlation(), rtol=1e-5, atol=1e-6)
+        assert np.isclose(
+            P.get_end_to_end_vs_rg_correlation(weights=uni),
+            P.get_end_to_end_vs_rg_correlation(),
+            rtol=1e-5,
+            atol=1e-6,
+        )
 
     def test_local_collapse_uniform(self, NTL9_CP):
         P = NTL9_CP
@@ -232,16 +252,16 @@ class TestCollapsingWeighted:
         P = NTL9_CP
         n = P.n_frames
         uni = np.full(n, 1.0 / n)
-        base = np.asarray(P.get_all_SASA(mode='residue', stride=1))   # (n_frames, n_res)
-        w = P.get_all_SASA(mode='residue', stride=1, weights=uni)     # (n_res,)
+        base = np.asarray(P.get_all_SASA(mode="residue", stride=1))  # (n_frames, n_res)
+        w = P.get_all_SASA(mode="residue", stride=1, weights=uni)  # (n_res,)
         assert np.allclose(w, base.mean(axis=0), rtol=1e-5, atol=1e-5)
 
     def test_interchain_distance_map_uniform(self, GMX_2CHAINS):
         T = GMX_2CHAINS
         n = T.proteinTrajectoryList[0].n_frames
         uni = np.full(n, 1.0 / n)
-        d0, s0 = T.get_interchain_distance_map(0, 1, mode='CA')
-        d1, s1 = T.get_interchain_distance_map(0, 1, mode='CA', weights=uni)
+        d0, s0 = T.get_interchain_distance_map(0, 1, mode="CA")
+        d1, s1 = T.get_interchain_distance_map(0, 1, mode="CA", weights=uni)
         assert np.allclose(d0, d1, rtol=1e-5, atol=1e-5)
         assert np.allclose(s0, s1, rtol=1e-5, atol=1e-5)
 
@@ -250,7 +270,6 @@ class TestCollapsingWeighted:
 # deterministic-everywhere: intentionally-unsupported combinations raise
 # --------------------------------------------------------------------------
 class TestDeterministicEdgeCases:
-
     def test_internal_scaling_mean_vals_false_with_weights_raises(self, GS6_CP):
         P = GS6_CP
         uni = np.full(P.n_frames, 1.0 / P.n_frames)
@@ -261,7 +280,9 @@ class TestDeterministicEdgeCases:
         P = GS6_CP
         uni = np.full(P.n_frames, 1.0 / P.n_frames)
         with pytest.raises(SSException):
-            P.get_local_heterogeneity(fragment_size=3, stride=1, verbose=False, weights=uni)
+            P.get_local_heterogeneity(
+                fragment_size=3, stride=1, verbose=False, weights=uni
+            )
 
 
 def _uniform(n):
@@ -281,7 +302,6 @@ def _one_hot(n, k):
 # weights actually CHANGE the result (i.e. the weights are now used).
 # --------------------------------------------------------------------------
 class TestLocalToGlobalCorrelationWeights:
-
     @staticmethod
     def _l2g(P, **kw):
         # seed so the stochastic pair selection is identical across calls
@@ -295,8 +315,8 @@ class TestLocalToGlobalCorrelationWeights:
         uni = _uniform(P.n_frames)
         base = self._l2g(P)
         w = self._l2g(P, weights=uni)
-        assert np.allclose(base[2], w[2], rtol=1e-5, atol=1e-6)   # mean_corr
-        assert np.allclose(base[3], w[3], rtol=1e-5, atol=1e-6)   # std_corr
+        assert np.allclose(base[2], w[2], rtol=1e-5, atol=1e-6)  # mean_corr
+        assert np.allclose(base[3], w[3], rtol=1e-5, atol=1e-6)  # std_corr
 
     def test_nonuniform_changes_result(self, CTL9_CP):
         # regression guard for the fixed bug: a non-uniform weight MUST
@@ -315,23 +335,25 @@ class TestLocalToGlobalCorrelationWeights:
 # SASA summaries + the method-level stride+weights renormalisation path
 # --------------------------------------------------------------------------
 class TestSASASummariesWeights:
-
     def test_site_accessibility_uniform(self, NTL9_CP):
         P = NTL9_CP
         uni = _uniform(P.n_frames)
-        base = P.get_site_accessibility([1, 2, 3], mode='resid', stride=1)
-        wtd = P.get_site_accessibility([1, 2, 3], mode='resid', stride=1, weights=uni)
+        base = P.get_site_accessibility([1, 2, 3], mode="resid", stride=1)
+        wtd = P.get_site_accessibility([1, 2, 3], mode="resid", stride=1, weights=uni)
         for key in base:
             assert np.allclose(base[key], wtd[key], rtol=1e-5, atol=1e-6), key
 
     def test_site_accessibility_one_hot(self, GS6_CP):
         P = GS6_CP
         n = P.n_frames
-        per_res = np.transpose(P.get_all_SASA(mode='residue', stride=1))  # (n_res, n_frames)
+        per_res = np.transpose(
+            P.get_all_SASA(mode="residue", stride=1)
+        )  # (n_res, n_frames)
         lookup = P.get_amino_acid_sequence()
         for k in range(n):
-            wtd = P.get_site_accessibility([1, 2], mode='resid', stride=1,
-                                           weights=_one_hot(n, k))
+            wtd = P.get_site_accessibility(
+                [1, 2], mode="resid", stride=1, weights=_one_hot(n, k)
+            )
             for i in (1, 2):
                 mean_k, std_k = wtd[lookup[i]]
                 assert np.isclose(mean_k, per_res[i][k], rtol=1e-9, atol=1e-9)
@@ -340,10 +362,14 @@ class TestSASASummariesWeights:
     def test_regional_SASA_uniform_and_one_hot(self, GS6_CP):
         P = GS6_CP
         n = P.n_frames
-        total = np.transpose(P.get_all_SASA(stride=1))      # (n_res, n_frames)
+        total = np.transpose(P.get_all_SASA(stride=1))  # (n_res, n_frames)
         base = P.get_regional_SASA(1, 5, stride=1)
-        assert np.isclose(base, P.get_regional_SASA(1, 5, stride=1, weights=_uniform(n)),
-                          rtol=1e-5, atol=1e-6)
+        assert np.isclose(
+            base,
+            P.get_regional_SASA(1, 5, stride=1, weights=_uniform(n)),
+            rtol=1e-5,
+            atol=1e-6,
+        )
         for k in range(n):
             expected = sum(float(total[i][k]) for i in range(1, 5))
             got = P.get_regional_SASA(1, 5, stride=1, weights=_one_hot(n, k))
@@ -353,13 +379,13 @@ class TestSASASummariesWeights:
     def test_all_SASA_mode_all_uniform_and_one_hot(self, GS6_CP):
         P = GS6_CP
         n = P.n_frames
-        base = P.get_all_SASA(mode='all', stride=1)          # 3-tuple, each (n_frames, n_res)
-        wtd_uni = P.get_all_SASA(mode='all', stride=1, weights=_uniform(n))
+        base = P.get_all_SASA(mode="all", stride=1)  # 3-tuple, each (n_frames, n_res)
+        wtd_uni = P.get_all_SASA(mode="all", stride=1, weights=_uniform(n))
         assert isinstance(wtd_uni, tuple) and len(wtd_uni) == 3
         for b, w in zip(base, wtd_uni):
             assert np.allclose(w, np.asarray(b).mean(axis=0), rtol=1e-5, atol=1e-6)
         for k in range(n):
-            wtd_k = P.get_all_SASA(mode='all', stride=1, weights=_one_hot(n, k))
+            wtd_k = P.get_all_SASA(mode="all", stride=1, weights=_one_hot(n, k))
             for b, w in zip(base, wtd_k):
                 assert np.allclose(w, np.asarray(b)[k], rtol=1e-9, atol=1e-9)
 
@@ -370,12 +396,14 @@ class TestSASASummariesWeights:
         n = P.n_frames
         stride = 2
         full = np.arange(1, n + 1, dtype=float)
-        full = full / full.sum()                       # valid full-length vector
-        per_frame = np.asarray(P.get_all_SASA(mode='residue', stride=stride))  # (n_str, n_res)
+        full = full / full.sum()  # valid full-length vector
+        per_frame = np.asarray(
+            P.get_all_SASA(mode="residue", stride=stride)
+        )  # (n_str, n_res)
         sub = full[::stride]
         sub = sub / sub.sum()
         expected = np.average(per_frame, axis=0, weights=sub)
-        got = P.get_all_SASA(mode='residue', stride=stride, weights=full)
+        got = P.get_all_SASA(mode="residue", stride=stride, weights=full)
         assert np.allclose(got, expected, rtol=1e-6, atol=1e-8)
 
 
@@ -383,12 +411,11 @@ class TestSASASummariesWeights:
 # SSTrajectory.get_overall_* delegating getters
 # --------------------------------------------------------------------------
 class TestOverallTrajectoryWeights:
-
     def _getters(self, T):
         return {
-            'rg':   T.get_overall_radius_of_gyration,
-            'asph': T.get_overall_asphericity,
-            'Rh':   T.get_overall_hydrodynamic_radius,
+            "rg": T.get_overall_radius_of_gyration,
+            "asph": T.get_overall_asphericity,
+            "Rh": T.get_overall_hydrodynamic_radius,
         }
 
     def test_uniform_equals_unweighted_mean(self, NTL9_CO):
@@ -405,8 +432,9 @@ class TestOverallTrajectoryWeights:
         for name, fn in self._getters(T).items():
             base = np.asarray(fn())
             for k in range(n):
-                assert np.isclose(fn(weights=_one_hot(n, k)), base[k],
-                                  rtol=1e-9, atol=1e-9), (name, k)
+                assert np.isclose(
+                    fn(weights=_one_hot(n, k)), base[k], rtol=1e-9, atol=1e-9
+                ), (name, k)
 
 
 # --------------------------------------------------------------------------
@@ -414,11 +442,10 @@ class TestOverallTrajectoryWeights:
 # validation did not change behaviour and uniform == unweighted.
 # --------------------------------------------------------------------------
 class TestPreexistingDeterministicUniformInvariance:
-
     def test_distance_map_uniform(self, NTL9_CP):
         P = NTL9_CP
         uni = _uniform(P.n_frames)
-        for mode in ('CA', 'COM'):
+        for mode in ("CA", "COM"):
             base = P.get_distance_map(mode=mode, verbose=False)[0]
             wtd = P.get_distance_map(mode=mode, weights=uni, verbose=False)[0]
             assert np.allclose(base, wtd, rtol=1e-5, atol=1e-5), mode
@@ -426,8 +453,8 @@ class TestPreexistingDeterministicUniformInvariance:
     def test_contact_map_uniform(self, NTL9_CP):
         P = NTL9_CP
         uni = _uniform(P.n_frames)
-        base = P.get_contact_map(mode='ca')[0]
-        wtd = P.get_contact_map(mode='ca', weights=uni)[0]
+        base = P.get_contact_map(mode="ca")[0]
+        wtd = P.get_contact_map(mode="ca", weights=uni)[0]
         assert np.allclose(base, wtd, rtol=1e-5, atol=1e-5)
 
     def test_Q_protein_average_with_weights_raises(self, NTL9_CP):
@@ -453,16 +480,15 @@ class TestPreexistingDeterministicUniformInvariance:
 # frame stride (previously stride != 1 + weights was hard-blocked).
 # --------------------------------------------------------------------------
 class TestQWeightsAndStride:
-
     def _shape0(self, P, **kw):
         out = P.get_Q(protein_average=False, **kw)
         return np.asarray(out[0], dtype=float), np.asarray(out[1])
 
     def test_full_length_weights_stride1(self, NTL9_CP):
         P = NTL9_CP
-        w = _uniform(P.n_frames)                       # one weight per frame
+        w = _uniform(P.n_frames)  # one weight per frame
         frac, pairs = self._shape0(P, weights=w)
-        base_frac, base_pairs = self._shape0(P)        # unweighted breakdown
+        base_frac, base_pairs = self._shape0(P)  # unweighted breakdown
         assert frac.shape == base_frac.shape == (len(base_pairs),)
         assert np.all(np.isfinite(frac))
         assert frac.min() >= -1e-9 and frac.max() <= 1.0 + 1e-9
@@ -498,11 +524,11 @@ class TestQWeightsAndStride:
     def test_invalid_weights_raise(self, NTL9_CP):
         P = NTL9_CP
         n = P.n_frames
-        with pytest.raises(SSException):                # wrong length
+        with pytest.raises(SSException):  # wrong length
             P.get_Q(protein_average=False, weights=_uniform(n - 1))
-        with pytest.raises(SSException):                # wrong length + stride
+        with pytest.raises(SSException):  # wrong length + stride
             P.get_Q(protein_average=False, stride=2, weights=_uniform(n - 1))
-        with pytest.raises(SSException):                # sum != 1
+        with pytest.raises(SSException):  # sum != 1
             P.get_Q(protein_average=False, weights=np.full(n, 0.5 / n))
 
 
@@ -511,12 +537,11 @@ class TestQWeightsAndStride:
 # "stride must be 1 if weights given" hard-block was removed).
 # --------------------------------------------------------------------------
 class TestContactMapWeightsAndStride:
-
     def test_full_length_weights_stride1(self, NTL9_CP):
         P = NTL9_CP
         uni = _uniform(P.n_frames)
-        base = P.get_contact_map(mode='ca')[0]
-        wtd = P.get_contact_map(mode='ca', weights=uni)[0]
+        base = P.get_contact_map(mode="ca")[0]
+        wtd = P.get_contact_map(mode="ca", weights=uni)[0]
         assert wtd.shape == base.shape
         assert np.allclose(base, wtd, rtol=1e-5, atol=1e-5)
         assert wtd.min() >= -1e-9 and wtd.max() <= 1.0 + 1e-9
@@ -528,8 +553,8 @@ class TestContactMapWeightsAndStride:
         # frames == the plain strided mean).
         P = NTL9_CP
         uni = _uniform(P.n_frames)
-        base = P.get_contact_map(mode='ca', stride=2)[0]
-        wtd = P.get_contact_map(mode='ca', stride=2, weights=uni)[0]
+        base = P.get_contact_map(mode="ca", stride=2)[0]
+        wtd = P.get_contact_map(mode="ca", stride=2, weights=uni)[0]
         assert wtd.shape == base.shape
         assert np.allclose(base, wtd, rtol=1e-5, atol=1e-5)
 
@@ -539,21 +564,21 @@ class TestContactMapWeightsAndStride:
         uni = _uniform(n)
         nonuni = np.arange(1, n + 1, dtype=float)
         nonuni = nonuni / nonuni.sum()
-        c_uni = P.get_contact_map(mode='ca', weights=uni)[0]
-        c_non = P.get_contact_map(mode='ca', weights=nonuni)[0]
-        c_non2 = P.get_contact_map(mode='ca', weights=nonuni)[0]
-        assert np.array_equal(c_non, c_non2)               # deterministic
+        c_uni = P.get_contact_map(mode="ca", weights=uni)[0]
+        c_non = P.get_contact_map(mode="ca", weights=nonuni)[0]
+        c_non2 = P.get_contact_map(mode="ca", weights=nonuni)[0]
+        assert np.array_equal(c_non, c_non2)  # deterministic
         assert not np.allclose(c_uni, c_non, rtol=1e-6, atol=1e-6)
 
     def test_invalid_weights_raise(self, NTL9_CP):
         P = NTL9_CP
         n = P.n_frames
-        with pytest.raises(SSException):                   # wrong length
-            P.get_contact_map(mode='ca', weights=_uniform(n - 1))
-        with pytest.raises(SSException):                   # wrong length + stride
-            P.get_contact_map(mode='ca', stride=2, weights=_uniform(n - 1))
-        with pytest.raises(SSException):                   # sum != 1
-            P.get_contact_map(mode='ca', weights=np.full(n, 0.5 / n))
+        with pytest.raises(SSException):  # wrong length
+            P.get_contact_map(mode="ca", weights=_uniform(n - 1))
+        with pytest.raises(SSException):  # wrong length + stride
+            P.get_contact_map(mode="ca", stride=2, weights=_uniform(n - 1))
+        with pytest.raises(SSException):  # sum != 1
+            P.get_contact_map(mode="ca", weights=np.full(n, 0.5 / n))
 
 
 # --------------------------------------------------------------------------
@@ -561,37 +586,54 @@ class TestContactMapWeightsAndStride:
 # functions, get_t, and DSSP / BBSEG (return_per_frame=False only).
 # --------------------------------------------------------------------------
 class TestExtraReweightedGetters:
-
     def test_inter_residue_COM_distance(self, NTL9_CP):
         P = NTL9_CP
         n = P.n_frames
         base = np.asarray(P.get_inter_residue_COM_distance(1, 20))
-        assert np.isclose(P.get_inter_residue_COM_distance(1, 20, weights=_uniform(n)),
-                          base.mean(), rtol=1e-6, atol=1e-9)
+        assert np.isclose(
+            P.get_inter_residue_COM_distance(1, 20, weights=_uniform(n)),
+            base.mean(),
+            rtol=1e-6,
+            atol=1e-9,
+        )
 
     def test_inter_residue_COM_distance_one_hot(self, GS6_CP):
         P = GS6_CP
         n = P.n_frames
         base = np.asarray(P.get_inter_residue_COM_distance(1, 5))
         for k in range(n):
-            assert np.isclose(P.get_inter_residue_COM_distance(1, 5, weights=_one_hot(n, k)),
-                              base[k], rtol=1e-9, atol=1e-9)
+            assert np.isclose(
+                P.get_inter_residue_COM_distance(1, 5, weights=_one_hot(n, k)),
+                base[k],
+                rtol=1e-9,
+                atol=1e-9,
+            )
 
     def test_inter_residue_atomic_distance(self, NTL9_CP):
         P = NTL9_CP
         n = P.n_frames
-        for mode in ('atom', 'ca', 'closest', 'closest-heavy'):
+        for mode in ("atom", "ca", "closest", "closest-heavy"):
             base = np.asarray(P.get_inter_residue_atomic_distance(1, 20, mode=mode))
-            assert np.isclose(P.get_inter_residue_atomic_distance(1, 20, mode=mode, weights=_uniform(n)),
-                              base.mean(), rtol=1e-5, atol=1e-6), mode
+            assert np.isclose(
+                P.get_inter_residue_atomic_distance(
+                    1, 20, mode=mode, weights=_uniform(n)
+                ),
+                base.mean(),
+                rtol=1e-5,
+                atol=1e-6,
+            ), mode
 
     def test_inter_residue_atomic_distance_one_hot(self, GS6_CP):
         P = GS6_CP
         n = P.n_frames
         base = np.asarray(P.get_inter_residue_atomic_distance(1, 5))
         for k in range(n):
-            assert np.isclose(P.get_inter_residue_atomic_distance(1, 5, weights=_one_hot(n, k)),
-                              base[k], rtol=1e-9, atol=1e-9)
+            assert np.isclose(
+                P.get_inter_residue_atomic_distance(1, 5, weights=_one_hot(n, k)),
+                base[k],
+                rtol=1e-9,
+                atol=1e-9,
+            )
 
     def test_inter_residue_distances_stride_plus_weights(self, NTL9_CP):
         # full-length weights + stride must work and equal the unweighted
@@ -599,8 +641,10 @@ class TestExtraReweightedGetters:
         P = NTL9_CP
         n = P.n_frames
         uni = _uniform(n)
-        for fn in (lambda **k: P.get_inter_residue_COM_distance(1, 20, stride=2, **k),
-                   lambda **k: P.get_inter_residue_atomic_distance(1, 20, stride=2, **k)):
+        for fn in (
+            lambda **k: P.get_inter_residue_COM_distance(1, 20, stride=2, **k),
+            lambda **k: P.get_inter_residue_atomic_distance(1, 20, stride=2, **k),
+        ):
             base = np.asarray(fn()).mean()
             assert np.isclose(fn(weights=uni), base, rtol=1e-5, atol=1e-6)
 
@@ -608,14 +652,18 @@ class TestExtraReweightedGetters:
         P = NTL9_CP
         n = P.n_frames
         base = np.asarray(P.get_t())
-        assert np.isclose(P.get_t(weights=_uniform(n)), base.mean(), rtol=1e-6, atol=1e-9)
+        assert np.isclose(
+            P.get_t(weights=_uniform(n)), base.mean(), rtol=1e-6, atol=1e-9
+        )
 
     def test_get_t_one_hot(self, GS6_CP):
         P = GS6_CP
         n = P.n_frames
         base = np.asarray(P.get_t())
         for k in range(n):
-            assert np.isclose(P.get_t(weights=_one_hot(n, k)), base[k], rtol=1e-9, atol=1e-9)
+            assert np.isclose(
+                P.get_t(weights=_one_hot(n, k)), base[k], rtol=1e-9, atol=1e-9
+            )
 
     def test_dssp_uniform_and_onehot(self, NTL9_CP):
         P = NTL9_CP
@@ -634,8 +682,9 @@ class TestExtraReweightedGetters:
     def test_dssp_per_frame_with_weights_raises(self, GS6_CP):
         P = GS6_CP
         with pytest.raises(SSException):
-            P.get_secondary_structure_DSSP(return_per_frame=True,
-                                           weights=_uniform(P.n_frames))
+            P.get_secondary_structure_DSSP(
+                return_per_frame=True, weights=_uniform(P.n_frames)
+            )
 
     def test_bbseg_uniform(self, NTL9_CP):
         P = NTL9_CP
@@ -649,8 +698,9 @@ class TestExtraReweightedGetters:
     def test_bbseg_per_frame_with_weights_raises(self, GS6_CP):
         P = GS6_CP
         with pytest.raises(SSException):
-            P.get_secondary_structure_BBSEG(return_per_frame=True,
-                                            weights=_uniform(P.n_frames))
+            P.get_secondary_structure_BBSEG(
+                return_per_frame=True, weights=_uniform(P.n_frames)
+            )
 
     def test_invalid_weights_raise(self, GS6_CP):
         P = GS6_CP
@@ -669,20 +719,18 @@ class TestExtraReweightedGetters:
 # weighted path was bug-fixed).
 # --------------------------------------------------------------------------
 class TestPolymerScaledDistanceMapWeights:
-
     def test_uniform_equals_unweighted_explicit_model(self, NTL9_CP):
         # with nu/A0 supplied the only weighted dependence is the internal
         # get_distance_map, so uniform weights must reproduce the
         # unweighted deviation matrix.
         P = NTL9_CP
         uni = _uniform(P.n_frames)
-        m0, nu0, a0, _ = P.get_polymer_scaled_distance_map(nu=0.5, A0=5.5,
-                                                           min_separation=5,
-                                                           verbose=False)
-        m1, nu1, a1, _ = P.get_polymer_scaled_distance_map(nu=0.5, A0=5.5,
-                                                           min_separation=5,
-                                                           weights=uni,
-                                                           verbose=False)
+        m0, nu0, a0, _ = P.get_polymer_scaled_distance_map(
+            nu=0.5, A0=5.5, min_separation=5, verbose=False
+        )
+        m1, nu1, a1, _ = P.get_polymer_scaled_distance_map(
+            nu=0.5, A0=5.5, min_separation=5, weights=uni, verbose=False
+        )
         assert (nu0, a0) == (nu1, a1) == (0.5, 5.5)
         assert np.allclose(m0, m1, rtol=1e-5, atol=1e-5)
 
@@ -692,9 +740,9 @@ class TestPolymerScaledDistanceMapWeights:
         P = NTL9_CP
         uni = _uniform(P.n_frames)
         np.random.seed(42)
-        m, nu, a0, _ = P.get_polymer_scaled_distance_map(min_separation=5,
-                                                         weights=uni,
-                                                         verbose=False)
+        m, nu, a0, _ = P.get_polymer_scaled_distance_map(
+            min_separation=5, weights=uni, verbose=False
+        )
         assert np.all(np.isfinite(np.asarray(m, dtype=float)))
         assert np.isfinite(nu) and np.isfinite(a0)
 
@@ -702,32 +750,33 @@ class TestPolymerScaledDistanceMapWeights:
         P = NTL9_CP
         n = P.n_frames
         with pytest.raises(SSException):
-            P.get_polymer_scaled_distance_map(nu=0.5, A0=5.5,
-                                              weights=_uniform(n - 1),
-                                              verbose=False)
+            P.get_polymer_scaled_distance_map(
+                nu=0.5, A0=5.5, weights=_uniform(n - 1), verbose=False
+            )
         with pytest.raises(SSException):
-            P.get_polymer_scaled_distance_map(nu=0.5, A0=5.5,
-                                              weights=np.full(n, 0.5 / n),
-                                              verbose=False)
+            P.get_polymer_scaled_distance_map(
+                nu=0.5, A0=5.5, weights=np.full(n, 0.5 / n), verbose=False
+            )
 
 
 class TestCalcMIWeights:
-
     def test_uniform_weights_equal_unweighted(self):
         from soursop.ssmutualinformation import calc_MI
+
         rng = np.random.RandomState(0)
         X = rng.uniform(-1, 1, 200)
         Y = 0.7 * X + 0.3 * rng.uniform(-1, 1, 200)
         bins = np.linspace(-1.05, 1.05, 12)
-        base = calc_MI(X, Y, bins)                       # unweighted
+        base = calc_MI(X, Y, bins)  # unweighted
         w = np.full(len(X), 1.0 / len(X))
-        wtd = calc_MI(X, Y, bins, weights=w)             # uniform weights
+        wtd = calc_MI(X, Y, bins, weights=w)  # uniform weights
         assert np.isclose(base, wtd, rtol=1e-9, atol=1e-9)
 
     def test_array_weights_do_not_raise(self):
         # regression guard: `if weights:` used to raise ValueError on an
         # array ("truth value of an array ... is ambiguous").
         from soursop.ssmutualinformation import calc_MI
+
         rng = np.random.RandomState(1)
         X = rng.uniform(-1, 1, 100)
         Y = rng.uniform(-1, 1, 100)

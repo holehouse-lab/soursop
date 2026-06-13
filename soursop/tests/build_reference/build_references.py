@@ -66,22 +66,22 @@ SEED = 42
 # stride is computed as ``max(1, n_frames // SAVE_N_SNAPSHOTS)``.
 SAVE_N_SNAPSHOTS = 10
 
-ANGLE_NAMES = ['phi', 'psi', 'omega', 'chi1', 'chi2', 'chi3', 'chi4', 'chi5']
+ANGLE_NAMES = ["phi", "psi", "omega", "chi1", "chi2", "chi3", "chi4", "chi5"]
 
 # All contact-map modes that work for an all-atom trajectory. ``sidechain-heavy``
 # is excluded because it raises explicitly when any GLY is present.
-AA_CONTACT_MODES = ['closest-heavy', 'closest', 'ca', 'sidechain']
+AA_CONTACT_MODES = ["closest-heavy", "closest", "ca", "sidechain"]
 
 # For a single-bead-per-residue CG trajectory, ``ca`` is the only contact mode
 # that is well-defined (every other mode depends on having more than one atom
 # per residue or on a sidechain selection).
-CG_CONTACT_MODES = ['ca']
+CG_CONTACT_MODES = ["ca"]
 
 POLYMER_SCALED_MAP_MODES = [
-    'fractional-change',
-    'signed-fractional-change',
-    'signed-absolute-change',
-    'scaled',
+    "fractional-change",
+    "signed-fractional-change",
+    "signed-absolute-change",
+    "scaled",
 ]
 
 # Trajectories for which a reference pickle should be built. Each entry must
@@ -89,11 +89,11 @@ POLYMER_SCALED_MAP_MODES = [
 # ``soursop/data/test_data/``), the resolution tag (``AA`` or ``CG``), and the
 # canonical R1/R2 residue indices used for inter-residue / regional analyses.
 TRAJECTORIES = [
-    {'name': 'ctl9', 'resolution': 'AA', 'R1': 5, 'R2': 45},
-    {'name': 'sigA', 'resolution': 'CG', 'R1': 5, 'R2': 45},
-    {'name': 'ntl9', 'resolution': 'AA', 'R1': 3, 'R2': 25},
-    {'name': 'gs6', 'resolution': 'AA', 'R1': 2, 'R2': 4},
-    {'name': 'synth_1', 'resolution': 'CG', 'R1': 2, 'R2': 40},
+    {"name": "ctl9", "resolution": "AA", "R1": 5, "R2": 45},
+    {"name": "sigA", "resolution": "CG", "R1": 5, "R2": 45},
+    {"name": "ntl9", "resolution": "AA", "R1": 3, "R2": 25},
+    {"name": "gs6", "resolution": "AA", "R1": 2, "R2": 4},
+    {"name": "synth_1", "resolution": "CG", "R1": 2, "R2": 40},
 ]
 
 
@@ -119,92 +119,111 @@ def _properties(p, resolution: str) -> dict:
     except TypeError:
         unitcell = None
     return {
-        'n_frames': int(p.n_frames),
-        'n_residues': int(p.n_residues),
-        'residue_index_list': list(p.residue_index_list),
-        'resid_with_CA': list(p.resid_with_CA),
-        'ncap': bool(p.ncap),
-        'ccap': bool(p.ccap),
-        'unitcell': unitcell,
-        'sequence_three_letter': p.get_amino_acid_sequence(oneletter=False, numbered=False),
-        'sequence_one_letter': p.get_amino_acid_sequence(oneletter=True, numbered=False),
-        'resolution': resolution,
+        "n_frames": int(p.n_frames),
+        "n_residues": int(p.n_residues),
+        "residue_index_list": list(p.residue_index_list),
+        "resid_with_CA": list(p.resid_with_CA),
+        "ncap": bool(p.ncap),
+        "ccap": bool(p.ccap),
+        "unitcell": unitcell,
+        "sequence_three_letter": p.get_amino_acid_sequence(
+            oneletter=False, numbered=False
+        ),
+        "sequence_one_letter": p.get_amino_acid_sequence(
+            oneletter=True, numbered=False
+        ),
+        "resolution": resolution,
     }
 
 
 def _global_structural(p, save_stride: int) -> dict:
     out: dict[str, Any] = {}
-    out['get_radius_of_gyration'] = _sub(p.get_radius_of_gyration(), save_stride)
-    out['get_center_of_mass'] = _sub(p.get_center_of_mass(), save_stride)
-    out['get_gyration_tensor'] = _sub(p.get_gyration_tensor(verbose=False), save_stride)
-    out['get_asphericity'] = _sub(p.get_asphericity(verbose=False), save_stride)
-    out['get_hydrodynamic_radius__nygaard'] = _sub(
-        p.get_hydrodynamic_radius(mode='nygaard'), save_stride,
+    out["get_radius_of_gyration"] = _sub(p.get_radius_of_gyration(), save_stride)
+    out["get_center_of_mass"] = _sub(p.get_center_of_mass(), save_stride)
+    out["get_gyration_tensor"] = _sub(p.get_gyration_tensor(verbose=False), save_stride)
+    out["get_asphericity"] = _sub(p.get_asphericity(verbose=False), save_stride)
+    out["get_hydrodynamic_radius__nygaard"] = _sub(
+        p.get_hydrodynamic_radius(mode="nygaard"),
+        save_stride,
     )
-    out['get_hydrodynamic_radius__kr_CA'] = _sub(
-        p.get_hydrodynamic_radius(mode='kr', distance_mode='CA'), save_stride,
+    out["get_hydrodynamic_radius__kr_CA"] = _sub(
+        p.get_hydrodynamic_radius(mode="kr", distance_mode="CA"),
+        save_stride,
     )
-    out['get_hydrodynamic_radius__kr_COM'] = _sub(
-        p.get_hydrodynamic_radius(mode='kr', distance_mode='COM'), save_stride,
+    out["get_hydrodynamic_radius__kr_COM"] = _sub(
+        p.get_hydrodynamic_radius(mode="kr", distance_mode="COM"),
+        save_stride,
     )
-    out['get_t'] = _sub(p.get_t(), save_stride)
-    out['get_molecular_volume'] = _sub(p.get_molecular_volume(), save_stride)
-    out['get_end_to_end_distance__CA'] = _sub(p.get_end_to_end_distance(mode='CA'), save_stride)
-    out['get_end_to_end_distance__COM'] = _sub(p.get_end_to_end_distance(mode='COM'), save_stride)
-    out['get_overlap_concentration'] = float(p.get_overlap_concentration())
-    out['get_end_to_end_vs_rg_correlation__CA'] = float(
-        p.get_end_to_end_vs_rg_correlation(mode='CA')
+    out["get_t"] = _sub(p.get_t(), save_stride)
+    out["get_molecular_volume"] = _sub(p.get_molecular_volume(), save_stride)
+    out["get_end_to_end_distance__CA"] = _sub(
+        p.get_end_to_end_distance(mode="CA"), save_stride
     )
-    out['get_end_to_end_vs_rg_correlation__COM'] = float(
-        p.get_end_to_end_vs_rg_correlation(mode='COM')
+    out["get_end_to_end_distance__COM"] = _sub(
+        p.get_end_to_end_distance(mode="COM"), save_stride
+    )
+    out["get_overlap_concentration"] = float(p.get_overlap_concentration())
+    out["get_end_to_end_vs_rg_correlation__CA"] = float(
+        p.get_end_to_end_vs_rg_correlation(mode="CA")
+    )
+    out["get_end_to_end_vs_rg_correlation__COM"] = float(
+        p.get_end_to_end_vs_rg_correlation(mode="COM")
     )
     return out
 
 
 def _distance(p, R1: int, R2: int, save_stride: int, resolution: str) -> dict:
     out: dict[str, Any] = {}
-    out['calculate_all_CA_distances__CA'] = _sub(
-        p.calculate_all_CA_distances(R1, mode='CA'), save_stride,
+    out["calculate_all_CA_distances__CA"] = _sub(
+        p.calculate_all_CA_distances(R1, mode="CA"),
+        save_stride,
     )
-    out['calculate_all_CA_distances__COM'] = _sub(
-        p.calculate_all_CA_distances(R1, mode='COM'), save_stride,
+    out["calculate_all_CA_distances__COM"] = _sub(
+        p.calculate_all_CA_distances(R1, mode="COM"),
+        save_stride,
     )
 
     # distance maps are aggregated over all frames (mean/std) — keep full
-    mean_CA, std_CA = p.get_distance_map(mode='CA', verbose=False)
-    out['get_distance_map__CA'] = {'mean': mean_CA, 'std': std_CA}
+    mean_CA, std_CA = p.get_distance_map(mode="CA", verbose=False)
+    out["get_distance_map__CA"] = {"mean": mean_CA, "std": std_CA}
 
-    mean_COM, std_COM = p.get_distance_map(mode='COM', verbose=False)
-    out['get_distance_map__COM'] = {'mean': mean_COM, 'std': std_COM}
+    mean_COM, std_COM = p.get_distance_map(mode="COM", verbose=False)
+    out["get_distance_map__COM"] = {"mean": mean_COM, "std": std_COM}
 
-    mean_CA_RMS, std_CA_RMS = p.get_distance_map(mode='CA', RMS=True, verbose=False)
-    out['get_distance_map__CA_RMS'] = {'mean': mean_CA_RMS, 'std': std_CA_RMS}
+    mean_CA_RMS, std_CA_RMS = p.get_distance_map(mode="CA", RMS=True, verbose=False)
+    out["get_distance_map__CA_RMS"] = {"mean": mean_CA_RMS, "std": std_CA_RMS}
 
-    out['get_inter_residue_COM_distance'] = _sub(
-        p.get_inter_residue_COM_distance(R1, R2), save_stride,
-    )
-    out['get_inter_residue_COM_vector'] = _sub(
-        p.get_inter_residue_COM_vector(R1, R2), save_stride,
-    )
-    out['get_inter_residue_atomic_distance__atom_CA_CA'] = _sub(
-        p.get_inter_residue_atomic_distance(R1, R2, A1='CA', A2='CA', mode='atom'),
+    out["get_inter_residue_COM_distance"] = _sub(
+        p.get_inter_residue_COM_distance(R1, R2),
         save_stride,
     )
-    out['get_inter_residue_atomic_distance__ca'] = _sub(
-        p.get_inter_residue_atomic_distance(R1, R2, mode='ca'), save_stride,
+    out["get_inter_residue_COM_vector"] = _sub(
+        p.get_inter_residue_COM_vector(R1, R2),
+        save_stride,
+    )
+    out["get_inter_residue_atomic_distance__atom_CA_CA"] = _sub(
+        p.get_inter_residue_atomic_distance(R1, R2, A1="CA", A2="CA", mode="atom"),
+        save_stride,
+    )
+    out["get_inter_residue_atomic_distance__ca"] = _sub(
+        p.get_inter_residue_atomic_distance(R1, R2, mode="ca"),
+        save_stride,
     )
 
-    if resolution == 'AA':
+    if resolution == "AA":
         # closest / closest-heavy / sidechain modes all require multiple atoms
         # per residue, which CG single-bead topologies do not provide.
-        out['get_inter_residue_atomic_distance__closest'] = _sub(
-            p.get_inter_residue_atomic_distance(R1, R2, mode='closest'), save_stride,
+        out["get_inter_residue_atomic_distance__closest"] = _sub(
+            p.get_inter_residue_atomic_distance(R1, R2, mode="closest"),
+            save_stride,
         )
-        out['get_inter_residue_atomic_distance__closest_heavy'] = _sub(
-            p.get_inter_residue_atomic_distance(R1, R2, mode='closest-heavy'), save_stride,
+        out["get_inter_residue_atomic_distance__closest_heavy"] = _sub(
+            p.get_inter_residue_atomic_distance(R1, R2, mode="closest-heavy"),
+            save_stride,
         )
-        out['get_inter_residue_atomic_distance__sidechain'] = _sub(
-            p.get_inter_residue_atomic_distance(R1, R2, mode='sidechain'), save_stride,
+        out["get_inter_residue_atomic_distance__sidechain"] = _sub(
+            p.get_inter_residue_atomic_distance(R1, R2, mode="sidechain"),
+            save_stride,
         )
     return out
 
@@ -218,18 +237,24 @@ def _angles_dihedrals(p, save_stride: int) -> dict:
         # atom_names are mdtraj Atom objects; stringify so the pickle is portable
         stringified = [[str(a) for a in residue_atoms] for residue_atoms in atom_names]
         # angles shape is (nres, n_frames) — subsample along the frame axis
-        out[f'get_angles__{name}'] = {
-            'atom_names': stringified,
-            'angles': _sub(np.asarray(angles), save_stride, axis=1),
+        out[f"get_angles__{name}"] = {
+            "atom_names": stringified,
+            "angles": _sub(np.asarray(angles), save_stride, axis=1),
         }
 
-    out['get_angle_decay__C_N'] = p.get_angle_decay(atom1='C', atom2='N')
+    out["get_angle_decay__C_N"] = p.get_angle_decay(atom1="C", atom2="N")
 
-    out['get_dihedral_mutual_information__psi__norm0'] = p.get_dihedral_mutual_information(
-        angle_name='psi', normalize=False,
+    out["get_dihedral_mutual_information__psi__norm0"] = (
+        p.get_dihedral_mutual_information(
+            angle_name="psi",
+            normalize=False,
+        )
     )
-    out['get_dihedral_mutual_information__psi__norm1'] = p.get_dihedral_mutual_information(
-        angle_name='psi', normalize=True,
+    out["get_dihedral_mutual_information__psi__norm1"] = (
+        p.get_dihedral_mutual_information(
+            angle_name="psi",
+            normalize=True,
+        )
     )
     return out
 
@@ -240,33 +265,44 @@ def _polymer(p, stochastic_keys: list) -> dict:
     # mean_vals=True keeps the per-separation mean only; the raw per-frame
     # distances add no extra regression coverage beyond what
     # get_internal_scaling_RMS already provides.
-    seq_CA, mean_CA = p.get_internal_scaling(mode='CA', mean_vals=True, verbose=False)
-    out['get_internal_scaling__CA'] = {
-        'seq_sep': np.asarray(seq_CA),
-        'mean': np.asarray(mean_CA),
+    seq_CA, mean_CA = p.get_internal_scaling(mode="CA", mean_vals=True, verbose=False)
+    out["get_internal_scaling__CA"] = {
+        "seq_sep": np.asarray(seq_CA),
+        "mean": np.asarray(mean_CA),
     }
 
-    seq_COM, mean_COM = p.get_internal_scaling(mode='COM', mean_vals=True, verbose=False)
-    out['get_internal_scaling__COM'] = {
-        'seq_sep': np.asarray(seq_COM),
-        'mean': np.asarray(mean_COM),
+    seq_COM, mean_COM = p.get_internal_scaling(
+        mode="COM", mean_vals=True, verbose=False
+    )
+    out["get_internal_scaling__COM"] = {
+        "seq_sep": np.asarray(seq_COM),
+        "mean": np.asarray(mean_COM),
     }
 
-    seq_CA_rms, mean_CA_rms = p.get_internal_scaling_RMS(mode='CA', verbose=False)
-    out['get_internal_scaling_RMS__CA'] = {
-        'seq_sep': np.asarray(seq_CA_rms),
-        'mean': np.asarray(mean_CA_rms),
+    seq_CA_rms, mean_CA_rms = p.get_internal_scaling_RMS(mode="CA", verbose=False)
+    out["get_internal_scaling_RMS__CA"] = {
+        "seq_sep": np.asarray(seq_CA_rms),
+        "mean": np.asarray(mean_CA_rms),
     }
 
-    seq_COM_rms, mean_COM_rms = p.get_internal_scaling_RMS(mode='COM', verbose=False)
-    out['get_internal_scaling_RMS__COM'] = {
-        'seq_sep': np.asarray(seq_COM_rms),
-        'mean': np.asarray(mean_COM_rms),
+    seq_COM_rms, mean_COM_rms = p.get_internal_scaling_RMS(mode="COM", verbose=False)
+    out["get_internal_scaling_RMS__COM"] = {
+        "seq_sep": np.asarray(seq_COM_rms),
+        "mean": np.asarray(mean_COM_rms),
     }
 
-    se_keys = ['best_nu', 'best_A0', 'nu_ci_low', 'nu_ci_high', 'A0_ci_low', 'A0_ci_high',
-               'redchi_fit_region', 'redchi_all_points',
-               'fit_region_data', 'all_points_data']
+    se_keys = [
+        "best_nu",
+        "best_A0",
+        "nu_ci_low",
+        "nu_ci_high",
+        "A0_ci_low",
+        "A0_ci_high",
+        "redchi_fit_region",
+        "redchi_all_points",
+        "fit_region_data",
+        "all_points_data",
+    ]
 
     # get_scaling_exponent and get_polymer_scaled_distance_map fit a homopolymer
     # model and need enough residues to do so (at least ~25). For very short
@@ -274,25 +310,27 @@ def _polymer(p, stochastic_keys: list) -> dict:
     # function raises. Skip these observables gracefully so the rest of the
     # reference still builds; the absent keys are then skipped by smoke_check.
     try:
-        se_CA = _seed_then(p.get_scaling_exponent, mode='CA', verbose=False)
-        out['get_scaling_exponent__CA'] = dict(zip(se_keys, se_CA))
-        stochastic_keys.append('polymer.get_scaling_exponent__CA')
+        se_CA = _seed_then(p.get_scaling_exponent, mode="CA", verbose=False)
+        out["get_scaling_exponent__CA"] = dict(zip(se_keys, se_CA))
+        stochastic_keys.append("polymer.get_scaling_exponent__CA")
 
-        se_COM = _seed_then(p.get_scaling_exponent, mode='COM', verbose=False)
-        out['get_scaling_exponent__COM'] = dict(zip(se_keys, se_COM))
-        stochastic_keys.append('polymer.get_scaling_exponent__COM')
+        se_COM = _seed_then(p.get_scaling_exponent, mode="COM", verbose=False)
+        out["get_scaling_exponent__COM"] = dict(zip(se_keys, se_COM))
+        stochastic_keys.append("polymer.get_scaling_exponent__COM")
 
         for mode in POLYMER_SCALED_MAP_MODES:
             psd_map, nu, A0, redchi = _seed_then(
-                p.get_polymer_scaled_distance_map, mode=mode, verbose=False,
+                p.get_polymer_scaled_distance_map,
+                mode=mode,
+                verbose=False,
             )
-            out[f'get_polymer_scaled_distance_map__{mode}'] = {
-                'map': psd_map,
-                'nu': float(nu),
-                'A0': float(A0),
-                'redchi': float(redchi),
+            out[f"get_polymer_scaled_distance_map__{mode}"] = {
+                "map": psd_map,
+                "nu": float(nu),
+                "A0": float(A0),
+                "redchi": float(redchi),
             }
-            stochastic_keys.append(f'polymer.get_polymer_scaled_distance_map__{mode}')
+            stochastic_keys.append(f"polymer.get_polymer_scaled_distance_map__{mode}")
     except SSException as e:
         print(
             f"  [WARNING] skipping polymer-scaling fits (chain too short for "
@@ -307,55 +345,59 @@ def _secondary_structure(p, save_stride: int) -> dict:
     out: dict[str, Any] = {}
 
     dssp_sum = p.get_secondary_structure_DSSP(return_per_frame=False)
-    out['DSSP_summary'] = {
-        'resid_list': np.asarray(dssp_sum[0]),
-        'helix': dssp_sum[1],
-        'extended': dssp_sum[2],
-        'coil': dssp_sum[3],
+    out["DSSP_summary"] = {
+        "resid_list": np.asarray(dssp_sum[0]),
+        "helix": dssp_sum[1],
+        "extended": dssp_sum[2],
+        "coil": dssp_sum[3],
     }
 
     dssp_pf = p.get_secondary_structure_DSSP(return_per_frame=True)
-    out['DSSP_per_frame'] = {
-        'resid_list': np.asarray(dssp_pf[0]),
-        'helix': _sub(dssp_pf[1], save_stride),
-        'extended': _sub(dssp_pf[2], save_stride),
-        'coil': _sub(dssp_pf[3], save_stride),
+    out["DSSP_per_frame"] = {
+        "resid_list": np.asarray(dssp_pf[0]),
+        "helix": _sub(dssp_pf[1], save_stride),
+        "extended": _sub(dssp_pf[2], save_stride),
+        "coil": _sub(dssp_pf[3], save_stride),
     }
 
     bbseg_sum = p.get_secondary_structure_BBSEG(return_per_frame=False)
-    out['BBSEG_summary'] = {
-        'resid_list': np.asarray(bbseg_sum[0]),
-        'per_class': {int(k): np.asarray(v) for k, v in bbseg_sum[1].items()},
+    out["BBSEG_summary"] = {
+        "resid_list": np.asarray(bbseg_sum[0]),
+        "per_class": {int(k): np.asarray(v) for k, v in bbseg_sum[1].items()},
     }
 
     bbseg_pf = p.get_secondary_structure_BBSEG(return_per_frame=True)
-    out['BBSEG_per_frame'] = {
-        'resid_list': np.asarray(bbseg_pf[0]),
-        'per_class': {int(k): _sub(np.asarray(v), save_stride) for k, v in bbseg_pf[1].items()},
+    out["BBSEG_per_frame"] = {
+        "resid_list": np.asarray(bbseg_pf[0]),
+        "per_class": {
+            int(k): _sub(np.asarray(v), save_stride) for k, v in bbseg_pf[1].items()
+        },
     }
     return out
 
 
 def _rmsd(p, save_stride: int) -> dict:
     return {
-        'get_RMSD__frame0_to_lastframe': p.get_RMSD(frame1=0, frame2=p.n_frames - 1),
-        'get_RMSD__frame0_to_all_frames': _sub(p.get_RMSD(frame1=0, frame2=-1), save_stride),
+        "get_RMSD__frame0_to_lastframe": p.get_RMSD(frame1=0, frame2=p.n_frames - 1),
+        "get_RMSD__frame0_to_all_frames": _sub(
+            p.get_RMSD(frame1=0, frame2=-1), save_stride
+        ),
     }
 
 
 def _contacts(p, save_stride: int, resolution: str) -> dict:
     out: dict[str, Any] = {}
 
-    modes = AA_CONTACT_MODES if resolution == 'AA' else CG_CONTACT_MODES
+    modes = AA_CONTACT_MODES if resolution == "AA" else CG_CONTACT_MODES
     for mode in modes:
         cmap, corder = p.get_contact_map(mode=mode)
-        key = mode.replace('-', '_')
-        out[f'get_contact_map__{key}'] = {
-            'contact_map': cmap,
-            'contact_order': corder,
+        key = mode.replace("-", "_")
+        out[f"get_contact_map__{key}"] = {
+            "contact_map": cmap,
+            "contact_order": corder,
         }
 
-    if resolution != 'AA':
+    if resolution != "AA":
         # get_Q relies on heavy-atom contacts which are undefined for CG.
         return out
 
@@ -371,7 +413,7 @@ def _contacts(p, save_stride: int, resolution: str) -> dict:
         )
         return out
 
-    out['get_Q__protein_average_True'] = _sub(q_avg, save_stride)
+    out["get_Q__protein_average_True"] = _sub(q_avg, save_stride)
 
     # get_Q(protein_average=False) returns a 5-tuple:
     #   [0] per-native-contact fractional native (vector)
@@ -382,12 +424,12 @@ def _contacts(p, save_stride: int, resolution: str) -> dict:
     q_per_contact, native_pairs, res2contacts, ordered_keys, res_res_q = p.get_Q(
         protein_average=False,
     )
-    out['get_Q__protein_average_False'] = {
-        'per_contact_fraction': np.asarray(q_per_contact),
-        'native_contact_pairs': np.asarray(native_pairs),
-        'per_residue_contacts': {k: np.asarray(v) for k, v in res2contacts.items()},
-        'ordered_residue_keys': list(ordered_keys),
-        'res_res_q_matrix': np.asarray(res_res_q),
+    out["get_Q__protein_average_False"] = {
+        "per_contact_fraction": np.asarray(q_per_contact),
+        "native_contact_pairs": np.asarray(native_pairs),
+        "per_residue_contacts": {k: np.asarray(v) for k, v in res2contacts.items()},
+        "ordered_residue_keys": list(ordered_keys),
+        "res_res_q_matrix": np.asarray(res_res_q),
     }
     return out
 
@@ -395,56 +437,67 @@ def _contacts(p, save_stride: int, resolution: str) -> dict:
 def _sasa(p, R1: int, R2: int, save_stride: int) -> dict:
     """AA-only: a single CA atom per residue is not a meaningful SASA."""
     out: dict[str, Any] = {}
-    out['get_all_SASA__residue'] = p.get_all_SASA(mode='residue', stride=save_stride)
-    out['get_all_SASA__atom'] = p.get_all_SASA(mode='atom', stride=save_stride)
-    out['get_regional_SASA'] = p.get_regional_SASA(R1, R2, stride=save_stride)
+    out["get_all_SASA__residue"] = p.get_all_SASA(mode="residue", stride=save_stride)
+    out["get_all_SASA__atom"] = p.get_all_SASA(mode="atom", stride=save_stride)
+    out["get_regional_SASA"] = p.get_regional_SASA(R1, R2, stride=save_stride)
 
     site = p.get_site_accessibility(
-        ['ALA', 'LEU', 'VAL'], mode='residue_type', stride=save_stride,
+        ["ALA", "LEU", "VAL"],
+        mode="residue_type",
+        stride=save_stride,
     )
-    out['get_site_accessibility__ALA_LEU_VAL'] = {
+    out["get_site_accessibility__ALA_LEU_VAL"] = {
         str(k): np.asarray(v) for k, v in site.items()
     }
     return out
 
 
 def _alignment_heterogeneity(
-    p, R1: int, R2: int, save_stride: int, resolution: str, stochastic_keys: list,
+    p,
+    R1: int,
+    R2: int,
+    save_stride: int,
+    resolution: str,
+    stochastic_keys: list,
 ) -> dict:
     out: dict[str, Any] = {}
 
-    if resolution == 'AA':
-        out['get_sidechain_alignment_angle'] = _sub(
-            p.get_sidechain_alignment_angle(R1, R2), save_stride,
+    if resolution == "AA":
+        out["get_sidechain_alignment_angle"] = _sub(
+            p.get_sidechain_alignment_angle(R1, R2),
+            save_stride,
         )
 
-    out['get_D_vector'] = p.get_D_vector(stride=save_stride, verbose=False)
+    out["get_D_vector"] = p.get_D_vector(stride=save_stride, verbose=False)
 
     # get_local_heterogeneity / get_local_collapse use a sliding-window over
     # the chain and require n_residues >= fragment_size/window_size. Skip
     # gracefully if the chain is shorter than the default 10 residues.
     try:
         lh_mean, lh_std, lh_histo, lh_bins = p.get_local_heterogeneity(
-            fragment_size=10, stride=save_stride, verbose=False,
+            fragment_size=10,
+            stride=save_stride,
+            verbose=False,
         )
-        out['get_local_heterogeneity'] = {
-            'mean': np.asarray(lh_mean),
-            'std': np.asarray(lh_std),
-            'histo': np.asarray(lh_histo),
-            'bins': np.asarray(lh_bins),
+        out["get_local_heterogeneity"] = {
+            "mean": np.asarray(lh_mean),
+            "std": np.asarray(lh_std),
+            "histo": np.asarray(lh_histo),
+            "bins": np.asarray(lh_bins),
         }
     except SSException as e:
         print(f"  [WARNING] skipping get_local_heterogeneity: {e}")
 
     try:
         lc_mean, lc_std, lc_histo, lc_bins = p.get_local_collapse(
-            window_size=10, verbose=False,
+            window_size=10,
+            verbose=False,
         )
-        out['get_local_collapse'] = {
-            'mean': np.asarray(lc_mean),
-            'std': np.asarray(lc_std),
-            'histo': np.asarray(lc_histo),
-            'bins': np.asarray(lc_bins),
+        out["get_local_collapse"] = {
+            "mean": np.asarray(lc_mean),
+            "std": np.asarray(lc_std),
+            "histo": np.asarray(lc_histo),
+            "bins": np.asarray(lc_bins),
         }
     except SSException as e:
         print(f"  [WARNING] skipping get_local_collapse: {e}")
@@ -455,15 +508,21 @@ def _alignment_heterogeneity(
     try:
         raw, n_pairs, mean_corr, std_corr = _seed_then(
             p.get_local_to_global_correlation,
-            mode='COM', n_cycles=100, max_num_pairs=10, stride=save_stride, verbose=False,
+            mode="COM",
+            n_cycles=100,
+            max_num_pairs=10,
+            stride=save_stride,
+            verbose=False,
         )
-        out['get_local_to_global_correlation'] = {
-            'raw': raw,
-            'n_pairs': n_pairs,
-            'mean': mean_corr,
-            'std': std_corr,
+        out["get_local_to_global_correlation"] = {
+            "raw": raw,
+            "n_pairs": n_pairs,
+            "mean": mean_corr,
+            "std": std_corr,
         }
-        stochastic_keys.append('alignment_heterogeneity.get_local_to_global_correlation')
+        stochastic_keys.append(
+            "alignment_heterogeneity.get_local_to_global_correlation"
+        )
     except SSException as e:
         print(f"  [WARNING] skipping get_local_to_global_correlation: {e}")
 
@@ -475,13 +534,13 @@ def _validate_canonical_residues(p, R1: int, R2: int, resolution: str) -> None:
     # Caps must never be selected. GLY must be avoided for AA because
     # get_sidechain_alignment_angle raises on glycine; for CG that method is
     # skipped, so glycines are tolerated.
-    forbidden = {'ACE', 'NME'} | ({'GLY'} if resolution == 'AA' else set())
-    for label, resid in (('R1', R1), ('R2', R2)):
+    forbidden = {"ACE", "NME"} | ({"GLY"} if resolution == "AA" else set())
+    for label, resid in (("R1", R1), ("R2", R2)):
         if resid >= len(seq):
             raise RuntimeError(
                 f"{label}={resid} is out of bounds for sequence length {len(seq)}"
             )
-        resname = seq[resid].split('-')[0]
+        resname = seq[resid].split("-")[0]
         if resname in forbidden:
             raise RuntimeError(
                 f"{label}={resid} is {resname}; not allowed for resolution={resolution}. "
@@ -503,46 +562,51 @@ def build_reference(protein, name: str, resolution: str, R1: int, R2: int) -> di
     rmsd = _rmsd(protein, save_stride)
     contacts = _contacts(protein, save_stride, resolution)
     alignment = _alignment_heterogeneity(
-        protein, R1, R2, save_stride, resolution, stochastic_keys,
+        protein,
+        R1,
+        R2,
+        save_stride,
+        resolution,
+        stochastic_keys,
     )
 
     meta = {
-        'name': name,
-        'resolution': resolution,
-        'soursop_version': soursop_version,
-        'mdtraj_version': mdtraj.__version__,
-        'numpy_version': np.__version__,
-        'python_version': '.'.join(str(v) for v in sys.version_info[:3]),
-        'n_frames': properties['n_frames'],
-        'n_residues': properties['n_residues'],
-        'seed': SEED,
-        'R1': R1,
-        'R2': R2,
-        'save_stride': save_stride,
-        'save_n_snapshots_target': SAVE_N_SNAPSHOTS,
-        'stochastic_keys': sorted(stochastic_keys),
+        "name": name,
+        "resolution": resolution,
+        "soursop_version": soursop_version,
+        "mdtraj_version": mdtraj.__version__,
+        "numpy_version": np.__version__,
+        "python_version": ".".join(str(v) for v in sys.version_info[:3]),
+        "n_frames": properties["n_frames"],
+        "n_residues": properties["n_residues"],
+        "seed": SEED,
+        "R1": R1,
+        "R2": R2,
+        "save_stride": save_stride,
+        "save_n_snapshots_target": SAVE_N_SNAPSHOTS,
+        "stochastic_keys": sorted(stochastic_keys),
     }
 
     ref: dict[str, Any] = {
-        'meta': meta,
-        'properties': properties,
-        'global': global_structural,
-        'distance': distance,
-        'polymer': polymer,
-        'rmsd': rmsd,
-        'contacts': contacts,
-        'alignment_heterogeneity': alignment,
+        "meta": meta,
+        "properties": properties,
+        "global": global_structural,
+        "distance": distance,
+        "polymer": polymer,
+        "rmsd": rmsd,
+        "contacts": contacts,
+        "alignment_heterogeneity": alignment,
     }
 
-    if resolution == 'AA':
-        ref['angles'] = _angles_dihedrals(protein, save_stride)
-        ref['secondary_structure'] = _secondary_structure(protein, save_stride)
-        ref['sasa'] = _sasa(protein, R1, R2, save_stride)
+    if resolution == "AA":
+        ref["angles"] = _angles_dihedrals(protein, save_stride)
+        ref["secondary_structure"] = _secondary_structure(protein, save_stride)
+        ref["sasa"] = _sasa(protein, R1, R2, save_stride)
 
     return ref
 
 
-def _walk_leaves(d: dict, prefix: str = ''):
+def _walk_leaves(d: dict, prefix: str = ""):
     for key, value in d.items():
         path = f"{prefix}.{key}" if prefix else key
         if isinstance(value, dict):
@@ -569,23 +633,23 @@ def _array_summary(value) -> str:
 
 
 def smoke_check(ref: dict, protein) -> None:
-    print('--- smoke_check: walking reference dict ---')
+    print("--- smoke_check: walking reference dict ---")
     leaves = list(_walk_leaves(ref))
     for path, value in leaves:
         print(f"  {path:65s} {_array_summary(value)}")
 
-    print(f'--- smoke_check: {len(leaves)} leaf values ---')
+    print(f"--- smoke_check: {len(leaves)} leaf values ---")
 
     # 'properties.unitcell' is legitimately None for CG trajectories without
     # a periodic box; any other None leaf is a bug.
     for path, value in leaves:
-        if value is None and path != 'properties.unitcell':
+        if value is None and path != "properties.unitcell":
             raise AssertionError(f"leaf '{path}' is None")
 
     for path, value in leaves:
         if path in NAN_INF_WHITELIST:
             continue
-        if isinstance(value, np.ndarray) and value.dtype.kind in ('f', 'c'):
+        if isinstance(value, np.ndarray) and value.dtype.kind in ("f", "c"):
             if not np.all(np.isfinite(value)):
                 bad = np.sum(~np.isfinite(value))
                 raise AssertionError(
@@ -599,11 +663,20 @@ def smoke_check(ref: dict, protein) -> None:
     # get_local_to_global_correlation, ending up with zero stochastic keys.
     # That's a legitimate outcome, not a bug, so we no longer require >= 1.
 
-    print('--- smoke_check: re-running stochastic methods to verify seeding ---')
+    print("--- smoke_check: re-running stochastic methods to verify seeding ---")
 
-    se_keys = ['best_nu', 'best_A0', 'nu_ci_low', 'nu_ci_high', 'A0_ci_low', 'A0_ci_high',
-               'redchi_fit_region', 'redchi_all_points',
-               'fit_region_data', 'all_points_data']
+    se_keys = [
+        "best_nu",
+        "best_A0",
+        "nu_ci_low",
+        "nu_ci_high",
+        "A0_ci_low",
+        "A0_ci_high",
+        "redchi_fit_region",
+        "redchi_all_points",
+        "fit_region_data",
+        "all_points_data",
+    ]
 
     # This smoke check verifies that re-seeding reproduces the stochastic
     # methods, not bit-for-bit precision. The derived fit metrics
@@ -616,79 +689,93 @@ def smoke_check(ref: dict, protein) -> None:
     # regression (which would shift values by orders of magnitude).
     SMOKE_RTOL, SMOKE_ATOL = 1e-6, 1e-9
 
-    if 'get_scaling_exponent__CA' in ref['polymer']:
-        se_CA_2 = _seed_then(protein.get_scaling_exponent, mode='CA', verbose=False)
+    if "get_scaling_exponent__CA" in ref["polymer"]:
+        se_CA_2 = _seed_then(protein.get_scaling_exponent, mode="CA", verbose=False)
         se_CA_2_dict = dict(zip(se_keys, se_CA_2))
-        for k, v in ref['polymer']['get_scaling_exponent__CA'].items():
+        for k, v in ref["polymer"]["get_scaling_exponent__CA"].items():
             np.testing.assert_allclose(
-                np.asarray(se_CA_2_dict[k]), np.asarray(v),
-                rtol=SMOKE_RTOL, atol=SMOKE_ATOL,
+                np.asarray(se_CA_2_dict[k]),
+                np.asarray(v),
+                rtol=SMOKE_RTOL,
+                atol=SMOKE_ATOL,
                 err_msg=f"stochastic re-run mismatch: get_scaling_exponent__CA.{k}",
             )
 
-    if 'get_scaling_exponent__COM' in ref['polymer']:
-        se_COM_2 = _seed_then(protein.get_scaling_exponent, mode='COM', verbose=False)
+    if "get_scaling_exponent__COM" in ref["polymer"]:
+        se_COM_2 = _seed_then(protein.get_scaling_exponent, mode="COM", verbose=False)
         se_COM_2_dict = dict(zip(se_keys, se_COM_2))
-        for k, v in ref['polymer']['get_scaling_exponent__COM'].items():
+        for k, v in ref["polymer"]["get_scaling_exponent__COM"].items():
             np.testing.assert_allclose(
-                np.asarray(se_COM_2_dict[k]), np.asarray(v),
-                rtol=SMOKE_RTOL, atol=SMOKE_ATOL,
+                np.asarray(se_COM_2_dict[k]),
+                np.asarray(v),
+                rtol=SMOKE_RTOL,
+                atol=SMOKE_ATOL,
                 err_msg=f"stochastic re-run mismatch: get_scaling_exponent__COM.{k}",
             )
 
     for mode in POLYMER_SCALED_MAP_MODES:
-        key = f'get_polymer_scaled_distance_map__{mode}'
-        if key not in ref['polymer']:
+        key = f"get_polymer_scaled_distance_map__{mode}"
+        if key not in ref["polymer"]:
             continue
         psd_2 = _seed_then(
-            protein.get_polymer_scaled_distance_map, mode=mode, verbose=False,
+            protein.get_polymer_scaled_distance_map,
+            mode=mode,
+            verbose=False,
         )
-        ref_entry = ref['polymer'][key]
-        np.testing.assert_allclose(psd_2[0], ref_entry['map'])
-        assert float(psd_2[1]) == ref_entry['nu']
-        assert float(psd_2[2]) == ref_entry['A0']
+        ref_entry = ref["polymer"][key]
+        np.testing.assert_allclose(psd_2[0], ref_entry["map"])
+        assert float(psd_2[1]) == ref_entry["nu"]
+        assert float(psd_2[2]) == ref_entry["A0"]
         # redchi forwards get_scaling_exponent's reduced chi-squared, which
         # carries the same benign cache-warmth jitter described above, so it
         # is compared with tolerance rather than for exact equality.
         np.testing.assert_allclose(
-            float(psd_2[3]), ref_entry['redchi'],
-            rtol=SMOKE_RTOL, atol=SMOKE_ATOL,
+            float(psd_2[3]),
+            ref_entry["redchi"],
+            rtol=SMOKE_RTOL,
+            atol=SMOKE_ATOL,
         )
 
-    if 'get_local_to_global_correlation' in ref['alignment_heterogeneity']:
+    if "get_local_to_global_correlation" in ref["alignment_heterogeneity"]:
         # Must use the same stride the build call used (stored in meta);
         # otherwise the random-number consumption pattern diverges and the
         # re-run won't match.
-        save_stride = ref['meta']['save_stride']
+        save_stride = ref["meta"]["save_stride"]
         raw2, n_pairs2, mean2, std2 = _seed_then(
             protein.get_local_to_global_correlation,
-            mode='COM', n_cycles=100, max_num_pairs=10, stride=save_stride, verbose=False,
+            mode="COM",
+            n_cycles=100,
+            max_num_pairs=10,
+            stride=save_stride,
+            verbose=False,
         )
-        ref_l2g = ref['alignment_heterogeneity']['get_local_to_global_correlation']
-        np.testing.assert_allclose(raw2, ref_l2g['raw'])
-        np.testing.assert_allclose(n_pairs2, ref_l2g['n_pairs'])
-        np.testing.assert_allclose(mean2, ref_l2g['mean'])
-        np.testing.assert_allclose(std2, ref_l2g['std'])
+        ref_l2g = ref["alignment_heterogeneity"]["get_local_to_global_correlation"]
+        np.testing.assert_allclose(raw2, ref_l2g["raw"])
+        np.testing.assert_allclose(n_pairs2, ref_l2g["n_pairs"])
+        np.testing.assert_allclose(mean2, ref_l2g["mean"])
+        np.testing.assert_allclose(std2, ref_l2g["std"])
 
-    print('--- smoke_check: all stochastic re-runs match ---')
+    print("--- smoke_check: all stochastic re-runs match ---")
 
 
 def _build_one(name: str, resolution: str, R1: int, R2: int) -> None:
-    pdb = soursop.get_data(f'test_data/{name}_{resolution}.pdb')
-    xtc = soursop.get_data(f'test_data/{name}_{resolution}.xtc')
-    output_path = soursop.get_data(f'test_data/{name}_{resolution}_reference.pkl')
+    pdb = soursop.get_data(f"test_data/{name}_{resolution}.pdb")
+    xtc = soursop.get_data(f"test_data/{name}_{resolution}.xtc")
+    output_path = soursop.get_data(f"test_data/{name}_{resolution}_reference.pkl")
 
     print(f"\n===== {name}_{resolution} =====")
     print(f"Loading trajectory: pdb={pdb}\n                    xtc={xtc}")
     traj = SSTrajectory(xtc, pdb)
     protein = traj.proteinTrajectoryList[0]
-    print(f"Loaded SSProtein with {protein.n_residues} residues, {protein.n_frames} frames")
+    print(
+        f"Loaded SSProtein with {protein.n_residues} residues, {protein.n_frames} frames"
+    )
 
     ref = build_reference(protein, name, resolution, R1, R2)
     smoke_check(ref, protein)
 
     print(f"Writing reference pickle to: {output_path}")
-    with open(output_path, 'wb') as f:
+    with open(output_path, "wb") as f:
         pickle.dump(ref, f, protocol=pickle.HIGHEST_PROTOCOL)
 
     size_bytes = os.path.getsize(output_path)
@@ -698,13 +785,13 @@ def _build_one(name: str, resolution: str, R1: int, R2: int) -> None:
 def main() -> None:
     for entry in TRAJECTORIES:
         _build_one(
-            name=entry['name'],
-            resolution=entry['resolution'],
-            R1=entry['R1'],
-            R2=entry['R2'],
+            name=entry["name"],
+            resolution=entry["resolution"],
+            R1=entry["R1"],
+            R2=entry["R2"],
         )
     print("\nAll references built.")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
