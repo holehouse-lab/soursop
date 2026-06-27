@@ -12,9 +12,6 @@
 
 import os
 
-# Add imports here
-from soursop import *
-
 # Generate _version.py if missing and in the Read the Docs environment
 if os.getenv("READTHEDOCS") == "True" and not os.path.isfile("../soursop/_version.py"):
     import versioningit

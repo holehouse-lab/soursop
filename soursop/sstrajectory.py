@@ -12,7 +12,6 @@
 
 import mdtraj as md
 import numpy as np
-from .configs import *
 from .ssdata import ALL_VALID_RESIDUE_NAMES
 
 from .ssprotein import SSProtein
