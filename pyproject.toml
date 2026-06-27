@@ -15,7 +15,7 @@ authors = [
 ]
 license = {text = "LGPLv3"}
 readme = "README.md"  
-requires-python = ">=3.7"
+requires-python = ">=3.9"
 
 # add in as needed  
 dependencies = [      

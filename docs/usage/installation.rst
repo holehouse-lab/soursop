@@ -10,7 +10,7 @@ directly from the `GitHub repository
 <https://github.com/holehouse-lab/soursop>`_ if you want the latest
 (unreleased) development version.
 
-SOURSOP requires **Python 3.7 or newer**. All other dependencies
+SOURSOP requires **Python 3.9 or newer**. All other dependencies
 (including MDTraj) are resolved automatically by the installer, so in
 most cases a single command is all that is needed.
 

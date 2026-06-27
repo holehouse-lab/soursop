@@ -97,6 +97,7 @@ in `ssnmr`, plus HDX protection factors in the new `sshdx` module).
 
 ### Packaging and repository maintenance
 * Applied `ruff format` across the entire `soursop` package (all modules, tests and the reference-build script) to enforce a single consistent code style. These are whitespace/formatting-only changes with no functional effect; the full test suite is unchanged.
+* Raised the minimum supported Python to **3.9** (`requires-python = ">=3.9"`), matching the CI matrix; Python 3.7 and 3.8 are end-of-life and are no longer supported.
 * Bumped the GitHub Actions CI Python matrix from 3.7-3.9 to 3.9-3.12 (3.7 and 3.8 are end-of-life).
 * Removed dead CI configuration: `.travis.yml` (Travis CI retired; still referenced the old `camparitraj` name) and `.lgtm.yml` (LGTM.com was shut down).
 * Reconciled `requirements.txt` and `anaconda_requirements.txt` with `pyproject.toml`: removed non-dependencies (`cx_Freeze`, `PyYAML`, `ruamel_yaml`), added the missing real dependencies (`natsort`, `matplotlib`, `cython`), and unified the `mdtraj>=1.9.5` specifier.
