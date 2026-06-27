@@ -23,6 +23,16 @@ if os.getenv("READTHEDOCS") == "True" and not os.path.isfile("../soursop/_versio
 else:
     from soursop._version import __version__
 
+# The git revision is derived from the version string written by versioningit
+# (see soursop.soursop.version_git_revision). Guarded so a partially-built or
+# source checkout still imports cleanly.
+try:
+    from soursop.soursop import version_git_revision as _version_git_revision
+
+    __git_revision__ = _version_git_revision()
+except Exception:  # pragma: no cover - defensive fallback
+    __git_revision__ = "unknown"
+
 # code that allows access to the data directory
 _ROOT = os.path.abspath(os.path.dirname(__file__))
 
