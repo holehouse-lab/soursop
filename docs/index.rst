@@ -123,7 +123,7 @@ A major release. Highlights:
 * **HDX protection factors (new ``sshdx`` module)** - per-residue ln(P) via the Best-Vendruscolo formula :math:`\ln P_i = \beta_c N_c(i) + \beta_h N_h(i) + \beta_0` from per-residue heavy-atom contacts (:func:`~soursop.sshdx.compute_Nc`) and backbone H-bond counts (:func:`~soursop.sshdx.compute_Nh`, via :func:`mdtraj.wernet_nilsson`). Drop-in input for reweighting against experimental HDX protection factors; see :doc:`modules/hdx`.
 * **Testing** - new ``test_weights.py`` (~68 parametrized tests), ``test_ssbme.py`` and ``test_sscoper.py`` (BME/iBME and COPER/iCOPER), plus the pickle-based regression suite (~600+ observable tests) and extended ``sstrajectory`` coverage.
 * **Documentation** - full numpy-style docstring rewrite across all major modules, narrative overviews on every page, rewritten worked examples (including BME and COPER reweighting), new ``bme`` and ``coper`` API pages, a new ensemble-reweighting page, an expanded front page, and a worked SAXS-reweighting demo (four notebooks under ``demo_examples/``).
-* **Packaging** - reconciled dependency manifests, refreshed CI (Python 3.9-3.12), removed dead config.
+* **Packaging** - reconciled dependency manifests, refreshed CI (Python 3.9-3.14), removed dead config.
 
 *Update: November. 2024* (0.2.6)
 Transition to pyproject.toml for packaging and versioning. Dramatically improved performance of loading coarse-grained ensembles.

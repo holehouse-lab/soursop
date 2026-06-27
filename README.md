@@ -6,7 +6,7 @@
 [![codecov](https://codecov.io/gh/holehouse-lab/soursop/branch/master/graph/badge.svg)](https://codecov.io/gh/holehouse-lab/soursop)
 [![Documentation Status](https://readthedocs.org/projects/soursop/badge/?version=latest)](https://soursop.readthedocs.io/en/latest/?badge=latest)
 [![PyPI version](https://img.shields.io/pypi/v/soursop.svg)](https://pypi.org/project/soursop/)
-[![Python versions](https://img.shields.io/badge/python-3.9%20%7C%203.10%20%7C%203.11%20%7C%203.12-blue.svg)](https://pypi.org/project/soursop/)
+[![Python versions](https://img.shields.io/badge/python-3.9%20%7C%203.10%20%7C%203.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-blue.svg)](https://pypi.org/project/soursop/)
 [![License: LGPL v3](https://img.shields.io/badge/license-LGPLv3-blue.svg)](LICENSE)
 [![DOI](https://img.shields.io/badge/DOI-10.1021%2Facs.jctc.3c00190-blue.svg)](https://doi.org/10.1021/acs.jctc.3c00190)
 [![Last commit](https://img.shields.io/github/last-commit/holehouse-lab/soursop.svg)](https://github.com/holehouse-lab/soursop/commits/master)
