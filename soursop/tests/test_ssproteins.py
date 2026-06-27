@@ -146,6 +146,33 @@ def test_get_radius_of_gyration(GS6_CP):
     )
 
 
+def test_get_prolateness_and_acylindricity(GS6_CP):
+    import numpy as np
+
+    n = GS6_CP.n_frames
+    S = GS6_CP.get_prolateness(verbose=False)
+    c = GS6_CP.get_acylindricity(verbose=False)
+    c_raw = GS6_CP.get_acylindricity(normalized=False, verbose=False)
+
+    # shape / length
+    assert len(S) == n
+    assert len(c) == n
+
+    # the shape parameter S is bounded to [-0.25, 2] for any real distribution
+    assert np.all(S >= -0.25 - 1e-9)
+    assert np.all(S <= 2.0 + 1e-9)
+
+    # acylindricity is non-negative; the raw (Angstrom^2) form >= the normalized
+    assert np.all(c >= -1e-12)
+    assert np.all(c_raw >= -1e-12)
+    assert np.all(c_raw + 1e-9 >= c)
+
+    # weights=uniform must reproduce the unweighted mean exactly (no-op contract)
+    w = np.full(n, 1.0 / n)
+    assert abs(GS6_CP.get_prolateness(weights=w, verbose=False) - S.mean()) < 1e-9
+    assert abs(GS6_CP.get_acylindricity(weights=w, verbose=False) - c.mean()) < 1e-9
+
+
 def test_get_t(GS6_CP):
 
     assert len(GS6_CP.get_t()) == 5

@@ -13,7 +13,6 @@
 import time
 import mdtraj as md
 import numpy as np
-from numpy import linalg as LA
 from itertools import combinations
 from scipy import stats
 from scipy.special import expit
@@ -2999,27 +2998,165 @@ class SSProtein:
         # the get_gyration_tensor function
         gyration_tensor_vector = self.get_gyration_tensor(R1, R2, verbose=verbose)
 
-        # finally for each gyration tensor value compute the asphericity
-        asph_vector = []
-        for gyr in gyration_tensor_vector:
-            # calculate the eigenvalues of the gyration tensor!
-            (EIG, norm) = LA.eig(gyr)
-
-            # finally calculate the instantanous asphericity and append to the growing vector
-            asph = 1 - 3 * (
-                (EIG[0] * EIG[1] + EIG[1] * EIG[2] + EIG[2] * EIG[0])
-                / np.power(EIG[0] + EIG[1] + EIG[2], 2)
-            )
-
-            asph_vector.append(asph)
-
-        asph_vector = np.array(asph_vector)
+        # Vectorised eigenvalues of the (symmetric) per-frame gyration tensors.
+        # eigvalsh operates on the whole (n_frames, 3, 3) stack at once and is
+        # appropriate because the gyration tensor is real-symmetric. The
+        # asphericity depends only on order-independent symmetric polynomials of
+        # the eigenvalues, so this reproduces the previous per-frame LA.eig loop.
+        EIG = np.linalg.eigvalsh(gyration_tensor_vector)  # (n_frames, 3)
+        e0, e1, e2 = EIG[:, 0], EIG[:, 1], EIG[:, 2]
+        asph_vector = 1 - 3 * (
+            (e0 * e1 + e1 * e2 + e2 * e0) / np.power(e0 + e1 + e2, 2)
+        )
 
         # optional deterministic frame re-weighting (collapses frame axis)
         weights = self.__check_weights(weights, 1, etol)
         if weights is False:
             return asph_vector
         return ssutils.weighted_mean(asph_vector, weights)
+
+    # ........................................................................
+    #
+    #
+    def get_acylindricity(
+        self,
+        R1=None,
+        R2=None,
+        normalized=True,
+        verbose=True,
+        weights=False,
+        etol=0.0000001,
+    ):
+        """Per-frame acylindricity of the chain (or a sub-region).
+
+        Acylindricity measures the departure of the mass distribution from
+        cylindrical symmetry about its principal (longest) axis. It is computed
+        from the gyration-tensor eigenvalues :math:`\\lambda_1 \\le \\lambda_2
+        \\le \\lambda_3` as :math:`c = \\lambda_2 - \\lambda_1` (Theodorou &
+        Suter, 1985). It is zero for any cylindrically-symmetric distribution
+        (a sphere, or a rod/prolate ellipsoid of revolution) and grows as the
+        two minor axes become unequal (e.g. for an oblate "disc" or a generic
+        triaxial shape). It complements :meth:`get_asphericity`, which reports
+        *how* anisotropic a conformation is but not in which way.
+
+        Parameters
+        ----------
+        R1 : int, optional
+            First residue of the region to consider. ``None`` (default) is the
+            first residue in the sequence (including caps).
+        R2 : int, optional
+            Last residue of the region to consider. ``None`` (default) is the
+            last residue in the sequence (including caps).
+        normalized : bool, optional
+            If True (default), return the dimensionless relative acylindricity
+            :math:`c / R_g^2 = (\\lambda_2-\\lambda_1)/(\\lambda_1+\\lambda_2+
+            \\lambda_3)`. If False, return :math:`c` in Angstrom\\ :sup:`2`.
+        verbose : bool, optional
+            If True (default), print a status line during the gyration-tensor
+            computation.
+        weights : array_like or False, optional
+            Per-frame re-weighting vector. ``False`` (default) returns the
+            per-frame array; if supplied the frame axis is collapsed and the
+            scalar deterministic weighted mean is returned.
+        etol : float, optional
+            Tolerance on ``|sum(weights) - 1|``. Default ``1e-7``.
+
+        Returns
+        -------
+        np.ndarray or float
+            Per-frame acylindricity (length ``n_frames``), or the scalar
+            weighted mean if ``weights`` is supplied.
+
+        Example
+        -------
+        >>> c = protein.get_acylindricity(verbose=False)
+        >>> c.mean()
+        0.07
+        """
+        gyration_tensor_vector = self.get_gyration_tensor(R1, R2, verbose=verbose)
+        EIG = np.linalg.eigvalsh(gyration_tensor_vector)  # (n_frames, 3), ascending
+        e0, e1, e2 = EIG[:, 0], EIG[:, 1], EIG[:, 2]
+        c_vector = e1 - e0
+        if normalized:
+            rg2 = e0 + e1 + e2
+            c_vector = np.divide(
+                c_vector, rg2, out=np.zeros_like(c_vector), where=rg2 > 0
+            )
+
+        weights = self.__check_weights(weights, 1, etol)
+        if weights is False:
+            return c_vector
+        return ssutils.weighted_mean(c_vector, weights)
+
+    # ........................................................................
+    #
+    #
+    def get_prolateness(
+        self, R1=None, R2=None, verbose=True, weights=False, etol=0.0000001
+    ):
+        """Per-frame prolateness (gyration-tensor shape parameter S).
+
+        The shape parameter distinguishes *prolate* (rod- or cigar-like) from
+        *oblate* (disc- or pancake-like) conformations - a distinction the
+        asphericity cannot make, since both extremes are highly aspherical. It
+        is the normalized third invariant of the gyration tensor,
+
+        .. math::
+            S = \\frac{27\\,(\\lambda_1-\\bar\\lambda)(\\lambda_2-\\bar\\lambda)
+            (\\lambda_3-\\bar\\lambda)}{(\\lambda_1+\\lambda_2+\\lambda_3)^3},
+            \\qquad \\bar\\lambda = \\tfrac{1}{3}(\\lambda_1+\\lambda_2+\\lambda_3),
+
+        where :math:`\\lambda_i` are the gyration-tensor eigenvalues. ``S``
+        ranges over ``[-0.25, 2]``: ``S = 0`` for a spherically-symmetric
+        distribution, ``S > 0`` for prolate shapes (``S = 2`` for an ideal
+        rod), and ``S < 0`` for oblate shapes (``S = -0.25`` for an ideal
+        disc). Pairing ``S`` with :meth:`get_asphericity` gives a two-parameter
+        (magnitude, *nature*) description of conformational shape.
+
+        Parameters
+        ----------
+        R1 : int, optional
+            First residue of the region to consider. ``None`` (default) is the
+            first residue in the sequence (including caps).
+        R2 : int, optional
+            Last residue of the region to consider. ``None`` (default) is the
+            last residue in the sequence (including caps).
+        verbose : bool, optional
+            If True (default), print a status line during the gyration-tensor
+            computation.
+        weights : array_like or False, optional
+            Per-frame re-weighting vector. ``False`` (default) returns the
+            per-frame array; if supplied the frame axis is collapsed and the
+            scalar deterministic weighted mean is returned.
+        etol : float, optional
+            Tolerance on ``|sum(weights) - 1|``. Default ``1e-7``.
+
+        Returns
+        -------
+        np.ndarray or float
+            Per-frame prolateness (length ``n_frames``), or the scalar
+            weighted mean if ``weights`` is supplied.
+
+        Example
+        -------
+        >>> S = protein.get_prolateness(verbose=False)
+        >>> S.mean()
+        0.31
+        """
+        gyration_tensor_vector = self.get_gyration_tensor(R1, R2, verbose=verbose)
+        EIG = np.linalg.eigvalsh(gyration_tensor_vector)  # (n_frames, 3)
+        e0, e1, e2 = EIG[:, 0], EIG[:, 1], EIG[:, 2]
+        tr = e0 + e1 + e2
+        lbar = tr / 3.0
+        num = 27.0 * (e0 - lbar) * (e1 - lbar) * (e2 - lbar)
+        prol_vector = np.divide(
+            num, np.power(tr, 3), out=np.zeros_like(num), where=tr > 0
+        )
+
+        weights = self.__check_weights(weights, 1, etol)
+        if weights is False:
+            return prol_vector
+        return ssutils.weighted_mean(prol_vector, weights)
 
     # ........................................................................
     #
@@ -3071,51 +3208,35 @@ class SSProtein:
             self.topology.select(f"resid {R1} to {R2}")
         )
 
-        gyration_tensor_vector = []
-        count = 1
+        n_frames = all_positions_all_frames.n_frames
+        n_atoms = all_positions_all_frames.xyz.shape[1]
 
-        for frame in all_positions_all_frames:
-            # quick status update...
-            if count % 500 == 0:
-                ssio.status_message(
-                    f"On frame {count} of {len(all_positions_all_frames)} [computing gyration tensor]",
-                    verbose,
-                )
+        ssio.status_message(f"Computing gyration tensor for {n_frames} frames", verbose)
 
-            count = count + 1
+        # Vectorised gyration tensor (behaviour-preserving). The previous
+        # implementation looped over frames in Python, calling
+        # md.compute_center_of_mass once per frame and contracting one frame at
+        # a time. Here the mass-weighted centre of mass is obtained for every
+        # frame in a single vectorised mdtraj call, and the second moment of the
+        # atomic positions about the COM is contracted with a batched einsum.
+        # The numerics are identical: the same mass-weighted COM and the same
+        # unweighted 1/N second-moment convention. We convert nm -> Angstrom at
+        # the point the values enter soursop, as elsewhere in the package.
+        COM = 10.0 * md.compute_center_of_mass(
+            all_positions_all_frames
+        )  # (n_frames, 3)
 
-            # compute the center of mass for the relevant atoms
-            COM = 10 * md.compute_center_of_mass(frame)
+        gyration_tensor_vector = np.empty((n_frames, 3, 3), dtype=np.float64)
 
-            # calculate the COM to position difference matrix. Note
-            # we have to multiply the frame positions by 10 so that the COM
-            # units and the frame units match up.
-            ## QUICK ASSIDE: we could actually leave both in nm because the gyration tensor ends up being
-            ## unitless. HOWEVER, for consistency we're following the convention of converting ANY
-            ## nm-based values to angstroms at the point at which the numbers enter soursop...
-
-            DIF = 10 * frame.xyz[0] - COM
-
-            # old slow method
-            """
-            T_PRE = 0.0
-            # for each atom in the frame calculate the outer product (dyadic product) of
-            # the difference between the position at the overall center of mass. This creates a
-            # 3x3 gyration tensor
-            for pos in frame.xyz[0]:
-                T_PRE = T_PRE + np.outer(pos - COM, pos - COM)
-
-            T = T_PRE/len(frame.xyz[0])
-            """
-
-            # compute the gyration tensor - this syntax is WAY faster than the above
-            T_new = np.sum(np.einsum("ij...,i...->ij...", DIF, DIF), axis=0) / len(
-                frame.xyz[0]
+        # batch over frames so peak memory stays bounded on very large trajectories
+        _GYR_BATCH = 2000
+        for start in range(0, n_frames, _GYR_BATCH):
+            sl = slice(start, min(start + _GYR_BATCH, n_frames))
+            # (batch, n_atoms, 3) difference of each atom from its frame COM (Angstrom)
+            DIF = 10.0 * all_positions_all_frames.xyz[sl] - COM[sl][:, None, :]
+            gyration_tensor_vector[sl] = (
+                np.einsum("fai,faj->fij", DIF, DIF, optimize=True) / n_atoms
             )
-
-            gyration_tensor_vector.append(T_new)
-
-        gyration_tensor_vector = np.array(gyration_tensor_vector)
 
         # optional deterministic frame re-weighting -> single 3x3 tensor
         weights = self.__check_weights(weights, 1, etol)
