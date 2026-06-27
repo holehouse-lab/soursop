@@ -1,4 +1,3 @@
-
 ##     _____  ____  _    _ _____   _____  ____  _____
 ##   / ____|/ __ \| |  | |  __ \ / ____|/ __ \|  __ \
 ##  | (___ | |  | | |  | | |__) | (___ | |  | | |__) |
@@ -13,17 +12,17 @@
 
 
 import os
-import sys
 import numpy
 import ctypes
 import platform
 import warnings
+from dataclasses import dataclass
+from typing import Optional, Tuple
 from soursop.ssexceptions import SSException
-from threadpoolctl import threadpool_info, threadpool_limits
 
 
-MKL_LIBRARY = 'mkl_rt'
-OPENBLAS_LIBRARY = 'openblas'
+MKL_LIBRARY = "mkl_rt"
+OPENBLAS_LIBRARY = "openblas"
 
 
 def _set_mkl_numpy_threads(mkl_path, num_threads):
@@ -34,7 +33,6 @@ def _set_mkl_numpy_threads(mkl_path, num_threads):
     # represented in third-party libraries. This is a more dynamic way of finding
     # the MKL library and using it on a Mac that has an Intel compiler installed.
     mkl_rt = ctypes.CDLL(mkl_path)
-    mkl_get_max_threads = mkl_rt.mkl_get_max_threads()
     mkl_rt.mkl_set_num_threads(ctypes.byref(ctypes.c_int(num_threads)))
     set_threads = mkl_rt.mkl_get_max_threads()
     return set_threads
@@ -51,21 +49,22 @@ def _set_openblas_numpy_threads(openblas_path, num_threads):
 
 def _locate_libraries(library_name):
     import fnmatch
+
     # Since `threadctl` is hit or miss on a Mac (especially for the latest versions),
     # we implement a custom finder that examines the virtual environment to find
     # library path candidates.
     os_name = platform.system().lower()
-    if os_name == 'darwin':
-        libname = f'*{library_name}*.dylib*' # fuzzy match for filtering with find
-    elif os_name == 'linux':
-        libname = f'*{library_name}*.so*'  # fuzzy match for filtering with find
+    if os_name == "darwin":
+        libname = f"*{library_name}*.dylib*"  # fuzzy match for filtering with find
+    elif os_name == "linux":
+        libname = f"*{library_name}*.so*"  # fuzzy match for filtering with find
     else:
-        warnings.warn(f'Unsupported OS: {os_name}.')
+        warnings.warn(f"Unsupported OS: {os_name}.")
 
     # Checking existing environment variables and stop on the first match. The
     # basis for this approach is that only one should be active.
     virtualized_env = None
-    for env_var in 'CONDA_PREFIX,VIRTUAL_ENV'.split(','):
+    for env_var in "CONDA_PREFIX,VIRTUAL_ENV".split(","):
         env_path = os.environ.get(env_var, None)
         if env_path is not None:
             virtualized_env = env_path
@@ -74,7 +73,7 @@ def _locate_libraries(library_name):
     # If no virtual environment is active, terminate. Support for system-wide
     # Python installations is not yet supported.
     if virtualized_env is None:
-        raise SSException('No Anaconda or Python Virtual Environment found. Exiting.')
+        raise SSException("No Anaconda or Python Virtual Environment found. Exiting.")
 
     lib_locations = list()
     include_filenames = [libname]
@@ -101,7 +100,7 @@ def _identify_library_paths():
     for library in libraries:
         lib_paths = _locate_libraries(library)
         for lib_path in lib_paths:
-            numpy_path_fragment = os.path.join('site-packages', 'numpy') # os-agnostic
+            numpy_path_fragment = os.path.join("site-packages", "numpy")  # os-agnostic
             if numpy_path_fragment in lib_path:
                 candidates.append(lib_path)
             else:
@@ -122,9 +121,11 @@ def _set_numpy_threads(candidate_library_paths, num_threads):
             set_threads = _set_openblas_numpy_threads(lib_path, num_threads)
             library = OPENBLAS_LIBRARY
         else:
-            warnings.warn('Unsupported library. Please install OPENBLAS or the Intel MKL library. No threads set.')
-            library = 'unknown'
-        break # stop on first set library
+            warnings.warn(
+                "Unsupported library. Please install OPENBLAS or the Intel MKL library. No threads set."
+            )
+            library = "unknown"
+        break  # stop on first set library
     return set_threads, library
 
 
@@ -181,8 +182,9 @@ def set_numpy_threads(num_threads):
     # Currently only MKL is supported on Windows as it's installed alongside
     # the other packages via conda. A "traditional" virtual environment requires
     # access to a compiler and other libraries for successful compilation.
-    if platform.system().lower() == 'windows':
+    if platform.system().lower() == "windows":
         import mkl
+
         mkl.set_num_threads(num_threads)
         return mkl.get_max_threads(), MKL_LIBRARY
 
@@ -236,15 +238,21 @@ def validate_keyword_option(keyword, allowed_vals, keyword_name, error_message=N
     >>> validate_keyword_option('xyz', ['CA', 'COM'], 'mode')  # raises SSException
     """
 
-
     if keyword not in allowed_vals:
         message = None
         if error_message is None:
-            message = f'Keyword {keyword_name} passed value [{keyword}], but this is not valid.\nMust be one of :%s'  % (", ".join(allowed_vals))
+            message = (
+                f"Keyword {keyword_name} passed value [{keyword}], but this is not valid.\nMust be one of :%s"
+                % (", ".join(allowed_vals))
+            )
         else:
             error_type = type(error_message)
             if error_type is not str:
-                raise RuntimeError('Invalid error message type: "{}". The error message must be a string.'.format(error_type))
+                raise RuntimeError(
+                    'Invalid error message type: "{}". The error message must be a string.'.format(
+                        error_type
+                    )
+                )
             message = error_message[:]
         raise SSException(message)
 
@@ -343,6 +351,7 @@ def validate_weights(weights, n_frames, stride=1, etol=1e-7):
 
     if stride > 1:
         from soursop import ssio
+
         ssio.warning_message(
             "WARNING: Using stride with weights is ALMOST certainly not a good "
             "idea unless the weights are\ncalculated for every stride-th frame. "
@@ -498,3 +507,544 @@ def weighted_corr(a, b, weights):
     cov = numpy.cov(numpy.vstack((a, b)), ddof=0, aweights=weights)
     denom = numpy.sqrt(cov[0, 0] * cov[1, 1])
     return cov[0, 1] / denom
+
+
+# ======================================================================
+#
+# Reweighting primitives shared by soursop.ssbme (BME / iBME) and
+# soursop.sscoper (COPER / iCOPER). Both modules import these and
+# re-export the public names, so user code and the per-module APIs stay
+# identical regardless of which reweighter is used.
+#
+# ======================================================================
+
+#: Weights below this threshold are treated as zero in relative-entropy
+#: sums (avoids ``log(0)`` for de-populated frames).
+MIN_WEIGHT_THRESHOLD = 1e-50
+
+#: Valid experimental constraint types for :class:`ExperimentalObservable`.
+VALID_CONSTRAINTS = {"equality", "upper", "lower"}
+
+
+# ........................................................................
+#
+@dataclass
+class ExperimentalObservable:
+    """Container for a single experimental observable.
+
+    Shared by :mod:`soursop.ssbme` and :mod:`soursop.sscoper` (both
+    re-export this class), so the user-facing syntax is identical for BME,
+    iBME, COPER and iCOPER.
+
+    Parameters
+    ----------
+    value : float
+        The experimental value of the observable.
+    uncertainty : float
+        The experimental uncertainty (standard deviation). Must be positive.
+    constraint : str, optional
+        Type of constraint, one of:
+
+        - ``"equality"`` (default): observable should match ``value`` within
+          ``uncertainty``.
+        - ``"upper"``: observable should not exceed ``value`` (deviations
+          below ``value`` are not penalized).
+        - ``"lower"``: observable should not fall below ``value`` (deviations
+          above ``value`` are not penalized).
+    name : str, optional
+        Optional human-readable name/description.
+    group : str, optional
+        Optional data-type label. Used by :class:`soursop.sscoper.COPER` to
+        impose a separate per-group chi-squared constraint
+        (``chi2_alpha <= limit`` for each group, as in Leung et al. 2016);
+        ignored by BME / iBME. Observables without a group are pooled into a
+        single default group.
+
+    Raises
+    ------
+    SSException
+        If ``uncertainty`` is not positive or ``constraint`` is invalid.
+    """
+
+    value: float
+    uncertainty: float
+    constraint: str = "equality"
+    name: Optional[str] = None
+    group: Optional[str] = None
+
+    def __post_init__(self):
+        if self.uncertainty <= 0:
+            raise SSException(f"Uncertainty must be positive, got {self.uncertainty}")
+
+        if not isinstance(self.constraint, str):
+            raise SSException(
+                "constraint must be a string ('equality', 'upper', or "
+                f"'lower'), got {type(self.constraint).__name__}"
+            )
+
+        constraint_lower = self.constraint.lower().strip()
+        if constraint_lower not in VALID_CONSTRAINTS:
+            raise SSException(
+                f"Invalid constraint: '{self.constraint}'. "
+                "Must be 'equality', 'upper', or 'lower'"
+            )
+
+        self.constraint = constraint_lower
+
+    def get_bounds(self) -> Tuple[Optional[float], Optional[float]]:
+        """Optimization bounds on the Lagrange multiplier for this observable.
+
+        Returns
+        -------
+        tuple
+            ``(None, None)`` for ``equality``, ``(0.0, None)`` for ``upper``,
+            ``(None, 0.0)`` for ``lower``.
+        """
+        if self.constraint == "equality":
+            return (None, None)
+        elif self.constraint == "upper":
+            return (0.0, None)
+        else:  # "lower"
+            return (None, 0.0)
+
+
+# ........................................................................
+#
+def relative_entropy(w0, w1):
+    """Relative entropy (Kullback-Leibler divergence) of ``w1`` from ``w0``.
+
+    Parameters
+    ----------
+    w0 : numpy.ndarray
+        Reference (prior) weights, normalized to sum to 1.
+    w1 : numpy.ndarray
+        Posterior weights, normalized to sum to 1.
+
+    Returns
+    -------
+    float
+        ``sum_i w1_i * log(w1_i / w0_i)`` over frames with non-negligible
+        posterior weight.
+    """
+    idxs = numpy.where(w1 > MIN_WEIGHT_THRESHOLD)
+    return float(numpy.sum(w1[idxs] * numpy.log(w1[idxs] / w0[idxs])))
+
+
+# ........................................................................
+#
+def weighted_linear_regression(x, y, sample_weight, fit_intercept=True):
+    """Closed-form weighted least-squares regression of ``y`` on ``x``.
+
+    A small numpy replacement for ``sklearn.linear_model.LinearRegression``
+    (SOURSOP does not depend on scikit-learn). Solves
+    ``min_{a,b} sum_i s_i (y_i - (a x_i + b))^2``. Used by the iterative
+    scale/offset reweighters (iBME, iCOPER).
+
+    Parameters
+    ----------
+    x : numpy.ndarray
+        Independent variable, shape ``(n,)``.
+    y : numpy.ndarray
+        Dependent variable, shape ``(n,)``.
+    sample_weight : numpy.ndarray
+        Per-sample weights, shape ``(n,)``.
+    fit_intercept : bool, optional
+        If True fit slope and intercept; if False force the intercept to
+        zero (slope only). Default True.
+
+    Returns
+    -------
+    tuple of float
+        ``(slope, intercept)``. ``intercept`` is ``0.0`` when
+        ``fit_intercept`` is False.
+    """
+    x = numpy.asarray(x, dtype=numpy.float64).ravel()
+    y = numpy.asarray(y, dtype=numpy.float64).ravel()
+    s = numpy.asarray(sample_weight, dtype=numpy.float64).ravel()
+
+    if fit_intercept:
+        sw = numpy.sum(s)
+        x_mean = numpy.sum(s * x) / sw
+        y_mean = numpy.sum(s * y) / sw
+        cov_xy = numpy.sum(s * (x - x_mean) * (y - y_mean))
+        var_x = numpy.sum(s * (x - x_mean) ** 2)
+        slope = cov_xy / var_x
+        intercept = y_mean - slope * x_mean
+    else:
+        slope = numpy.sum(s * x * y) / numpy.sum(s * x * x)
+        intercept = 0.0
+
+    return float(slope), float(intercept)
+
+
+# ........................................................................
+#
+def _find_knee_perpendicular(x, y):
+    """Knee index by maximum perpendicular distance to the endpoint chord."""
+    x_n = (x - x.min()) / (x.max() - x.min() + 1e-10)
+    y_n = (y - y.min()) / (y.max() - y.min() + 1e-10)
+
+    p1 = numpy.array([x_n[0], y_n[0]])
+    p2 = numpy.array([x_n[-1], y_n[-1]])
+    line_vec = p2 - p1
+    line_len = numpy.linalg.norm(line_vec)
+    if line_len < 1e-10:
+        return len(x) // 2
+    line_unit = line_vec / line_len
+
+    distances = []
+    for i in range(len(x_n)):
+        point = numpy.array([x_n[i], y_n[i]])
+        vec = point - p1
+        proj = p1 + numpy.dot(vec, line_unit) * line_unit
+        distances.append(numpy.linalg.norm(point - proj))
+    return int(numpy.argmax(distances))
+
+
+# ........................................................................
+#
+def _find_knee_curvature(x, y):
+    """Knee index by maximum Menger curvature (3-point estimate)."""
+    x_n = (x - x.min()) / (x.max() - x.min() + 1e-10)
+    y_n = (y - y.min()) / (y.max() - y.min() + 1e-10)
+    n = len(x_n)
+    curvature = numpy.zeros(n)
+    for i in range(1, n - 1):
+        p0 = numpy.array([x_n[i - 1], y_n[i - 1]])
+        p1 = numpy.array([x_n[i], y_n[i]])
+        p2 = numpy.array([x_n[i + 1], y_n[i + 1]])
+        v1 = p1 - p0
+        v2 = p2 - p1
+        area = abs(v1[0] * v2[1] - v1[1] * v2[0]) / 2.0
+        a = numpy.linalg.norm(p2 - p1)
+        b = numpy.linalg.norm(p0 - p2)
+        c = numpy.linalg.norm(p1 - p0)
+        if a * b * c > 1e-10:
+            curvature[i] = 4 * area / (a * b * c)
+    if n > 2:
+        curvature[0] = curvature[1]
+        curvature[-1] = curvature[-2]
+    return int(numpy.argmax(curvature))
+
+
+# ........................................................................
+#
+def find_optimal_theta(x_values, y_values, method="perpendicular"):
+    """Select the L-curve knee from two paired metric arrays.
+
+    Generic knee-finder shared by BME's ``theta_scan`` (chi-squared vs.
+    relative entropy across theta) and COPER's ``chi2_limit_scan``
+    (chi-squared vs. relative entropy across the chi-squared limit).
+
+    Parameters
+    ----------
+    x_values : numpy.ndarray
+        First metric per scan point (e.g. final chi-squared).
+    y_values : numpy.ndarray
+        Second metric per scan point (e.g. relative entropy).
+    method : str, optional
+        ``"perpendicular"`` (default) or ``"curvature"``.
+
+    Returns
+    -------
+    tuple
+        ``(optimal_idx, method_name)``.
+
+    Raises
+    ------
+    SSException
+        If ``method`` is unknown.
+    """
+    if method == "curvature":
+        return _find_knee_curvature(x_values, y_values), "Menger curvature"
+    elif method == "perpendicular":
+        return _find_knee_perpendicular(x_values, y_values), "Perpendicular distance"
+    raise SSException(
+        f"Unknown method: {method}, must be 'curvature' or 'perpendicular'"
+    )
+
+
+# ........................................................................
+#
+def validate_reweighting_inputs(observables, calculated_values, initial_weights):
+    """Validate constructor arguments shared by the reweighter classes.
+
+    Used by :class:`soursop.ssbme.BME` / ``iBME`` and
+    :class:`soursop.sscoper.COPER` / ``iCOPER``.
+
+    Parameters
+    ----------
+    observables : list of ExperimentalObservable
+        Experimental observables (non-empty).
+    calculated_values : numpy.ndarray
+        Per-frame calculated values, shape ``(n_frames, n_observables)``.
+    initial_weights : numpy.ndarray or None
+        Optional prior weights, one per frame.
+
+    Raises
+    ------
+    SSException
+        If any argument is malformed or dimensions are inconsistent.
+    """
+    if not isinstance(observables, (list, tuple)) or len(observables) == 0:
+        raise SSException("observables must be a non-empty list")
+    if not all(isinstance(obs, ExperimentalObservable) for obs in observables):
+        raise SSException("All observables must be ExperimentalObservable instances")
+    if not isinstance(calculated_values, numpy.ndarray):
+        raise SSException("calculated_values must be a numpy array")
+    if calculated_values.ndim != 2:
+        raise SSException("calculated_values must be 2D (n_frames, n_observables)")
+    if calculated_values.shape[1] != len(observables):
+        raise SSException(
+            f"Number of observables ({len(observables)}) must match "
+            f"calculated_values columns ({calculated_values.shape[1]})"
+        )
+    if initial_weights is not None:
+        if not isinstance(initial_weights, numpy.ndarray):
+            raise SSException("initial_weights must be a numpy array")
+        if len(initial_weights) != calculated_values.shape[0]:
+            raise SSException("initial_weights length must match number of frames")
+
+
+# ........................................................................
+#
+def constraint_chi_squared(weights, calculated_values, observables, indices=None):
+    """Constraint-aware reduced chi-squared for a weight vector.
+
+    ``equality`` observables always penalize deviations; ``upper`` /
+    ``lower`` only penalize the disallowed side. Shared by BME (total
+    chi-squared) and COPER (per-data-type chi-squared via ``indices``).
+
+    Parameters
+    ----------
+    weights : numpy.ndarray
+        Frame weights, shape ``(n_frames,)``.
+    calculated_values : numpy.ndarray
+        Per-frame calculated values, shape ``(n_frames, n_observables)``.
+    observables : list of ExperimentalObservable
+        The experimental observables (columns of ``calculated_values``).
+    indices : sequence of int, optional
+        Restrict the chi-squared to this subset of observable columns
+        (used for COPER per-group constraints). Defaults to all columns.
+
+    Returns
+    -------
+    float
+        Mean of ``(diff / sigma)^2`` over the selected observables.
+    """
+    if indices is None:
+        indices = range(len(observables))
+    else:
+        indices = list(indices)
+
+    chi_squared = 0.0
+    count = 0
+    for idx in indices:
+        obs = observables[idx]
+        calc_avg = numpy.sum(calculated_values[:, idx] * weights)
+        diff = calc_avg - obs.value
+        if obs.constraint == "equality":
+            penalize = True
+        elif obs.constraint == "upper":
+            penalize = diff > 0
+        else:  # "lower"
+            penalize = diff < 0
+        if penalize:
+            chi_squared += (diff / obs.uncertainty) ** 2
+        count += 1
+    return chi_squared / count
+
+
+## ------------------------------------------------------------------------
+##
+## SWAN (2-bead CA/CB coarse-grained model) support
+##
+## The constants and ideal-helix geometry below are vendored from the SWAN
+## package (``swan/helix.py`` and ``swan/trajectory.py``) so that SOURSOP can
+## detect SWAN trajectories and assign secondary structure from the CA trace
+## *without* taking a runtime dependency on the ``swan`` package. If SWAN ever
+## changes its ideal alpha-helix parameters these must be kept in sync.
+
+# Ideal alpha-helix parameters (see swan/helix.py)
+SWAN_HELIX_RISE = 1.5  # angstrom per residue along the axis
+SWAN_HELIX_TWIST_DEG = 100.0  # degrees per residue (3.6 residues / turn)
+SWAN_HELIX_CA_RADIUS = 2.3  # angstrom of Calpha from the helix axis
+
+# Ideal extended (beta) strand parameters. SWAN does not generate beta, so there
+# is no SWAN reference geometry; these describe a canonical pleated extended CA
+# strand: a virtual CA-CA bond of ~3.8 A with a CA(i)..CA(i+2) span of ~6.8 A
+# (clearly distinct from the ~5.4 A helical value). Modelled as a planar zigzag
+# with axial spacing SWAN_BETA_AXIAL and transverse amplitude SWAN_BETA_AMPLITUDE.
+SWAN_BETA_AXIAL = 3.4  # angstrom along the strand axis (half of CA(i)..CA(i+2))
+SWAN_BETA_AMPLITUDE = 1.70  # angstrom transverse pleat amplitude
+
+
+def is_swan_topology(topology):
+    """Return ``True`` if a topology is a SWAN 2-bead (CA/CB) coarse-grained model.
+
+    A SWAN topology represents every residue with a single backbone ``CA`` bead
+    and (for every residue except glycine) a single sidechain ``CB`` bead. This
+    is distinct from SOURSOP's existing one-bead-per-residue coarse-grained model
+    (``CA`` only), which is why the presence of at least one ``CB`` bead is
+    required.
+
+    The check is intentionally strict: every atom in the topology must be named
+    ``CA`` or ``CB``, every residue must contain exactly one ``CA``, and every
+    residue must contain exactly one ``CB`` unless it is glycine (which must have
+    none).
+
+    Parameters
+    ----------
+    topology : mdtraj.Topology
+        The topology to inspect.
+
+    Returns
+    -------
+    bool
+        ``True`` if the topology matches the SWAN 2-bead model, ``False``
+        otherwise.
+
+    Example
+    -------
+    >>> is_swan_topology(traj.topology)
+    True
+    """
+
+    n_cb_total = 0
+    for residue in topology.residues:
+        n_ca = 0
+        n_cb = 0
+        for atom in residue.atoms:
+            if atom.name == "CA":
+                n_ca += 1
+            elif atom.name == "CB":
+                n_cb += 1
+            else:
+                # any non-CA/CB atom immediately disqualifies the topology
+                return False
+
+        # every residue must have exactly one CA
+        if n_ca != 1:
+            return False
+
+        # glycine carries no sidechain bead; everything else carries exactly one
+        if residue.name == "GLY":
+            if n_cb != 0:
+                return False
+        else:
+            if n_cb != 1:
+                return False
+
+        n_cb_total += n_cb
+
+    # a topology with no CB at all is the existing CA-only 1-bead CG model, not SWAN
+    return n_cb_total > 0
+
+
+def ideal_helix_ca(
+    n, rise=SWAN_HELIX_RISE, twist_deg=SWAN_HELIX_TWIST_DEG, radius=SWAN_HELIX_CA_RADIUS
+):
+    """Ideal alpha-helix Calpha coordinates about the +z axis.
+
+    Vendored from ``swan.helix.ideal_helix_ca``. Generates the Calpha trace of
+    an idealized SWAN alpha-helix, which is used as the reference fragment when
+    detecting helicity from a CA-only coarse-grained trajectory.
+
+    Parameters
+    ----------
+    n : int
+        Number of consecutive Calpha beads to generate.
+    rise : float, optional
+        Rise per residue along the helix axis, in Angstroms. Default ``1.5``.
+    twist_deg : float, optional
+        Twist per residue, in degrees. Default ``100.0`` (3.6 residues/turn).
+    radius : float, optional
+        Radius of the Calpha from the helix axis, in Angstroms. Default ``2.3``.
+
+    Returns
+    -------
+    numpy.ndarray
+        Array of shape ``(n, 3)`` of ideal Calpha coordinates in Angstroms.
+
+    Example
+    -------
+    >>> ideal_helix_ca(4).shape
+    (4, 3)
+    """
+
+    t = numpy.radians(twist_deg)
+    i = numpy.arange(n, dtype=numpy.float64)
+    return numpy.column_stack(
+        [radius * numpy.cos(i * t), radius * numpy.sin(i * t), rise * i]
+    )
+
+
+def ideal_extended_ca(n, axial=SWAN_BETA_AXIAL, amplitude=SWAN_BETA_AMPLITUDE):
+    """Idealized extended (beta) strand Calpha coordinates.
+
+    Generates the Calpha trace of a canonical planar pleated extended strand,
+    used as the reference fragment when detecting beta content from a CA-only
+    coarse-grained trajectory. The default geometry gives a virtual CA-CA bond
+    of ~3.8 Angstrom and a CA(i)..CA(i+2) span of ~6.8 Angstrom.
+
+    Parameters
+    ----------
+    n : int
+        Number of consecutive Calpha beads to generate.
+    axial : float, optional
+        Spacing along the strand axis, in Angstroms (half of the CA(i)..CA(i+2)
+        span). Default ``3.4``.
+    amplitude : float, optional
+        Transverse pleat amplitude, in Angstroms. Default ``1.70``.
+
+    Returns
+    -------
+    numpy.ndarray
+        Array of shape ``(n, 3)`` of ideal extended-strand Calpha coordinates.
+
+    Example
+    -------
+    >>> ideal_extended_ca(5).shape
+    (5, 3)
+    """
+
+    i = numpy.arange(n, dtype=numpy.float64)
+    x = i * axial
+    y = (i.astype(numpy.int64) % 2) * amplitude
+    z = numpy.zeros(n, dtype=numpy.float64)
+    return numpy.column_stack([x, y, z])
+
+
+def kabsch_rmsd(P, Q):
+    """Minimal root-mean-square deviation between two point sets after optimal superposition.
+
+    Computes the optimal rigid (rotation + translation) alignment of ``P`` onto
+    ``Q`` via the Kabsch algorithm and returns the resulting RMSD. Used to score
+    how closely a fragment of a CA trace matches an idealized alpha-helix.
+
+    Parameters
+    ----------
+    P : numpy.ndarray
+        Array of shape ``(K, 3)`` -- the mobile point set.
+    Q : numpy.ndarray
+        Array of shape ``(K, 3)`` -- the reference point set.
+
+    Returns
+    -------
+    float
+        The minimal RMSD (same units as the inputs) after optimal superposition.
+
+    Example
+    -------
+    >>> float(kabsch_rmsd(ideal_helix_ca(5), ideal_helix_ca(5)))
+    0.0
+    """
+
+    Pc = P - P.mean(axis=0)
+    Qc = Q - Q.mean(axis=0)
+    h = Pc.T @ Qc
+    u, _, vt = numpy.linalg.svd(h)
+    d = numpy.sign(numpy.linalg.det(vt.T @ u.T))
+    rot = vt.T @ numpy.diag([1.0, 1.0, d]) @ u.T
+    Pr = Pc @ rot.T
+    return float(numpy.sqrt(((Pr - Qc) ** 2).sum() / len(P)))

@@ -13,7 +13,7 @@ Analyses fall into several broad categories:
 
 * **Residue utilities** — sequence retrieval, atom/CA index lookup, residue center-of-mass positions and masses.
 * **Inter-residue distances** — pairwise CA or COM distance matrices, distance maps, and polymer-scaled distance maps.
-* **Global size and shape** — radius of gyration, hydrodynamic radius, end-to-end distance, asphericity, gyration tensor, and the :math:`t`-parameter.
+* **Global size and shape** — radius of gyration, hydrodynamic radius, end-to-end distance, asphericity, acylindricity, prolateness, gyration tensor, and the :math:`t`-parameter.
 * **Secondary structure** — per-frame DSSP assignments and BBSEG backbone-torsion-based classification.
 * **Polymer scaling** — internal scaling profiles (:math:`\langle r^2 \rangle` vs sequence separation), the scaling exponent :math:`\nu`, and local heterogeneity in scaling behaviour.
 * **Contact and RMSD analysis** — contact maps (with configurable threshold and mode), RMSD to a reference structure, and fraction of native contacts :math:`Q`.
@@ -22,6 +22,10 @@ Analyses fall into several broad categories:
 * **Clustering and overlap** — conformational clustering via ``get_clusters``, overlap concentration :math:`c^*`.
 
 Most functions return NumPy arrays; per-frame results have shape ``(n_frames,)`` or ``(n_frames, ...)`` so standard NumPy operations (``np.mean``, ``np.std``, etc.) apply directly.
+
+.. note::
+
+   **SWAN coarse-grained chains.** When a chain is a SWAN two-bead (``CA``/``CB``) model — auto-detected by :class:`~soursop.sstrajectory.SSTrajectory` and exposed here via the ``is_swan`` property — a few methods adapt automatically. ``get_sidechain_alignment_angle`` uses the ``CA``→``CB`` vector for every residue (glycine, which has no ``CB``, raises). ``get_secondary_structure_DSSP`` assigns helix/β/coil from the ``CA`` trace against idealized α-helix and extended-strand templates (DSSP itself needs the N/C/O backbone SWAN lacks), with optional ``helix_window`` / ``helix_rmsd_thresh`` / ``beta_window`` / ``beta_rmsd_thresh`` knobs. Methods that require backbone or sidechain dihedrals — ``get_angles``, ``get_secondary_structure_BBSEG`` and ``get_dihedral_mutual_information`` — raise an ``SSException`` for SWAN chains. All other (``CA``-based) analyses work unchanged.
 
 By way of an example::
 
@@ -48,6 +52,7 @@ SSProtein objects have a set of object variables associated with them.
         .. autoattribute:: resid_with_CA
         .. autoattribute:: ncap
         .. autoattribute:: ccap
+        .. autoattribute:: is_swan
         .. autoattribute:: n_frames
         .. autoattribute:: n_residues
         .. autoattribute:: residue_index_list
@@ -79,6 +84,8 @@ SSProtein Functions
         .. automethod:: get_end_to_end_distance
         .. automethod:: get_end_to_end_vs_rg_correlation
         .. automethod:: get_asphericity
+        .. automethod:: get_acylindricity
+        .. automethod:: get_prolateness
         .. automethod:: get_t
         .. automethod:: get_gyration_tensor
         .. automethod:: get_angles

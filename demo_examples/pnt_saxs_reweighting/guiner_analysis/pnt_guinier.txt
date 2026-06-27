@@ -1,0 +1,15 @@
+robin – Guinier Analysis Report
+==================================================
+File:      pnt.dat
+Points:    73 (in Guinier region)
+q range:   [0.00477, 0.02613] Å⁻¹
+qRg max:   1.303 (limit: 1.3)
+χ²_red:    1.1702
+
+── Least-squares ──
+  I(0) = 598.0035  ± 3.3480
+  Rg   = 49.8535  ± 0.3730  Å
+
+── Bootstrap (2000 samples, 95% CI) ──
+  I(0) = 598.9668  [589.4493, 607.7934]  σ = 4.6937
+  Rg   = 49.9291  [48.8363, 50.9482] Å  σ = 0.5396

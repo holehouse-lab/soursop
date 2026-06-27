@@ -84,6 +84,17 @@ For multi-chain systems, iterate over ``proteinTrajectoryList`` (one
 ``SSProtein`` per chain) and use the ``SSTrajectory`` inter-chain
 methods for cross-chain observables.
 
+**Supported resolutions.** SOURSOP works with all-atom trajectories,
+one-bead-per-residue coarse-grained trajectories (a single ``CA`` bead
+per residue), and **SWAN** two-bead coarse-grained trajectories (a
+``CA`` backbone bead plus a ``CB`` sidechain bead per residue; glycine
+has only ``CA``). SWAN is a currently unpublished backbone-sidechain
+model; SOURSOP auto-detects it on load (``SSTrajectory.swan_trajectory``
+/ ``SSProtein.is_swan``) and transparently switches sidechain-vector and
+secondary-structure analyses to ``CA``/``CB`` definitions. See the
+:doc:`../modules/sstrajectory` and :doc:`../modules/ssprotein` pages for
+details.
+
 
 The SOURSOP modules
 ----------------------
@@ -98,10 +109,11 @@ SOURSOP is organised into a small number of focused modules:
   analysis engine (dimensions, scaling, maps, secondary structure,
   SASA, angles, and inter-residue/atomic distances).
 
-* ``ssnmr`` - sequence-based prediction of random-coil backbone
-  chemical shifts (CA, CB, CO, N, HN, HA), with temperature, pH and
-  perdeuteration corrections and support for phospho-residues. Useful
-  for comparing simulated ensembles against NMR data.
+* ``ssnmr`` - NMR observables for comparison against experiment:
+  sequence-based random-coil backbone chemical shifts (CA, CB, CO, N,
+  HN, HA; with temperature, pH and perdeuteration corrections and
+  phospho-residue support), backbone ³J(HN, Hα) scalar couplings from
+  the φ dihedral via the Karplus relation, and per-frame NOE distances.
 
 * ``sspre`` - the ``SSPRE`` class; fast calculation of synthetic
   paramagnetic relaxation enhancement (PRE) intensity ratios and gamma
@@ -110,6 +122,34 @@ SOURSOP is organised into a small number of focused modules:
 * ``sssampling`` - the ``SSSampling`` class and PENGUIN support, for
   assessing the sampling quality / convergence of disordered-protein
   ensembles.
+
+* ``ssbme`` - the ``BME``, ``iBME`` and ``BMECustom`` classes; Bayesian
+  Maximum Entropy reweighting of an ensemble against experimental
+  observables (``iBME`` additionally fits an unknown data scale/offset;
+  ``BMECustom`` takes a profile/vector observable with an arbitrary
+  user-supplied goodness-of-fit), producing per-frame ``weights`` that
+  plug directly into every reweighting-capable analysis routine (see
+  :doc:`weights`).
+
+* ``sscoper`` - the ``COPER`` and ``iCOPER`` classes; Convex Optimization
+  for Ensemble Reweighting, an alternative maximum-entropy reweighter that
+  imposes a hard chi-squared constraint (rather than BME's tunable
+  penalty) and reports whether the data can be fit at all. Shares the
+  ``ExperimentalObservable`` interface with ``ssbme``.
+
+* ``sshdx`` - per-residue HDX protection factors via the
+  Best-Vendruscolo formula. The ``(n_frames, n_residues)`` output is the
+  natural input for BME / COPER reweighting against experimental HDX
+  protection-factor data.
+
+* ``ssmutualinformation`` - dihedral mutual-information helpers
+  (``calc_MI``) underpinning ``SSProtein.get_dihedral_mutual_information``,
+  for quantifying correlated backbone/side-chain motions.
+
+* ``ssutils`` - shared validation and reduction helpers, including the
+  single ``weights`` validator/reducers used package-wide and the
+  reweighting primitives (``ExperimentalObservable``, ...) shared by
+  ``ssbme`` and ``sscoper``.
 
 * ``sstools`` - miscellaneous numerical helper functions shared across
   the package (chunking, residue-name normalisation, the polymer
@@ -129,5 +169,12 @@ Where to go next
 * :doc:`development` - extending SOURSOP and contributing plugins.
 
 * The per-module API references (``sstrajectory``, ``ssprotein``,
-  ``ssnmr``, ``sspre``, ``sssampling``) for the full list of available
-  analysis routines.
+  ``ssnmr``, ``sspre``, ``sssampling``, ``ssbme``, ``sscoper``,
+  ``sshdx``) for the full list of available analysis routines.
+
+* :doc:`../modules/bme` and :doc:`../modules/coper` - reweighting an
+  ensemble against experimental data (BME / iBME, or COPER / iCOPER) to
+  generate frame ``weights``.
+
+* :doc:`../modules/hdx` - HDX protection factors via the
+  Best-Vendruscolo formula (per-residue, per-frame).

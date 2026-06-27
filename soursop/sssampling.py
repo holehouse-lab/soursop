@@ -12,14 +12,12 @@
 
 import itertools
 import os
-import pathlib
 from typing import List, Tuple, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from matplotlib import transforms
-from natsort import natsorted
 from scipy.special import rel_entr
 
 from soursop import ssutils

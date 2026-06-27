@@ -10,7 +10,6 @@
 ## Copyright 2014 - 2026
 ##
 
-import mdtraj as md
 import numpy as np
 from .ssexceptions import SSWarning, SSException
 from .ssprotein import SSProtein
@@ -23,10 +22,11 @@ from .ssprotein import SSProtein
 ###
 
 
-original_K = 1.2300e-32       # K constant in cm6*s-2
-K_IN_NM6   = original_K*1e42  # K constant in nm6 s-2
-#W_H        = 267530000        # Proton Larmor frequency
-#W_H_SQUARED = W_H * W_H
+original_K = 1.2300e-32  # K constant in cm6*s-2
+K_IN_NM6 = original_K * 1e42  # K constant in nm6 s-2
+# W_H        = 267530000        # Proton Larmor frequency
+# W_H_SQUARED = W_H * W_H
+
 
 class SSPRE:
     """Synthetic paramagnetic relaxation enhancement (PRE) calculations.
@@ -110,42 +110,54 @@ class SSPRE:
         self.SSPO = SSProteinObject
 
         if type(self.SSPO) is not SSProtein:
-            raise SSException(f'SSPRE requires an SSProtein object to be passed, but instead the first argument is of type {type(self.SSPO)}') 
+            raise SSException(
+                f"SSPRE requires an SSProtein object to be passed, but instead the first argument is of type {type(self.SSPO)}"
+            )
 
         # set the INEPT delay value and the backbone amide transverse relaxation rate which
         # is used explicitly later
-        self.t_delay = float(t_delay)   # in ms - INDEPT delay
-        self.R_2D = float(R_2D)         # in Hz - backbone amide transverse relaxation rate
-        self.tau_c = tau_c              # in ns - effecive correlation time
-        self.W_H   = W_H                # in Hz - Proton Larmor frequency in the magnet
+        self.t_delay = float(t_delay)  # in ms - INDEPT delay
+        self.R_2D = float(R_2D)  # in Hz - backbone amide transverse relaxation rate
+        self.tau_c = tau_c  # in ns - effecive correlation time
+        self.W_H = W_H  # in Hz - Proton Larmor frequency in the magnet
 
         # ------------------------------------------
         # sanity checks to warn if any of the input values seem dratsically wrong. NOTE that these won't block the analysis but will
         # throw up errors
         if self.R_2D < 0.01 or self.R_2D > 100:
-            SSWarning("WARNING: The value of R_2D (bacbone amide transverese relaxation rate) is far from the normal expected value of ~10 (R_2D = %4.4e) - recal this value is in units of Herz" %(self.R_2D))
+            SSWarning(
+                "WARNING: The value of R_2D (bacbone amide transverese relaxation rate) is far from the normal expected value of ~10 (R_2D = %4.4e) - recal this value is in units of Herz"
+                % (self.R_2D)
+            )
 
         if self.t_delay < 0.01 or self.t_delay > 100:
-            SSWarning("WARNING: The value of t_delay (INEPT delay) is far from the normal expected value of ~15 (t_delay = %4.4e) - recal this is in units of ms" %(self.t_delay))
+            SSWarning(
+                "WARNING: The value of t_delay (INEPT delay) is far from the normal expected value of ~15 (t_delay = %4.4e) - recal this is in units of ms"
+                % (self.t_delay)
+            )
 
         if tau_c < 0.01 or tau_c > 100:
-            SSWarning("WARNING: The value of tau_c (effective correlation time) is far from the normal expected value of ~5 (t_delay = %4.4e) - recal this is in units of ns" %(self.tau_c))
+            SSWarning(
+                "WARNING: The value of tau_c (effective correlation time) is far from the normal expected value of ~5 (t_delay = %4.4e) - recal this is in units of ns"
+                % (self.tau_c)
+            )
 
         # if Larmor frequency less than 100 MhZ or above 2 GHz assume something is wrong
         if W_H < 50000000 or W_H > 2000000000:
-            SSWarning(f"WARNING: The value of W_h {self.W_H} (proton Larmor frequency) is far from the normal expected value of ~600 000 000 - recal this value should be provided in Herz")
+            SSWarning(
+                f"WARNING: The value of W_h {self.W_H} (proton Larmor frequency) is far from the normal expected value of ~600 000 000 - recal this value should be provided in Herz"
+            )
 
         # # convert tau_c to seconds and calculate tau_c squared
-        tau_c = float(tau_c)/1000000000     # tau c in seconds
-        tau_c_squared = tau_c * tau_c       #
+        tau_c = float(tau_c) / 1000000000  # tau c in seconds
+        tau_c_squared = tau_c * tau_c  #
 
         # compute the prefactor term which will be used when computing the PRE dependent relaxation profile
         # by the generate_PRE_profile function
-        W_H_SQUARED = W_H*W_H
-        PREFACTOR = (3 * tau_c)/(1 + W_H_SQUARED * tau_c_squared)
-        PREFACTOR = (4*tau_c + PREFACTOR)
+        W_H_SQUARED = W_H * W_H
+        PREFACTOR = (3 * tau_c) / (1 + W_H_SQUARED * tau_c_squared)
+        PREFACTOR = 4 * tau_c + PREFACTOR
         self.PREFACTOR = PREFACTOR * K_IN_NM6
-
 
     # ........................................................................
     #
@@ -161,12 +173,18 @@ class SSPRE:
         str
             Human-readable single-line description of this SSPRE object.
         """
-        return "["+hex(id(self)) + "]: SSPRE OBJ - (R_2D = %3.2f Hz, t_delay = %3.2f ms, tau_c = %3.2f ns, H1 Larmor = %3.3e Hz)" % (self.R_2D, self.t_delay, self.tau_c, self.W_H)
-
+        return (
+            "["
+            + hex(id(self))
+            + "]: SSPRE OBJ - (R_2D = %3.2f Hz, t_delay = %3.2f ms, tau_c = %3.2f ns, H1 Larmor = %3.3e Hz)"
+            % (self.R_2D, self.t_delay, self.tau_c, self.W_H)
+        )
 
     # ........................................................................
     #
-    def generate_PRE_profile(self, label_position, spin_label_atom='CB', target_relaxation_atom='N'):
+    def generate_PRE_profile(
+        self, label_position, spin_label_atom="CB", target_relaxation_atom="N"
+    ):
         """Compute the PRE intensity ratio and gamma profile for a spin label.
 
         Places a nitroxide spin label on the ``spin_label_atom`` of
@@ -232,7 +250,7 @@ class SSPRE:
         """
 
         # get index value of all residues
-        #residue_list = self.SSPO.get_residue_index_list()
+        # residue_list = self.SSPO.get_residue_index_list()
 
         tmp = list(self.SSPO._SSProtein__CA_residue_atom.keys())
         residue_list = sorted(tmp)
@@ -246,15 +264,23 @@ class SSPRE:
         # it's important the former method is used (i.e. only average at the end). This calculates the gamma coefficient for
         # each residue, which measures relaxation
         for idx in residue_list:
-            r_6_nm = np.power(0.1*self.SSPO.get_inter_residue_atomic_distance(label_position, idx, A1=spin_label_atom, A2=target_relaxation_atom),6)
-            gamma.append(np.mean(self.PREFACTOR/r_6_nm))
+            r_6_nm = np.power(
+                0.1
+                * self.SSPO.get_inter_residue_atomic_distance(
+                    label_position, idx, A1=spin_label_atom, A2=target_relaxation_atom
+                ),
+                6,
+            )
+            gamma.append(np.mean(self.PREFACTOR / r_6_nm))
 
         # convert the t_delay from ms to seconds
-        t_delay_in_seconds = self.t_delay/1000
+        t_delay_in_seconds = self.t_delay / 1000
 
         # for each gamma compute the intensity ration
         profile = []
         for g in gamma:
-            profile.append((self.R_2D * np.exp(-g*t_delay_in_seconds)) / (self.R_2D + g))
+            profile.append(
+                (self.R_2D * np.exp(-g * t_delay_in_seconds)) / (self.R_2D + g)
+            )
 
         return (profile, gamma)

@@ -1,9 +1,9 @@
-##     _____  ____  _    _ _____   _____  ____  _____  
-##   / ____|/ __ \| |  | |  __ \ / ____|/ __ \|  __ \ 
+##     _____  ____  _    _ _____   _____  ____  _____
+##   / ____|/ __ \| |  | |  __ \ / ____|/ __ \|  __ \
 ##  | (___ | |  | | |  | | |__) | (___ | |  | | |__) |
-##   \___ \| |  | | |  | |  _  / \___ \| |  | |  ___/ 
-##   ____) | |__| | |__| | | \ \ ____) | |__| | |     
-##  |_____/ \____/ \____/|_|  \_\_____/ \____/|_|     
+##   \___ \| |  | | |  | |  _  / \___ \| |  | |  ___/
+##   ____) | |__| | |__| | | \ \ ____) | |__| | |
+##  |_____/ \____/ \____/|_|  \_\_____/ \____/|_|
 
 ## Alex Holehouse (Pappu Lab and Holehouse Lab) and Jared Lalmansing (Pappu lab)
 ## Simulation analysis package
@@ -13,12 +13,12 @@
 
 """
 ssmutualinformation contains all the functions associated with computing things related to mutual
-information. This file is not a class, but represents a set of stand alone functions, rather than 
+information. This file is not a class, but represents a set of stand alone functions, rather than
 including this function in any one other class.
 """
 
 import numpy as np
-from .ssexceptions import SSWarning, SSException
+from .ssexceptions import SSException
 
 
 # ........................................................................
@@ -84,23 +84,27 @@ def calc_MI(X, Y, bins, weights=False, normalize=False):
     """
 
     if len(X) != len(Y):
-        raise SSException(f'Error: X and Y vectors must be the same length')
+        raise SSException("Error: X and Y vectors must be the same length")
 
     if np.min(bins) > np.min(X) or np.min(bins) > np.min(Y):
-        raise SSException(f'Error: Bins passed to calc_MI in ssmutualinformation() do not straddle the full data range. Bin minimum {np.min(bins)} is bigger than one/both of data minima: X={np.min(X)}, Y={np.min(Y)}')
+        raise SSException(
+            f"Error: Bins passed to calc_MI in ssmutualinformation() do not straddle the full data range. Bin minimum {np.min(bins)} is bigger than one/both of data minima: X={np.min(X)}, Y={np.min(Y)}"
+        )
 
     if np.max(bins) < np.max(X) or np.max(bins) < np.max(Y):
-        raise SSException(f'Error: Bins passed to calc_MI in ssmutualinformation() do not straddle the full data range. Bin max {np.max(bins)} is smaller than one/both of data maxima: X={np.max(X)}, Y={np.max(Y)}')
-   
+        raise SSException(
+            f"Error: Bins passed to calc_MI in ssmutualinformation() do not straddle the full data range. Bin max {np.max(bins)} is smaller than one/both of data maxima: X={np.max(X)}, Y={np.max(Y)}"
+        )
+
     if weights is not False and weights is not None:
-        c_XY = np.histogram2d(X,Y,bins,weights=weights)[0]
-        c_X = np.histogram(X,bins,weights=weights)[0]
-        c_Y = np.histogram(Y,bins,weights=weights)[0]
+        c_XY = np.histogram2d(X, Y, bins, weights=weights)[0]
+        c_X = np.histogram(X, bins, weights=weights)[0]
+        c_Y = np.histogram(Y, bins, weights=weights)[0]
     else:
-        c_XY = np.histogram2d(X,Y,bins)[0]
-        c_X = np.histogram(X,bins)[0]
-        c_Y = np.histogram(Y,bins)[0]
-              
+        c_XY = np.histogram2d(X, Y, bins)[0]
+        c_X = np.histogram(X, bins)[0]
+        c_Y = np.histogram(Y, bins)[0]
+
     H_X = shan_entropy(c_X)
     H_Y = shan_entropy(c_Y)
     H_XY = shan_entropy(c_XY)
@@ -118,7 +122,7 @@ def calc_MI(X, Y, bins, weights=False, normalize=False):
             nmi = 0
         return nmi
     else:
-        return MI 
+        return MI
 
 
 # ........................................................................
@@ -156,11 +160,11 @@ def shan_entropy(c):
     """
     # normalize such that all elements sum up to 1
     c_normalized = c / float(np.sum(c))
-    
+
     # now convert into a single vector of non-zero elements
     c_normalized = c_normalized[np.nonzero(c_normalized)]
 
     # compute the entropy associated with this vector. The more
     # evenly distributed the greater the entropy
-    H = -sum(c_normalized* np.log(c_normalized))  
+    H = -sum(c_normalized * np.log(c_normalized))
     return H

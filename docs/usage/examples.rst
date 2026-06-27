@@ -86,19 +86,33 @@ IDR conformational behaviour is often interpreted through the lens of polymer ph
     plt.title("Internal scaling profile")
     plt.show()
 
-**Scaling exponent** :math:`\nu` — the Flory exponent extracted by fitting :math:`\langle r^2 \rangle \sim |i-j|^{2\nu}`::
+**Scaling exponent** :math:`\nu` — the Flory exponent extracted by fitting :math:`\sqrt{\langle r^2 \rangle} = A_0\,|i-j|^{\nu}`. ``get_scaling_exponent`` returns a 10-element tuple; the first two entries are the point estimates ``nu`` and ``A0``, entries 2–5 are the bootstrap confidence-interval bounds on each, and entries 6–7 are the reduced :math:`\chi^2` of the fit::
 
-    nu, prefactor = protein.get_scaling_exponent(mode='CA', show_fig=False)
-    print(f"Flory exponent ν = {nu:.3f}")
+    result = protein.get_scaling_exponent(mode='CA')
+    nu, A0 = result[0], result[1]
+    nu_lo, nu_hi = result[2], result[3]          # 95% CI on nu (entries 4,5 are the A0 CI)
+    redchi = result[7]                           # reduced chi^2 across all separations
+
+    print(f"Flory exponent ν = {nu:.3f}  (95% CI {nu_lo:.3f}–{nu_hi:.3f})")
+    print(f"homopolymer-fit reduced χ² = {redchi:.2f}")
     # ν ≈ 0.5  → Gaussian / theta-solvent behaviour
     # ν ≈ 0.6  → self-avoiding random coil (good solvent)
     # ν < 0.5  → compact / collapsed chain
 
-**Polymer-scaled distance map** normalises the mean inter-residue distance matrix by the expected excluded-volume scaling, highlighting regions that are more compact or more expanded than a reference random coil::
+Uncertainties on :math:`\nu` and :math:`A_0` are confidence intervals from a
+frame-level bootstrap (frames resampled with replacement), so they tighten as
+more — and more decorrelated — frames are supplied; tune the resampling with
+``n_bootstrap`` (default 200) and ``confidence_interval`` (default 95.0). The
+returned reduced :math:`\chi^2` is a genuine goodness-of-fit for the power-law
+model (≈1 indicates the data are consistent with a single homopolymer scaling
+law within their bootstrap errors; substantially larger values flag systematic
+deviation, e.g. heteropolymeric structure).
 
-    mean_map, std_map = protein.get_polymer_scaled_distance_map(mode='CA')
+**Polymer-scaled distance map** normalises the mean inter-residue distance matrix by the expected excluded-volume scaling, highlighting regions that are more compact or more expanded than a reference random coil. It returns the map together with the ``nu``, ``A0`` and reduced :math:`\chi^2` of the homopolymer fit it performs internally::
 
-    plt.imshow(mean_map, origin='lower', cmap='RdBu_r')
+    dmap, nu, A0, redchi = protein.get_polymer_scaled_distance_map(mode='CA')
+
+    plt.imshow(dmap, origin='lower', cmap='RdBu_r')
     plt.colorbar(label='Normalized distance')
     plt.xlabel('Residue index')
     plt.ylabel('Residue index')
@@ -126,6 +140,16 @@ IDR conformational behaviour is often interpreted through the lens of polymer ph
     plt.ylabel('Fractional helicity')
     plt.title('Per-residue α-helix propensity')
     plt.show()
+
+.. note::
+
+   For **SWAN** two-bead (``CA``/``CB``) coarse-grained trajectories,
+   ``get_secondary_structure_DSSP`` automatically assigns helix/β/coil
+   from the ``CA`` trace (DSSP itself needs the full backbone, which SWAN
+   does not have), so the call above works unchanged. The φ/ψ-based
+   functions in this section — ``get_secondary_structure_BBSEG`` and
+   ``get_angles`` — are *not* available for SWAN chains and raise an
+   ``SSException``.
 
 **BBSEG backbone-torsion classification** provides an 8-state assignment based on φ/ψ backbone dihedral regions, which is particularly useful for IDRs where the DSSP labels can be sparse or noisy::
 
@@ -246,6 +270,61 @@ For systems with more than one protein chain, system-level analyses are performe
     ca_shifts = [res['CA'] for res in shifts]
     print("Predicted CA chemical shifts:", ca_shifts)
 
+**Backbone scalar (J) couplings.** ³J(HN, Hα) is computed per frame per residue from the φ dihedral via the Karplus relation, using any of the six literature parameterisations shipped in :mod:`~soursop.ssnmr` (Bax2007, Bax1997, Ruterjans1999, Habeck, Vuister, Pardi). The returned ``(n_frames, n_phi)`` matrix is the natural input for the BME / COPER reweighters::
+
+    from soursop.ssnmr import compute_J3_HN_HA
+
+    # per-frame, per-residue J-couplings (shape n_frames x n_phi)
+    atoms, J = compute_J3_HN_HA(protein, model="Bax2007")
+
+    # ensemble mean + the model's forward-model uncertainty in Hz
+    atoms, J_mean, sigma = compute_J3_HN_HA(
+        protein, weights=False, return_uncertainty=True)
+    J_mean = J.mean(axis=0)
+
+    # feeding the result to BME against an experimental J vector
+    from soursop.ssbme import BME, ExperimentalObservable
+    obs = [ExperimentalObservable(J_exp[k], sigma, name=f"3J_res{k}")
+           for k in range(J.shape[1])]
+    weights = BME(obs, J).fit(theta=2.0, auto_theta=False).weights
+
+**NOE ⟨r⁻⁶⟩ ensemble distances.** Inter-proton distances reported by NOE cross-peaks are not linear ensemble averages but :math:`\langle r^{-6}\rangle^{-1/6}` averages. :mod:`~soursop.ssnmr` exposes the per-frame distance primitive and the NOE collapse rule separately so both BME-style reweighting and direct experimental comparison are clean::
+
+    import numpy as np
+    from soursop.ssnmr import compute_NOE_distances, noe_ensemble_average
+
+    pairs = np.array([[0, 10], [0, 20], [5, 15]])    # atom indices
+    d = compute_NOE_distances(protein, pairs)        # (n_frames, n_pairs) in Å
+    r_noe = noe_ensemble_average(d, power=6)         # (n_pairs,) Å
+
+    # For BME / COPER the linear observable is r^-p, not r:
+    from soursop.ssbme import BME, ExperimentalObservable
+    calc = d ** -6
+    obs  = [ExperimentalObservable(r_exp[k] ** -6,
+                                   uncertainty=6 * r_exp[k] ** -7 * sigma_r[k],
+                                   name=f"NOE_{k}")
+            for k in range(len(r_exp))]
+    weights = BME(obs, calc).fit(theta=2.0, auto_theta=False).weights
+
+**HDX protection factors (Best–Vendruscolo).** :mod:`~soursop.sshdx` predicts per-residue ln(P) from per-frame heavy-atom contacts (``N_c``) and backbone H-bond counts (``N_h``)::
+
+    from soursop.sshdx import compute_protection_factors
+
+    residues, lnP = compute_protection_factors(protein)
+    # lnP.shape == (n_frames, len(residues))
+
+    # ensemble-mean ln(P) per residue
+    import numpy as np
+    w = np.full(protein.n_frames, 1.0 / protein.n_frames)
+    residues, lnP_mean = compute_protection_factors(protein, weights=w)
+
+    # feeding to BME against experimental ln(P)
+    from soursop.ssbme import BME, ExperimentalObservable
+    obs = [ExperimentalObservable(lnP_exp[k], sigma_lnP[k],
+                                  name=f"PF_res{residues[k]}")
+           for k in range(len(residues))]
+    weights = BME(obs, lnP).fit(theta=2.0, auto_theta=False).weights
+
 **Paramagnetic relaxation enhancement (PRE)** profiles compare the ensemble to an experiment in which a nitroxide spin label at a chosen position relaxes neighbouring amide protons. The intensity ratio I_para/I_dia decays toward 0 for residues near the label and stays near 1 for distant residues::
 
     from soursop.sspre import SSPRE
@@ -317,3 +396,144 @@ See the :doc:`../modules/sssampling` page for a full description of the methodol
         ref_top='ev_topology.pdb',
     )
     sq.quality_plot()
+
+
+10. Reweighting against experiment (BME / iBME)
+---------------------------------------------------------
+
+When a simulated ensemble does not quite reproduce an experimental measurement, :mod:`~soursop.ssbme` can compute a new set of per-frame weights that reconcile the two while perturbing the prior ensemble as little as possible. The resulting weights plug straight back into any SOURSOP observable via its ``weights=`` argument. See the :doc:`../modules/bme` page for the theory and pitfalls.
+
+**Standard BME — match an experimental** :math:`R_g` **and** :math:`r_{ee}`. We compute the per-frame observables, define the experimental targets with their uncertainties, fit, and then read back *reweighted* ensemble averages::
+
+    import numpy as np
+    from soursop.sstrajectory import SSTrajectory
+    from soursop.ssbme import BME, ExperimentalObservable
+
+    traj    = SSTrajectory('traj.xtc', 'start.pdb')
+    protein = traj.proteinTrajectoryList[0]
+
+    # per-frame calculated observables -> (n_frames, n_observables)
+    rg  = protein.get_radius_of_gyration()
+    e2e = protein.get_end_to_end_distance()
+    calc = np.column_stack([rg, e2e])
+
+    # experimental values ± uncertainty (same units, here Å)
+    obs = [
+        ExperimentalObservable(value=23.0, uncertainty=1.0, name="Rg"),
+        ExperimentalObservable(value=60.0, uncertainty=2.0, name="Ree"),
+    ]
+
+    bme = BME(obs, calc)
+    result = bme.fit(theta=2.0, auto_theta=False)
+    result.print_diagnostics()          # chi2 before/after, phi, warnings
+
+    w = result.weights
+
+    print(f"Rg  : {np.mean(rg):.2f}  ->  {np.average(rg,  weights=w):.2f} Å")
+    print(f"Ree : {np.mean(e2e):.2f} ->  {np.average(e2e, weights=w):.2f} Å")
+
+    # the weights are consistent across *every* SOURSOP observable
+    cmap_rew = protein.get_contact_map(weights=w)
+
+**Letting the L-curve choose** :math:`\theta`. Rather than guessing the regularisation strength, scan it and pick the knee::
+
+    scan = bme.scan_theta(theta_range=(0.01, 50.0), n_points=20)
+    scan.print_summary()
+
+    result = bme.fit(theta=scan.optimal_theta, auto_theta=False)
+    # equivalently: result = bme.fit(auto_theta=True)
+
+**Predicting an independent observable.** A fair quality check is to apply the fitted weights to an observable that was *not* used in the fit::
+
+    asph = protein.get_asphericity()
+    print("reweighted asphericity:", np.average(asph, weights=result.weights))
+
+**Iterative BME — data with an unknown scale/offset (e.g. SAXS).** Here each scattering-vector point is one observable, and the calculated intensities differ from the experiment by an unknown global scale and background. ``iBME`` fits those nuisance parameters jointly with the ensemble::
+
+    from soursop.ssbme import iBME, ExperimentalObservable
+
+    # q, I_exp, sigma_exp : experimental SAXS curve (length n_q)
+    # calc_I : calculated intensities, shape (n_frames, n_q)
+    obs = [ExperimentalObservable(I_exp[k], sigma_exp[k], name=f"q{k}")
+           for k in range(len(q))]
+
+    ib = iBME(obs, calc_I)
+    result = ib.fit(theta=10.0, ftol=0.01, max_ibme_iterations=50)
+
+    print(f"fitted scale  = {result.scale:.4g}")
+    print(f"fitted offset = {result.offset:.4g}")
+    print(f"chi2 {result.chi_squared_initial:.2f} -> "
+          f"{result.chi_squared_final:.2f}  (phi = {result.phi:.2f})")
+
+    # per-iteration convergence log
+    for it in result.ibme_iterations:
+        print(it)
+
+    saxs_weights = result.weights       # use with any SOURSOP observable
+
+
+11. Reweighting with COPER (hard chi-squared constraint)
+---------------------------------------------------------
+
+:mod:`~soursop.sscoper` offers an alternative to BME: instead of a tunable penalty it *maximises the ensemble entropy subject to a hard* :math:`\chi^2 \le 1` *constraint* (Leung et al. 2016). There is no :math:`\theta`; the knob is the chi-squared limit, and the method reports whether the data can be satisfied at all. The user-facing API mirrors :mod:`~soursop.ssbme`, so the same patterns apply. See :doc:`../modules/coper` for the theory and the "COPER vs BME" comparison.
+
+**Standard COPER — match an experimental** :math:`R_g` **and** :math:`r_{ee}`::
+
+    import numpy as np
+    from soursop.sstrajectory import SSTrajectory
+    from soursop.sscoper import COPER, ExperimentalObservable
+
+    traj    = SSTrajectory('traj.xtc', 'start.pdb')
+    protein = traj.proteinTrajectoryList[0]
+
+    rg  = protein.get_radius_of_gyration()
+    e2e = protein.get_end_to_end_distance()
+    calc = np.column_stack([rg, e2e])              # (n_frames, n_observables)
+
+    obs = [
+        ExperimentalObservable(value=23.0, uncertainty=1.0, name="Rg"),
+        ExperimentalObservable(value=60.0, uncertainty=2.0, name="Ree"),
+    ]
+
+    coper  = COPER(obs, calc)
+    result = coper.fit(chi2_limit=1.0)
+    result.print_diagnostics()                     # chi2, phi, delta_S, warnings
+
+    # ALWAYS check feasibility before using the weights
+    if result.feasible:
+        w = result.weights
+        print(f"Rg  : {np.mean(rg):.2f}  ->  {np.average(rg,  weights=w):.2f} Å")
+        print(f"Ree : {np.mean(e2e):.2f} ->  {np.average(e2e, weights=w):.2f} Å")
+        cmap_rew = protein.get_contact_map(weights=w)
+    else:
+        print("Data infeasible: no reweighting reproduces them. "
+              "Improve sampling / the force field, or loosen the limit.")
+
+**Per-data-type chi-squared.** When fitting several kinds of data, tag each observable with a ``group`` so COPER constrains each :math:`\chi^2_\alpha` separately (here, "size" vs. "shape")::
+
+    obs = [
+        ExperimentalObservable(23.0, 1.0, name="Rg",   group="size"),
+        ExperimentalObservable(60.0, 2.0, name="Ree",  group="size"),
+        ExperimentalObservable(0.45, 0.05, name="Asph", group="shape"),
+    ]
+    calc = np.column_stack([rg, e2e, protein.get_asphericity()])
+    result = COPER(obs, calc).fit(chi2_limit=1.0)
+
+**Choosing the chi-squared limit** by scanning it (the error-scaling analogue of BME's L-curve)::
+
+    scan = coper.scan_chi2_limit(chi2_limits=(0.25, 4.0), n_points=10)
+    scan.print_summary()
+    result = coper.fit(chi2_limit=scan.optimal_chi2_limit)
+
+**Iterative COPER — data with an unknown scale/offset (e.g. SAXS)**::
+
+    from soursop.sscoper import iCOPER, ExperimentalObservable
+
+    obs = [ExperimentalObservable(I_exp[k], sigma_exp[k], name=f"q{k}")
+           for k in range(len(q))]
+    result = iCOPER(obs, calc_I).fit(chi2_limit=1.0, ftol=0.01)
+
+    print(f"fitted scale  = {result.scale:.4g}")
+    print(f"fitted offset = {result.offset:.4g}")
+    if result.feasible:
+        saxs_weights = result.weights

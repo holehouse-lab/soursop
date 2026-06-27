@@ -1,0 +1,12 @@
+robin – MFF Fit Report
+==================================================
+File:      pnt.dat
+MFF from:  PNt_ALLH_MP0p7
+Points:    472
+q range:   [0.01011, 0.14987] Å⁻¹
+
+── MFF fit (simulation-derived form factor) ──
+  I(0)   = 594.1416  ± 1.8075
+  Rg     = 51.1068  ± 0.1289  Å
+  ν      = 0.54183  ± 0.00150
+  χ²_red = 1.0866
