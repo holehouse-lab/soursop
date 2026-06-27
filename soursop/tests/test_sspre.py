@@ -3,8 +3,6 @@ import os
 
 import numpy as np
 import soursop
-import pytest
-from contextlib import contextmanager
 from soursop.sspre import SSPRE
 
 

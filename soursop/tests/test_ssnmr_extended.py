@@ -1,6 +1,4 @@
-import os
 import pytest
-import numpy as np
 import soursop.ssnmr as nmr
 from soursop.ssexceptions import SSException
 

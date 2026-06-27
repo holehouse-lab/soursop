@@ -12,7 +12,6 @@
 
 
 import os
-import sys
 import numpy
 import ctypes
 import platform
@@ -20,7 +19,6 @@ import warnings
 from dataclasses import dataclass
 from typing import Optional, Tuple
 from soursop.ssexceptions import SSException
-from threadpoolctl import threadpool_info, threadpool_limits
 
 
 MKL_LIBRARY = "mkl_rt"
@@ -35,7 +33,6 @@ def _set_mkl_numpy_threads(mkl_path, num_threads):
     # represented in third-party libraries. This is a more dynamic way of finding
     # the MKL library and using it on a Mac that has an Intel compiler installed.
     mkl_rt = ctypes.CDLL(mkl_path)
-    mkl_get_max_threads = mkl_rt.mkl_get_max_threads()
     mkl_rt.mkl_set_num_threads(ctypes.byref(ctypes.c_int(num_threads)))
     set_threads = mkl_rt.mkl_get_max_threads()
     return set_threads

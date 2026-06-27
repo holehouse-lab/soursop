@@ -1,7 +1,5 @@
 import soursop
 from soursop import sstrajectory
-import pytest
-import sys
 
 test_data_dir = soursop.get_data("test_data")
 

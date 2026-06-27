@@ -259,7 +259,7 @@ class SSTrajectory:
         # Next, having read in the trajectory we parse out into proteins
         # extract a list of protein trajectories where each protein is assumed
         # to be in its own chain
-        if protein_grouping == None:
+        if protein_grouping is None:
             self.proteinTrajectoryList = self.__get_proteins(
                 self.traj, debug, explicit_residue_checking=explicit_residue_checking
             )
@@ -1297,7 +1297,7 @@ class SSTrajectory:
             P1 = self.proteinTrajectoryList[proteinID1]
             P2 = self.proteinTrajectoryList[proteinID2]
 
-        except IndexError as e:
+        except IndexError:
             raise SSException(
                 "In get_interchain_distance(): When selecting protein indices %i and %i at least one of these was out of range (indices are from 0...%i)"
                 % (proteinID1, proteinID2, len(self.proteinTrajectoryList) - 1)

@@ -31,18 +31,18 @@ import pathlib
 
 # ........................................................................
 #
-def chunks(l, n):
+def chunks(lst, n):
     """Yield successive ``n``-sized chunks from a list.
 
-    Splits ``l`` into consecutive, non-overlapping sublists of length
-    ``n``. If ``len(l)`` is not an exact multiple of ``n`` the trailing
+    Splits ``lst`` into consecutive, non-overlapping sublists of length
+    ``n``. If ``len(lst)`` is not an exact multiple of ``n`` the trailing
     remainder (fewer than ``n`` elements) is discarded, so every yielded
     chunk is guaranteed to contain exactly ``n`` elements. The list is
     consumed lazily as the generator is iterated.
 
     Parameters
     ----------
-    l : list
+    lst : list
         The list to be divided into chunks.
 
     n : int
@@ -51,7 +51,7 @@ def chunks(l, n):
     Yields
     ------
     list
-        Successive length-``n`` sublists of ``l``, in order.
+        Successive length-``n`` sublists of ``lst``, in order.
 
     Example
     -------
@@ -59,10 +59,10 @@ def chunks(l, n):
     [[1, 2], [3, 4]]
     """
 
-    maxval = int(round(len(l) - len(l) % n))
+    maxval = int(round(len(lst) - len(lst) % n))
 
     for i in range(0, maxval, int(n)):
-        yield l[i : i + n]
+        yield lst[i : i + n]
 
 
 # ........................................................................

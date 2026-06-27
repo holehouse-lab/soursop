@@ -4,22 +4,16 @@ Unit and regression test for the sstrajectory module.
 
 # Import package, test suite, and other packages as needed
 import soursop
-import hashlib
 from soursop import sstrajectory
 from soursop.ssexceptions import SSException
-from pathlib import Path
 import pytest
-import sys
 import random
 import itertools
-import platform
-import tempfile
 import numpy as np
 import os
 from soursop.configs import TMP_DIR
 
 
-from . import conftest
 # import conftest
 
 # -------------------------------------------------------------------------------------------------
@@ -584,21 +578,21 @@ def test_protein_identification():
 """
 
 
-def test_get_overal_rh(GS6_CO):
+def test_get_overal_rh_single_chain(GS6_CO):
     assert np.allclose(
         GS6_CO.get_overall_hydrodynamic_radius(),
         GS6_CO.proteinTrajectoryList[0].get_hydrodynamic_radius(),
     )
 
 
-def test_get_overal_asphericity(GS6_CO):
+def test_get_overal_asphericity_single_chain(GS6_CO):
     assert np.allclose(
         GS6_CO.get_overall_asphericity(),
         GS6_CO.proteinTrajectoryList[0].get_asphericity(),
     )
 
 
-def test_get_overal_rg(GS6_CO):
+def test_get_overal_rg_single_chain(GS6_CO):
     assert np.allclose(
         GS6_CO.get_overall_radius_of_gyration(),
         GS6_CO.proteinTrajectoryList[0].get_radius_of_gyration(),

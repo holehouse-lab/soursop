@@ -10,7 +10,6 @@
 ## Copyright 2014 - 2026
 ##
 
-import mdtraj as md
 import numpy as np
 from .ssexceptions import SSWarning, SSException
 from .ssprotein import SSProtein

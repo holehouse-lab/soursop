@@ -4,13 +4,7 @@ Unit and regression test for the soursop package.
 
 # Import package, test suite, and other packages as needed
 import hashlib
-import soursop
-from soursop import sstrajectory
-import pytest
 import sys
-
-
-from . import conftest
 
 
 def test_soursop_imported():

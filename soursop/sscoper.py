@@ -862,10 +862,16 @@ class COPER:
         safe = np.maximum(w, MIN_WEIGHT_THRESHOLD)
         grad_w = np.log(safe / self.initial_weights) + 1.0
         a = float(np.dot(w, grad_w))
+
         # H_w = diag(1/w); H_w u = u / w.
-        hw = lambda u: u / safe
+        def hw(u):
+            return u / safe
+
         n = w.size
-        mv = lambda v: self._hvp_z(w, np.asarray(v).ravel(), grad_w, hw, a)
+
+        def mv(v):
+            return self._hvp_z(w, np.asarray(v).ravel(), grad_w, hw, a)
+
         return LinearOperator((n, n), matvec=mv, rmatvec=mv, dtype=np.float64)
 
     def _group_chi2_grad_and_hw(self, w: np.ndarray):
@@ -904,7 +910,10 @@ class COPER:
                     return (2.0 / m) * (A @ ((A.T @ u) * inv_sig2))
             else:
                 grad_w = np.zeros(self.n_frames)
-                hw = lambda u: np.zeros_like(u)
+
+                def hw(u):
+                    return np.zeros_like(u)
+
             per_group.append((grad_w, hw))
         return per_group
 

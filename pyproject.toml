@@ -66,6 +66,14 @@ test = [
 ]
 
 
+[tool.ruff.lint.per-file-ignores]
+# Test modules intentionally bind-and-discard values: smoke-coverage calls
+# (``result = obj.method()``), ``pytest.raises(...) as exc`` contexts, and
+# work-in-progress assertion stubs. These are not real "unused variable" bugs,
+# so don't flag F841 in the test suite.
+"soursop/tests/**" = ["F841"]
+
+
 [tool.setuptools]
 zip-safe = false
 include-package-data = true 

@@ -3,14 +3,9 @@ Unit and regression test for the sstrajectory module.
 """
 
 # Import package, test suite, and other packages as needed
-import os
-import sys
 import pytest
-import ctypes
-import numpy as np
 from soursop import ssutils
 from soursop.ssexceptions import SSException
-from threadpoolctl import threadpool_info, threadpool_limits
 
 
 def test_set_numpy_threads():

@@ -18,7 +18,7 @@ including this function in any one other class.
 """
 
 import numpy as np
-from .ssexceptions import SSWarning, SSException
+from .ssexceptions import SSException
 
 
 # ........................................................................
@@ -84,7 +84,7 @@ def calc_MI(X, Y, bins, weights=False, normalize=False):
     """
 
     if len(X) != len(Y):
-        raise SSException(f"Error: X and Y vectors must be the same length")
+        raise SSException("Error: X and Y vectors must be the same length")
 
     if np.min(bins) > np.min(X) or np.min(bins) > np.min(Y):
         raise SSException(

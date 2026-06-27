@@ -10,13 +10,10 @@
 ## Copyright 2014 - 2026
 ##
 
-import time
 import mdtraj as md
 import numpy as np
 from itertools import combinations
-from scipy import stats
 from scipy.special import expit
-import scipy.optimize as SPO
 from scipy.spatial import ConvexHull
 from .configs import DEBUGGING
 from .ssdata import (
@@ -505,17 +502,17 @@ class SSProtein:
         # flexibility in a previous version of the code
         if isinstance(R1, bool) or isinstance(R2, bool):
             raise SSException(
-                f"Deprecation error: Prior to 0.1.9x versions __get_first_and_last() could take boolean values for R1 and R2. Starting with 0.2.0 it can only take integers and None. This message reflects a bug in SOURSOP, please contact Alex directly or raise an issue on GitHub"
+                "Deprecation error: Prior to 0.1.9x versions __get_first_and_last() could take boolean values for R1 and R2. Starting with 0.2.0 it can only take integers and None. This message reflects a bug in SOURSOP, please contact Alex directly or raise an issue on GitHub"
             )
 
         # first define as if we're starting from first and last residue with/without caps
-        if R1 == None:
+        if R1 is None:
             R1 = 0
             if withCA:
                 if self.ncap:
                     R1 = 1
 
-        if R2 == None:
+        if R2 is None:
             R2 = self.n_residues - 1
             if withCA:
                 if self.ccap:
@@ -1200,11 +1197,11 @@ class SSProtein:
         # if we've just passed a single unlisted integer
         # then just return the single residue associated
         # with
-        if type(resID_list) == int:
+        if isinstance(resID_list, int):
             return [self.get_CA_index(resID_list)]
 
         # if no value passed grab all the residues
-        if resID_list == None:
+        if resID_list is None:
             resID_list = self.resid_with_CA
 
         CAlist = []
@@ -1585,7 +1582,7 @@ class SSProtein:
         ## next see if nu or A0 have been provided...
 
         # If NEITHER provided then do fitting here and now!
-        if nu == None and A0 == None:
+        if nu is None and A0 is None:
             ssio.status_message("Fitting data to homopolymer mode...", verbose)
 
             # remind that this is the old get_scaling_exponent_v2()
@@ -6079,7 +6076,6 @@ class SSProtein:
                 )
 
         n_residues = self.n_residues
-        n_frames = self.n_frames
 
         # check the window is an appropriate size
         if window_size > n_residues:

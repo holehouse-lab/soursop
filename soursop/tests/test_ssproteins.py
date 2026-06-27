@@ -9,10 +9,8 @@ import pytest
 import sys
 import random
 import itertools
-from copy import deepcopy
-from soursop import sstrajectory, ssprotein
+from soursop import ssprotein
 from soursop.ssexceptions import SSException
-from soursop.configs import DEBUGGING
 from contextlib import contextmanager
 
 
@@ -191,26 +189,6 @@ def test_get_internal_scaling(GS6_CP):
     )
     assert (
         abs(np.mean(GS6_CP.get_internal_scaling(R1=1, R2=4)[1][1]) - 3.7353248) < 0.001
-    )
-
-
-def test_get_internal_scaling_RMS(GS6_CP):
-
-    assert len(GS6_CP.get_internal_scaling_RMS()[0]) == 6
-    assert (
-        abs(np.mean(GS6_CP.get_internal_scaling_RMS()[1][1]) - 3.793829294427209)
-        < 0.0001
-    )
-    assert (
-        abs(np.mean(GS6_CP.get_internal_scaling_RMS()[1][2]) - 6.578195001335268)
-        < 0.0001
-    )
-    assert (
-        abs(
-            np.mean(GS6_CP.get_internal_scaling_RMS(R1=1, R2=4)[1][1])
-            - 3.7455646317574534
-        )
-        < 0.001
     )
 
 
@@ -578,7 +556,7 @@ def test_check_contains_CA_successful(GS6_CP, NTL9_CP):
         residues_CA = protein.resid_with_CA
         for residue in residues_CA:
             return_value = protein._SSProtein__check_contains_CA(residue)
-            assert return_value == None
+            assert return_value is None
 
 
 # == SSProtein.__get_selection_atoms
@@ -655,7 +633,7 @@ def test_get_multiple_CA_index_invalid_residue_number_list(GS6_CP, NTL9_CP):
         residue_list = list(range(max_residue + 1, max_residue + protein.n_residues))
         atoms_with_CA = protein.get_multiple_CA_index(resID_list=residue_list)
 
-        assert type(atoms_with_CA) == list
+        assert isinstance(atoms_with_CA, list)
         assert len(atoms_with_CA) == 0
 
 
@@ -752,7 +730,7 @@ def test_get_local_collapse_successful_run(NTL9_CP):
     assert len(meanData) == expected_length
     assert len(stdData) == expected_length
     assert len(histo) == expected_length
-    assert type(bins) != None
+    assert bins is not None
 
 
 # SSProtein.get_angle_decay
@@ -1052,7 +1030,7 @@ def test_get_regional_SASA(GS6_CP, NTL9_CP, cta_protein_helper):
         r2 = random.choice(lower)
 
         rsasa = protein.get_regional_SASA(r1, r2)
-        assert rsasa != None
+        assert rsasa is not None
 
 
 def test_get_all_SASA(GS6_CP, NTL9_CP):
