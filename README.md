@@ -22,9 +22,7 @@ states, and other flexible biopolymers. It is built on top of
 atomic representation, and adds an analysis layer of polymer-physics-aware
 observables designed specifically for disordered ensembles.
 
-SOURSOP was originally developed by Jared Lalmansingh and Alex Holehouse in the
-[Holehouse Lab](https://www.holehouselab.com/) at Washington University in
-St. Louis.
+SOURSOP was originally developed by Jared Lalmansingh in the [Pappu lab](https://pappulab.wustl.edu/) and Alex Holehouse in the [Holehouse Lab](https://www.holehouselab.com/) at Washington University in St. Louis.
 
 ## Features
 
@@ -50,8 +48,7 @@ St. Louis.
 - **HDX protection factors** — Best–Vendruscolo ln(P) predictions (`sshdx`).
 - **Sampling diagnostics** — convergence assessment of disordered-protein
   ensembles via PENGUIN (`sssampling`).
-- **Multiple resolutions** — all-atom, one-bead-per-residue coarse-grained, and
-  SWAN two-bead (CA/CB) coarse-grained trajectories, with automatic detection.
+- **Multiple resolutions** — all-atom and one-bead-per-residue coarse-grained trajectories, with automatic detection.
 
 ## Installation
 
