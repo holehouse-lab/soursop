@@ -98,8 +98,12 @@ in `ssnmr`, plus HDX protection factors in the new `sshdx` module).
 ### Packaging and repository maintenance
 * Applied `ruff format` across the entire `soursop` package (all modules, tests and the reference-build script) to enforce a single consistent code style. These are whitespace/formatting-only changes with no functional effect; the full test suite is unchanged.
 * Raised the minimum supported Python to **3.9** (`requires-python = ">=3.9"`), matching the CI matrix; Python 3.7 and 3.8 are end-of-life and are no longer supported.
-* Bumped the GitHub Actions CI Python matrix from 3.7-3.9 to 3.9-3.14 (3.7 and 3.8 are end-of-life; 3.13 and 3.14 added).
+* Bumped the GitHub Actions CI Python matrix from 3.7-3.9 to 3.9-3.14 (3.7 and 3.8 are end-of-life; 3.13 and 3.14 added) and updated the CI action versions (`actions/checkout@v4`, `conda-incubator/setup-miniconda@v3`, `codecov/codecov-action@v5`).
 * Removed dead CI configuration: `.travis.yml` (Travis CI retired; still referenced the old `camparitraj` name) and `.lgtm.yml` (LGTM.com was shut down).
+* Removed the vestigial `devtools/` directory (MOLSSI-cookiecutter boilerplate): dead Travis-CI/AppVeyor scripts, an unused `camparitraj`-named conda recipe, and Versioneer-era notes that no longer reflect the project.
+* Expanded `pyproject.toml` packaging metadata: added trove `classifiers` (license, audience, topics, Python 3.9-3.14), a `[project.urls]` table (homepage, docs, repository, issues, changelog), and `keywords`.
+* Added a `CITATION.cff` file so GitHub can render "Cite this repository" with the SOURSOP JCTC reference.
+* Cleaned up stale references to the project's former `camparitraj` name in `soursop/soursop.py` docstrings, the `docs/index.rst` update log (removed contradictory pre-2022 notes) and the legacy `demo_examples/actr_analysis` notebook (ported to the modern `SSTrajectory` API); added the missing `sphinx` entry to `docs/requirements.txt` and removed dead `[yapf]`/`[flake8]`/`[aliases]` blocks from `setup.cfg` (the project now uses `ruff`).
 * Reconciled `requirements.txt` and `anaconda_requirements.txt` with `pyproject.toml`: removed non-dependencies (`cx_Freeze`, `PyYAML`, `ruamel_yaml`), added the missing real dependencies (`natsort`, `matplotlib`, `cython`), and unified the `mdtraj>=1.9.5` specifier.
 * Fixed a malformed `MANIFEST.in` data-file line and a stale `metapredict/_version.py` path in the `setup.cfg` coverage-omit list (now `soursop/_version.py`).
 

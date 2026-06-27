@@ -12,7 +12,7 @@
 
 
 """
-camparitraj module
+soursop module
 
 """
 
@@ -39,12 +39,12 @@ def version():
 
 def version_full():
     """
-    Returns the full camparitraj version as a string
+    Returns the full soursop version as a string
 
     Returns
     --------
     str
-        camparitraj version
+        soursop version
     """
     versions = get_versions()
     return versions["version"]
@@ -57,7 +57,7 @@ def version_git_revision():
     Returns
     --------
     str
-        camparitraj git revision id
+        soursop git revision id
     """
 
     versions = get_versions()

@@ -12,11 +12,11 @@ jobs:
     steps:
         # This is super-crucial and not well-documented (especially for conda) with Github Actions.
         # See: https://stackoverflow.com/questions/64405836/github-actions-no-such-file-or-directory-on-any-run-step
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
         # Ensuring miniconda is installed by adding the miniconda-version: "latest"  line (~ash 2024-07-13)
       - name: Set up Python ${{ matrix.python-version }}
-        uses: conda-incubator/setup-miniconda@v2
+        uses: conda-incubator/setup-miniconda@v3
         with:
           miniconda-version: "latest" 
           auto-update-conda: true
@@ -57,7 +57,7 @@ jobs:
           python -m pytest --cov=soursop --cov-report=xml -n auto
 
       - name: Upload coverage reports to Codecov with GitHub Action
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           name: codecov-umbrella
@@ -66,4 +66,3 @@ jobs:
           fail_ci_if_error: true
           files: ./coverage.xml
           verbose: true
-          path_to_write_report: codecov_report.txt

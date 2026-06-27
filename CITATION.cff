@@ -1,0 +1,43 @@
+cff-version: 1.2.0
+message: "If you use SOURSOP in your work, please cite the article below."
+title: "SOURSOP"
+abstract: "A Python package for the analysis of simulations of intrinsically disordered and unfolded proteins."
+type: software
+authors:
+  - family-names: "Lalmansingh"
+    given-names: "Jared M."
+  - family-names: "Holehouse"
+    given-names: "Alex S."
+    orcid: "https://orcid.org/0000-0002-4155-5729"
+repository-code: "https://github.com/holehouse-lab/soursop"
+url: "https://soursop.readthedocs.io"
+license: "LGPL-3.0"
+keywords:
+  - "molecular dynamics"
+  - "intrinsically disordered proteins"
+  - "polymer physics"
+  - "simulation analysis"
+  - "biophysics"
+preferred-citation:
+  type: article
+  title: "SOURSOP: A Python Package for the Analysis of Simulations of Intrinsically Disordered Proteins"
+  authors:
+    - family-names: "Lalmansingh"
+      given-names: "Jared M."
+    - family-names: "Keeley"
+      given-names: "Alex T."
+    - family-names: "Ruff"
+      given-names: "Kiersten M."
+      orcid: "https://orcid.org/0000-0003-3240-1856"
+    - family-names: "Pappu"
+      given-names: "Rohit V."
+      orcid: "https://orcid.org/0000-0003-2568-1378"
+    - family-names: "Holehouse"
+      given-names: "Alex S."
+      orcid: "https://orcid.org/0000-0002-4155-5729"
+  journal: "Journal of Chemical Theory and Computation"
+  year: 2023
+  volume: 19
+  start: 5609
+  end: 5620
+  doi: "10.1021/acs.jctc.3c00190"
