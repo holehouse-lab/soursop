@@ -13,7 +13,7 @@ Analyses fall into several broad categories:
 
 * **Residue utilities** — sequence retrieval, atom/CA index lookup, residue center-of-mass positions and masses.
 * **Inter-residue distances** — pairwise CA or COM distance matrices, distance maps, and polymer-scaled distance maps.
-* **Global size and shape** — radius of gyration, hydrodynamic radius, end-to-end distance, asphericity, gyration tensor, and the :math:`t`-parameter.
+* **Global size and shape** — radius of gyration, hydrodynamic radius, end-to-end distance, asphericity, acylindricity, prolateness, gyration tensor, and the :math:`t`-parameter.
 * **Secondary structure** — per-frame DSSP assignments and BBSEG backbone-torsion-based classification.
 * **Polymer scaling** — internal scaling profiles (:math:`\langle r^2 \rangle` vs sequence separation), the scaling exponent :math:`\nu`, and local heterogeneity in scaling behaviour.
 * **Contact and RMSD analysis** — contact maps (with configurable threshold and mode), RMSD to a reference structure, and fraction of native contacts :math:`Q`.
@@ -84,6 +84,8 @@ SSProtein Functions
         .. automethod:: get_end_to_end_distance
         .. automethod:: get_end_to_end_vs_rg_correlation
         .. automethod:: get_asphericity
+        .. automethod:: get_acylindricity
+        .. automethod:: get_prolateness
         .. automethod:: get_t
         .. automethod:: get_gyration_tensor
         .. automethod:: get_angles

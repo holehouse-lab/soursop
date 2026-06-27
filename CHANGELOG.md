@@ -96,6 +96,7 @@ in `ssnmr`, plus HDX protection factors in the new `sshdx` module).
 * Added a worked SAXS reweighting demo (`demo_examples/pnt_saxs_reweighting/`): a STARLING PNt ensemble with experimental SAXS data and four executed notebooks - `BMECustom` against the raw scattering curve, `BME` against a Guinier/MFF-derived Rg, `COPER` against the curve, and a head-to-head comparison of all four reweighters - plus a README.
 
 ### Packaging and repository maintenance
+* Applied `ruff format` across the entire `soursop` package (all modules, tests and the reference-build script) to enforce a single consistent code style. These are whitespace/formatting-only changes with no functional effect; the full test suite is unchanged.
 * Bumped the GitHub Actions CI Python matrix from 3.7-3.9 to 3.9-3.12 (3.7 and 3.8 are end-of-life).
 * Removed dead CI configuration: `.travis.yml` (Travis CI retired; still referenced the old `camparitraj` name) and `.lgtm.yml` (LGTM.com was shut down).
 * Reconciled `requirements.txt` and `anaconda_requirements.txt` with `pyproject.toml`: removed non-dependencies (`cx_Freeze`, `PyYAML`, `ruamel_yaml`), added the missing real dependencies (`natsort`, `matplotlib`, `cython`), and unified the `mdtraj>=1.9.5` specifier.
