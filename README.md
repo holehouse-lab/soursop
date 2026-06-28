@@ -117,8 +117,7 @@ documentation, and feature release that adds a consistent ensemble-reweighting
 weights from experimental data (`ssbme`: BME / iBME / BMECustom, and `sscoper`:
 COPER / iCOPER), new experimental forward-model observables (scalar
 `³J(HN, Hα)` couplings and NOE distances in `ssnmr`, plus HDX protection factors
-in the new `sshdx` module), and first-class support for SWAN two-bead
-coarse-grained models — alongside wide-ranging bug fixes and
+in the new `sshdx` module) — alongside wide-ranging bug fixes and
 behaviour-preserving speed-ups.
 
 The full, versioned changelog is in [CHANGELOG.md](CHANGELOG.md).

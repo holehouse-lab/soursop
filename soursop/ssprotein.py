@@ -99,13 +99,13 @@ class SSProtein:
             acids) and if yes initialize accordingly.
 
         swan: bool {False}
-            If set to `True` this protein is treated as a SWAN 2-bead (CA
+            If set to `True` this protein is treated as a two-bead (CA
             backbone / CB sidechain) coarse-grained model. This switches
             sidechain-vector analyses to use the CA->CB vector for every residue
             and secondary-structure analysis to use CA/CB idealized-helix and
-            idealized-beta geometry (since SWAN lacks the N/C/O backbone atoms
+            idealized-beta geometry (since these models lack the N/C/O backbone atoms
             that DSSP and backbone dihedrals require). Normally this is set
-            automatically by ``sstrajectory.SSTrajectory`` when it detects a SWAN
+            automatically by ``sstrajectory.SSTrajectory`` when it detects a two-bead
             topology on load.
 
         """
@@ -146,8 +146,8 @@ class SSProtein:
         # reset_cache() can reproduce an identical initialization later
         self.__check_one_bead_per_residue = check_one_bead_per_residue
 
-        # remember whether this is a SWAN 2-bead (CA/CB) coarse-grained model.
-        # SWAN proteins are NOT one-bead-per-residue (they carry a CB for every
+        # remember whether this is a two-bead (CA/CB) coarse-grained model.
+        # two-bead coarse-grained proteins are NOT one-bead-per-residue (they carry a CB for every
         # non-glycine residue), so they flow through the normal all-atom
         # initialization path; this flag only switches the behaviour of
         # sidechain-vector and secondary-structure analyses.
@@ -292,11 +292,11 @@ class SSProtein:
 
     @property
     def is_swan(self):
-        """True if this protein is a SWAN 2-bead (CA/CB) coarse-grained model.
+        """True if this protein is a two-bead (CA/CB) coarse-grained model.
 
         When True, sidechain-vector analyses use the CA->CB vector for every
         residue and secondary structure is assigned from CA/CB idealized
-        geometry rather than DSSP / backbone dihedrals (which SWAN lacks the
+        geometry rather than DSSP / backbone dihedrals (which these models lack the
         atoms for).
 
         Returns
@@ -3672,12 +3672,12 @@ class SSProtein:
         >>> chi5[1][1]                  # per-frame chi5 angles for that residue
         """
 
-        # SWAN 2-bead models carry only CA/CB beads, so the N/C/O backbone
+        # two-bead models carry only CA/CB beads, so the N/C/O backbone
         # atoms (phi/psi/omega) and sidechain heavy atoms (chi1-chi5) needed to
         # define these dihedrals do not exist.
         if self.__swan:
             raise SSException(
-                "get_angles() is not defined for SWAN coarse-grained models: backbone (phi/psi/omega) and sidechain (chi1-chi5) dihedrals require N/C/O backbone and sidechain heavy atoms that the CA/CB SWAN representation does not contain."
+                "get_angles() is not defined for two-bead (CA/CB) coarse-grained models: backbone (phi/psi/omega) and sidechain (chi1-chi5) dihedrals require N/C/O backbone and sidechain heavy atoms that the CA/CB representation does not contain."
             )
 
         # check input ketword selector
@@ -4850,7 +4850,7 @@ class SSProtein:
             resname_1 = self.get_amino_acid_sequence(numbered=False)[R1]
             resname_1 = sstools.fix_histadine_name(resname_1)
 
-            # In a SWAN 2-bead model the only sidechain bead is CB, so the
+            # In a two-bead model the only sidechain bead is CB, so the
             # sidechain vector is the CA->CB vector for every residue. Glycine
             # carries no CB and therefore has no sidechain vector.
             if self.__swan:
@@ -5003,12 +5003,12 @@ class SSProtein:
         ## ..................................................
         ## SAFETY FIRST!
         ##
-        # SWAN 2-bead models lack the backbone/sidechain atoms required to
+        # two-bead models lack the backbone/sidechain atoms required to
         # define phi/psi/omega/chi dihedrals, so dihedral mutual information is
         # undefined.
         if self.__swan:
             raise SSException(
-                "get_dihedral_mutual_information() is not defined for SWAN coarse-grained models: the underlying phi/psi/omega/chi dihedrals require N/C/O backbone and sidechain heavy atoms that the CA/CB SWAN representation does not contain."
+                "get_dihedral_mutual_information() is not defined for two-bead (CA/CB) coarse-grained models: the underlying phi/psi/omega/chi dihedrals require N/C/O backbone and sidechain heavy atoms that the CA/CB representation does not contain."
             )
 
         # verify binwidth input values
@@ -5345,15 +5345,15 @@ class SSProtein:
         beta_window,
         beta_rmsd_thresh,
     ):
-        """Assign per-frame secondary structure for a SWAN model from the CA trace.
+        """Assign per-frame secondary structure for a two-bead model from the CA trace.
 
-        SWAN 2-bead (CA/CB) models lack the N/C/O backbone atoms that DSSP and
+        two-bead (CA/CB) models lack the N/C/O backbone atoms that DSSP and
         backbone dihedrals require, so secondary structure is assigned purely
         from the CA coordinates by comparison against idealized templates.
 
         * Helix: a residue is helical in a frame if it falls inside any
           ``helix_window``-length CA fragment whose minimal-RMSD superposition
-          onto an idealized SWAN alpha-helix (``ssutils.ideal_helix_ca``) is
+          onto an idealized alpha-helix (``ssutils.ideal_helix_ca``) is
           below ``helix_rmsd_thresh`` Angstroms.
         * Extended/beta: identically, against an idealized extended strand
           (``ssutils.ideal_extended_ca``) with its own ``beta_window`` /
@@ -5380,7 +5380,7 @@ class SSProtein:
         """
 
         # CA coordinates (Angstroms) for the selected residue range, shape
-        # (n_frames, n_res, 3). Every SWAN residue (including glycine) has a CA.
+        # (n_frames, n_res, 3). Every residue (including glycine) has a CA.
         ca_atoms = self.topology.select(f'resid {R1_real} to {R2_real} and name "CA"')
         ca = self.traj.xyz[:, ca_atoms, :] * 10.0
         n_frames = ca.shape[0]
@@ -5452,15 +5452,15 @@ class SSProtein:
         The three buckets are H (helix), E (extended/beta), C (coil). At
         every residue the three values sum to 1 (default mode).
 
-        **SWAN models:** for a SWAN 2-bead (CA/CB) protein DSSP cannot be used
+        **two-bead models:** for a two-bead (CA/CB) protein DSSP cannot be used
         (there is no N/C/O backbone), so secondary structure is assigned from
         the CA trace instead. A residue is helical in a frame if it falls inside
-        any ``helix_window``-length CA fragment whose RMSD to an idealized SWAN
+        any ``helix_window``-length CA fragment whose RMSD to an idealized
         alpha-helix is below ``helix_rmsd_thresh`` (Angstroms), and extended
         (beta) if it falls inside any ``beta_window``-length fragment matching an
         idealized extended strand within ``beta_rmsd_thresh`` (Angstroms). The
         ``helix_window`` / ``helix_rmsd_thresh`` / ``beta_window`` /
-        ``beta_rmsd_thresh`` arguments are ignored for non-SWAN proteins.
+        ``beta_rmsd_thresh`` arguments are ignored for all-atom and one-bead proteins.
 
         Parameters
         ----------
@@ -5484,17 +5484,17 @@ class SSProtein:
         etol : float, optional
             Tolerance on ``|sum(weights) - 1|``. Default ``1e-7``.
         helix_window : int, optional
-            (SWAN only) Number of consecutive CA beads in the idealized-helix
-            comparison fragment. Default ``10``. Ignored for non-SWAN proteins.
+            (two-bead models only) Number of consecutive CA beads in the idealized-helix
+            comparison fragment. Default ``10``. Ignored for all-atom and one-bead proteins.
         helix_rmsd_thresh : float, optional
-            (SWAN only) RMSD cutoff (Angstroms) below which a CA fragment is
-            classed helical. Default ``0.5``. Ignored for non-SWAN proteins.
+            (two-bead models only) RMSD cutoff (Angstroms) below which a CA fragment is
+            classed helical. Default ``0.5``. Ignored for all-atom and one-bead proteins.
         beta_window : int, optional
-            (SWAN only) Number of consecutive CA beads in the idealized-extended
-            comparison fragment. Default ``5``. Ignored for non-SWAN proteins.
+            (two-bead models only) Number of consecutive CA beads in the idealized-extended
+            comparison fragment. Default ``5``. Ignored for all-atom and one-bead proteins.
         beta_rmsd_thresh : float, optional
-            (SWAN only) RMSD cutoff (Angstroms) below which a CA fragment is
-            classed extended/beta. Default ``0.6``. Ignored for non-SWAN proteins.
+            (two-bead models only) RMSD cutoff (Angstroms) below which a CA fragment is
+            classed extended/beta. Default ``0.6``. Ignored for all-atom and one-bead proteins.
 
         Returns
         -------
@@ -5536,7 +5536,7 @@ class SSProtein:
             )
 
         # compute the per-frame per-residue secondary structure assignment. For
-        # SWAN models this comes from the CA-trace idealized-helix / idealized-beta
+        # two-bead models this comes from the CA-trace idealized-helix / idealized-beta
         # detector; for everything else from mdtraj's DSSP. Both return an
         # (n_frames, n_residues) array of single-character 'H' / 'E' / 'C' codes,
         # so the downstream collapsing logic is identical.
@@ -5658,13 +5658,13 @@ class SSProtein:
 
         """
 
-        # SWAN 2-bead models lack the N/C backbone atoms needed to compute the
+        # two-bead models lack the N/C backbone atoms needed to compute the
         # phi/psi angles that the BBSEG2 classification is built on. Use
-        # get_secondary_structure_DSSP() (which has a SWAN-specific CA/CB path)
+        # get_secondary_structure_DSSP() (which has a two-bead-specific CA/CB path)
         # instead.
         if self.__swan:
             raise SSException(
-                "get_secondary_structure_BBSEG() is not defined for SWAN coarse-grained models: it classifies phi/psi angles, which require N/C backbone atoms that the CA/CB SWAN representation does not contain. Use get_secondary_structure_DSSP() instead (it has a SWAN-aware CA/CB path)."
+                "get_secondary_structure_BBSEG() is not defined for two-bead (CA/CB) coarse-grained models: it classifies phi/psi angles, which require N/C backbone atoms that the CA/CB representation does not contain. Use get_secondary_structure_DSSP() instead (it has a two-bead-aware CA/CB path)."
             )
 
         # build R1/R2 values - NOTE that for BBSEG because we compute from PHI/PSI angles

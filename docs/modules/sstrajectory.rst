@@ -11,13 +11,7 @@ Overview
 
 **Supported formats.** Any trajectory format supported by `mdtraj <https://mdtraj.org>`_ can be read in (XTC, DCD, TRR, NetCDF, etc.), paired with a compatible topology file (PDB, GRO, etc.).
 
-**Coarse-grained and SWAN models.** SOURSOP handles all-atom trajectories, one-bead-per-residue coarse-grained trajectories (a single ``CA`` bead per residue), and **SWAN** two-bead coarse-grained trajectories. SWAN (a currently unpublished backbone-sidechain model) represents every residue with a ``CA`` backbone bead plus a ``CB`` sidechain bead, except glycine which has only a ``CA``. SWAN topologies are **auto-detected on load** and reported via the ``SSTrajectory.swan_trajectory`` attribute (and propagated to each chain's :attr:`~soursop.ssprotein.SSProtein.is_swan`). Auto-detection can be overridden with the ``swan_trajectory`` constructor keyword (``None`` = auto-detect, the default; ``True`` / ``False`` = force). For SWAN chains, sidechain-vector and secondary-structure analyses switch to ``CA``/``CB`` definitions automatically (see the :doc:`ssprotein` page); functions that fundamentally require the full backbone or sidechain heavy atoms (backbone/sidechain dihedrals and the BBSEG classification) raise an ``SSException``.
-
-::
-
-    TrajOb = SSTrajectory('swan_traj.xtc', 'swan_top.pdb')
-    TrajOb.swan_trajectory                       # True (auto-detected)
-    TrajOb.proteinTrajectoryList[0].is_swan      # True
+**Coarse-grained models.** In addition to all-atom trajectories, SOURSOP supports one-bead-per-residue coarse-grained trajectories (a single ``CA`` bead per residue), which are auto-detected on load. The bulk of the geometric API (dimensions, distance/contact maps, polymer scaling, etc.) works unchanged on coarse-grained ensembles, since every residue still carries a ``CA``.
 
 **Typical workflow**::
 

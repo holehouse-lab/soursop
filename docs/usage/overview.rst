@@ -84,16 +84,9 @@ For multi-chain systems, iterate over ``proteinTrajectoryList`` (one
 ``SSProtein`` per chain) and use the ``SSTrajectory`` inter-chain
 methods for cross-chain observables.
 
-**Supported resolutions.** SOURSOP works with all-atom trajectories,
-one-bead-per-residue coarse-grained trajectories (a single ``CA`` bead
-per residue), and **SWAN** two-bead coarse-grained trajectories (a
-``CA`` backbone bead plus a ``CB`` sidechain bead per residue; glycine
-has only ``CA``). SWAN is a currently unpublished backbone-sidechain
-model; SOURSOP auto-detects it on load (``SSTrajectory.swan_trajectory``
-/ ``SSProtein.is_swan``) and transparently switches sidechain-vector and
-secondary-structure analyses to ``CA``/``CB`` definitions. See the
-:doc:`../modules/sstrajectory` and :doc:`../modules/ssprotein` pages for
-details.
+**Supported resolutions.** SOURSOP works with both all-atom trajectories
+and one-bead-per-residue coarse-grained trajectories (a single ``CA``
+bead per residue); the coarse-grained case is auto-detected on load.
 
 
 The SOURSOP modules

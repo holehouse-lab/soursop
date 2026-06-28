@@ -857,12 +857,12 @@ def constraint_chi_squared(weights, calculated_values, observables, indices=None
 
 ## ------------------------------------------------------------------------
 ##
-## SWAN (2-bead CA/CB coarse-grained model) support
+## Two-bead (CA/CB) coarse-grained model support
 ##
-## The constants and ideal-helix geometry below are vendored from the SWAN
+## The constants and ideal-helix geometry below are vendored from an internal reference implementation of the
 ## package (``swan/helix.py`` and ``swan/trajectory.py``) so that SOURSOP can
-## detect SWAN trajectories and assign secondary structure from the CA trace
-## *without* taking a runtime dependency on the ``swan`` package. If SWAN ever
+## detect two-bead coarse-grained trajectories and assign secondary structure from the CA trace
+## *without* taking a runtime dependency on that reference implementation. If the model ever
 ## changes its ideal alpha-helix parameters these must be kept in sync.
 
 # Ideal alpha-helix parameters (see swan/helix.py)
@@ -870,8 +870,8 @@ SWAN_HELIX_RISE = 1.5  # angstrom per residue along the axis
 SWAN_HELIX_TWIST_DEG = 100.0  # degrees per residue (3.6 residues / turn)
 SWAN_HELIX_CA_RADIUS = 2.3  # angstrom of Calpha from the helix axis
 
-# Ideal extended (beta) strand parameters. SWAN does not generate beta, so there
-# is no SWAN reference geometry; these describe a canonical pleated extended CA
+# Ideal extended (beta) strand parameters. This model does not generate beta, so there
+# is no reference geometry from that model; these describe a canonical pleated extended CA
 # strand: a virtual CA-CA bond of ~3.8 A with a CA(i)..CA(i+2) span of ~6.8 A
 # (clearly distinct from the ~5.4 A helical value). Modelled as a planar zigzag
 # with axial spacing SWAN_BETA_AXIAL and transverse amplitude SWAN_BETA_AMPLITUDE.
@@ -880,9 +880,9 @@ SWAN_BETA_AMPLITUDE = 1.70  # angstrom transverse pleat amplitude
 
 
 def is_swan_topology(topology):
-    """Return ``True`` if a topology is a SWAN 2-bead (CA/CB) coarse-grained model.
+    """Return ``True`` if a topology is a two-bead (CA/CB) coarse-grained model.
 
-    A SWAN topology represents every residue with a single backbone ``CA`` bead
+    A two-bead topology represents every residue with a single backbone ``CA`` bead
     and (for every residue except glycine) a single sidechain ``CB`` bead. This
     is distinct from SOURSOP's existing one-bead-per-residue coarse-grained model
     (``CA`` only), which is why the presence of at least one ``CB`` bead is
@@ -901,7 +901,7 @@ def is_swan_topology(topology):
     Returns
     -------
     bool
-        ``True`` if the topology matches the SWAN 2-bead model, ``False``
+        ``True`` if the topology matches the two-bead model, ``False``
         otherwise.
 
     Example
@@ -937,7 +937,7 @@ def is_swan_topology(topology):
 
         n_cb_total += n_cb
 
-    # a topology with no CB at all is the existing CA-only 1-bead CG model, not SWAN
+    # a topology with no CB at all is the existing CA-only 1-bead CG model, not two-bead
     return n_cb_total > 0
 
 
@@ -947,7 +947,7 @@ def ideal_helix_ca(
     """Ideal alpha-helix Calpha coordinates about the +z axis.
 
     Vendored from ``swan.helix.ideal_helix_ca``. Generates the Calpha trace of
-    an idealized SWAN alpha-helix, which is used as the reference fragment when
+    an idealized alpha-helix, which is used as the reference fragment when
     detecting helicity from a CA-only coarse-grained trajectory.
 
     Parameters

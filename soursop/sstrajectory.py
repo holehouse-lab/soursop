@@ -117,11 +117,11 @@ class SSTrajectory:
             as one might want normally.
 
         .swan_trajectory : bool
-            True if the trajectory was detected (or forced) to be a SWAN 2-bead
+            True if the trajectory was detected (or forced) to be a two-bead
             (CA backbone / CB sidechain) coarse-grained model. This is auto-detected
             on load and propagated to every SSProtein in proteinTrajectoryList, which
-            switches sidechain-vector and secondary-structure analyses to SWAN-aware
-            CA/CB definitions.
+            switches sidechain-vector and secondary-structure analyses to the
+            two-bead CA/CB definitions.
 
 
         Parameters
@@ -194,8 +194,8 @@ class SSTrajectory:
             Default = False
 
         swan_trajectory : bool or None
-            Controls SWAN 2-bead (CA/CB) coarse-grained handling. If None
-            (default) SOURSOP auto-detects whether the topology is a SWAN model
+            Controls two-bead (CA/CB) coarse-grained handling. If None
+            (default) SOURSOP auto-detects whether the topology is a two-bead model
             (a single CA per residue plus a single CB per non-glycine residue,
             and nothing else) on load. Pass True or False to force the behaviour
             and skip auto-detection. The resulting value is stored as the
@@ -247,7 +247,7 @@ class SSTrajectory:
                 trajectory_filename, pdb_filename, pdblead, print_warnings
             )
 
-        # determine whether this is a SWAN 2-bead (CA/CB) coarse-grained model.
+        # determine whether this is a two-bead (CA/CB) coarse-grained model.
         # This is auto-detected from the topology unless explicitly forced via
         # the swan_trajectory keyword, and must be resolved BEFORE the per-protein
         # SSProtein objects are built so the flag can be threaded into them.
