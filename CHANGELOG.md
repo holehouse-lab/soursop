@@ -2,6 +2,21 @@
 
 All notable changes to SOURSOP are documented in this file.
 
+## 2.0.2 (July 2026)
+
+A feature release adding a coarse-grained spin-label model to the PRE calculation, and making it the default.
+
+### Breaking changes
+* **`sspre.SSPRE.generate_PRE_profile` now defaults to `use_label=True`.** By default the paramagnetic centre is now modelled as the coarse-grained spin-label cloud described below (calibrated against DEER-PREdict) rather than sitting directly on the `spin_label_atom` (the classic point-at-CB model). This produces different — and, against DEER-PREdict's explicit MTSL rotamer treatment, more accurate — I_para/I_dia and Γ₂ profiles than SOURSOP ≤ 2.0.1. **To reproduce results from earlier versions exactly, pass `use_label=False`.**
+
+### New features and improvements
+* `sspre.SSPRE.generate_PRE_profile`: Added a coarse-grained spin-label cloud model, controlled with `use_label` (now `True` by default; see above). Instead of placing the paramagnetic centre directly on the anchor atom, the unpaired electron is modelled as a deterministic cloud of `n_label_conformers` beads placed a fixed `label_distance` (default 7.0 Å, the mean CB→electron distance of the MTSSL 175K X1X2 rotamer library) from the anchor. When a CB distinct from CA is available the cloud is a cone (half-angle `label_cone_angle`, default 130°) about the CA→CB direction so it points away from the backbone; on coarse-grained CA-only chains it falls back to a full isotropic sphere, so the model works on both all-atom and one-bead-per-residue trajectories. Relaxation is averaged over the whole cloud *and* over frames, preserving the `r⁻⁶` non-linearity across both the conformer cloud and the ensemble. The cloud is generated on a Fibonacci lattice (no RNG), so profiles are fully reproducible.
+* Steric exclusion of the label bead against the chain is always applied under `use_label=True` and can be either a `'hard'` cutoff (beads within `label_bead_radius` of any non-label CA are dropped) or a `'soft'` WCA-like repulsive wall (`w_i = exp(-Σ_j (label_bead_radius / d_ij)^label_wall_stiffness)`, reducing to the hard cutoff as the stiffness grows). The defaults (`label_steric='soft'`, `label_bead_radius=5.5` Å, `label_wall_stiffness=6.0`) were calibrated against DEER-PREdict's explicit MTSL rotamer PRE profiles across 85 disordered (trajectory) and ~2700 folded (AlphaFold) label sites; the soft wall was found to be marginally more accurate and about three times less sensitive to the bead radius than the hard cutoff, giving a single value that transfers between folded and disordered chains. This mimics the steric pruning DEER-PREdict applies to its rotamer library and stops the cloud being placed through the protein interior (critical for folded/compact chains).
+* `sspre`: The residue iteration in `generate_PRE_profile` now uses the public `resid_with_CA` property rather than the private CA cache, so the PRE calculation works on coarse-grained one-bead-per-residue chains as well as all-atom trajectories. Atom coordinate lookups in the label-cloud path go through SOURSOP's memoised O(1) residue/atom lookup rather than a fresh `topology.select()` per call, keeping the calculation fast on large proteins.
+
+### Testing
+* Added tests in `tests/test_sspre.py` covering the label-cloud model: that `use_label=True` is now the default (a bare call matches the explicit label-cloud call and differs from the point model), the Fibonacci cap-direction and rotation helpers, the basic `use_label` profile (finite, bounded in [0, 1], deterministic, and correlated with the point model), the bead-radius and hard/soft steric behaviour (including convergence of the soft wall to the hard cutoff as the wall stiffens), and rejection of an invalid `label_steric` mode. The existing `test_pre_profiles_ctl9` regression against the 2019 reference profiles now pins `use_label=False`, since that reference used the point model.
+
 ## 2.0.0 (June 2026)
 
 A major release. In addition

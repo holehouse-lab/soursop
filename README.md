@@ -40,7 +40,9 @@ SOURSOP was originally developed by Jared Lalmansingh in the [Pappu lab](https:/
 - **Solvent accessibility** — per-residue, regional, and site-level SASA.
 - **NMR observables** — random-coil chemical shifts, ³J(HN, Hα) scalar
   couplings, NOE distances (`ssnmr`), and paramagnetic relaxation enhancement
-  (`sspre`).
+  (`sspre`), computed by default with a coarse-grained spin-label cloud model
+  (calibrated against DEER-PREdict) that works on all-atom and coarse-grained
+  trajectories alike.
 - **Ensemble reweighting** — a consistent, deterministic per-frame `weights`
   system across the package, with Bayesian Maximum Entropy (`ssbme`: BME / iBME
   / BMECustom) and Convex Optimization for Ensemble Reweighting (`sscoper`:
@@ -110,15 +112,18 @@ complete API reference, is hosted at
 
 ## Versioning and changelog
 
-The current PyPI release is **0.2.7**. The upcoming **2.0.0** release (in
-development on this repository) is a large maintenance, performance,
-documentation, and feature release that adds a consistent ensemble-reweighting
-(`weights`) system across the package, two new modules for deriving frame
-weights from experimental data (`ssbme`: BME / iBME / BMECustom, and `sscoper`:
-COPER / iCOPER), new experimental forward-model observables (scalar
-`³J(HN, Hα)` couplings and NOE distances in `ssnmr`, plus HDX protection factors
-in the new `sshdx` module) — alongside wide-ranging bug fixes and
-behaviour-preserving speed-ups.
+The current release is the **2.0.x** series, a large maintenance, performance,
+documentation, and feature release relative to the previous `0.2.7` line. It
+adds a consistent ensemble-reweighting (`weights`) system across the package,
+two new modules for deriving frame weights from experimental data (`ssbme`:
+BME / iBME / BMECustom, and `sscoper`: COPER / iCOPER), new experimental
+forward-model observables (scalar `³J(HN, Hα)` couplings and NOE distances in
+`ssnmr`, plus HDX protection factors in the new `sshdx` module) — alongside
+wide-ranging bug fixes and behaviour-preserving speed-ups. The latest **2.0.2**
+release adds a coarse-grained spin-label cloud model to the `sspre` PRE
+calculation and makes it the default — a breaking change relative to the
+point-at-CB model of `2.0.1` (pass `use_label=False` to reproduce older
+profiles). See the [changelog](CHANGELOG.md) for details.
 
 The full, versioned changelog is in [CHANGELOG.md](CHANGELOG.md).
 

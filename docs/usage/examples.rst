@@ -322,7 +322,9 @@ For systems with more than one protein chain, system-level analyses are performe
     # 600 MHz magnet; tau_c = 5 ns, t_delay = 16 ms, R_2D = 10 Hz
     pre = SSPRE(protein, tau_c=5, t_delay=16, R_2D=10, W_H=600000000)
 
-    # spin label at residue 20 (CB atom)
+    # spin label at residue 20; since SOURSOP 2.0.2 this uses the calibrated
+    # coarse-grained spin-label cloud model by default (pass use_label=False
+    # for the classic point-at-CB behaviour of SOURSOP <= 2.0.1)
     intensity_ratio, gamma2 = pre.generate_PRE_profile(label_position=20)
 
     plt.plot(intensity_ratio)
@@ -332,6 +334,11 @@ For systems with more than one protein chain, system-level analyses are performe
     plt.title('Simulated PRE profile — label at residue 20')
     plt.legend()
     plt.show()
+
+Since SOURSOP 2.0.2 the paramagnetic centre is, by default, a coarse-grained cloud of beads offset from the anchor (calibrated against DEER-PREdict), which better reproduces the geometry of an MTSL side chain and also works on coarse-grained CA-only trajectories. This is a breaking change: earlier versions placed the label directly on the CB atom, so pass ``use_label=False`` to reproduce older results exactly::
+
+    # classic point-at-CB model (SOURSOP <= 2.0.1 behaviour)
+    intensity_ratio, gamma2 = pre.generate_PRE_profile(label_position=20, use_label=False)
 
 
 9. Assessing sampling quality with PENGUIN
