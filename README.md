@@ -119,11 +119,15 @@ two new modules for deriving frame weights from experimental data (`ssbme`:
 BME / iBME / BMECustom, and `sscoper`: COPER / iCOPER), new experimental
 forward-model observables (scalar `³J(HN, Hα)` couplings and NOE distances in
 `ssnmr`, plus HDX protection factors in the new `sshdx` module) — alongside
-wide-ranging bug fixes and behaviour-preserving speed-ups. The latest **2.0.2**
-release adds a coarse-grained spin-label cloud model to the `sspre` PRE
-calculation and makes it the default — a breaking change relative to the
-point-at-CB model of `2.0.1` (pass `use_label=False` to reproduce older
-profiles). See the [changelog](CHANGELOG.md) for details.
+wide-ranging bug fixes and behaviour-preserving speed-ups. **2.0.2** added a
+coarse-grained spin-label cloud model to the `sspre` PRE calculation and made it
+the default — a breaking change relative to the point-at-CB model of `2.0.1`
+(pass `use_label=False` to reproduce older profiles). The latest **2.0.3** makes
+multi-model PDB files load ~2x faster and fixes a batch of correctness bugs from
+a package-wide review (a few of which change numerical output — notably
+`get_local_to_global_correlation`, coarse-grained/`COM`-mode strided distance
+maps, `get_clusters`, and DSSP fractions at termini). See the
+[changelog](CHANGELOG.md) for details.
 
 The full, versioned changelog is in [CHANGELOG.md](CHANGELOG.md).
 

@@ -2,11 +2,20 @@
 import os
 
 import numpy as np
+import pytest
 import soursop
 from soursop.sspre import (
     SSPRE,
     _fibonacci_cap_directions,
     _rotation_from_z,
+)
+
+# These tests intentionally use the historical W_H = 850000000 (a linear-looking
+# value) to reproduce the committed 2019 reference PRE profiles; SSPRE now warns
+# that this looks like a linear rather than angular frequency. Silence just that
+# warning across this module.
+pytestmark = pytest.mark.filterwarnings(
+    "ignore:.*looks unusual for a proton Larmor"
 )
 
 
@@ -19,7 +28,13 @@ def test_pre_profiles_ctl9(CTL9_CP):
 
     # PRE settings for Stenzowski et al 2020 (note in original calulations
     # we used a tau_c of 5 ns (ultimately used 4 ns for the paper but the saved
-    # profiles here used 5)
+    # profiles here used 5).
+    #
+    # W_H = 850000000 is the historical value used to generate the reference
+    # profiles below. SSPRE now documents W_H as an ANGULAR frequency and warns
+    # that this value looks like a linear frequency; we keep it (the module-level
+    # pytestmark filter silences the warning) purely to reproduce the committed
+    # reference data.
     PRE = SSPRE(CTL9_CP, 5, 12, 14, 850000000)
 
     # for each label position

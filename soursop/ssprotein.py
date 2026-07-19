@@ -15,6 +15,7 @@ import numpy as np
 from itertools import combinations
 from scipy.special import expit
 from scipy.spatial import ConvexHull
+from scipy.spatial.distance import squareform
 from .configs import DEBUGGING
 from .ssdata import (
     THREE_TO_ONE,
@@ -1321,7 +1322,9 @@ class SSProtein:
                     continue
 
                 return_distances.append(
-                    self.get_inter_residue_COM_distance(residueIndex, residue)
+                    self.get_inter_residue_COM_distance(
+                        residueIndex, residue, stride=stride
+                    )
                 )
 
             # finally convert list to numpy array and flip so returns in same format as CA mode
@@ -1459,17 +1462,25 @@ class SSProtein:
             else:
                 distance_map[SM_index][1 + SM_index : len(residuesWithCA)] = mean_data
 
-            # updated std map
-            std_distance_map[SM_index][1 + SM_index : len(residuesWithCA)] = std_data
+            # updated std map. When weights were supplied std_data is None (no
+            # per-pair std is defined for a reweighted mean); guard the
+            # assignment so we do not silently write NaN into the float array,
+            # and return None for the std map (as the docstring promises).
+            if std_data is not None:
+                std_distance_map[SM_index][1 + SM_index : len(residuesWithCA)] = (
+                    std_data
+                )
 
             SM_index = SM_index + 1
+
+        std_return = std_distance_map if weights is False else None
 
         if return_instantaneous_maps is True:
             # note we have to transpose the distance map so the 1st index is the
             # frame index
-            return (np.transpose(distance_map, axes=[1, 0, 2]), std_distance_map)
+            return (np.transpose(distance_map, axes=[1, 0, 2]), std_return)
         else:
-            return (distance_map, std_distance_map)
+            return (distance_map, std_return)
 
     # ........................................................................
     #
@@ -2009,8 +2020,11 @@ class SSProtein:
         # set the reference trajectory we're working with
         ref = self.traj
 
-        # if a second frame number was provided with which we're going to work with
-        if frame2 > -1 and isinstance(frame2, int):
+        # if a second frame number was provided with which we're going to work with.
+        # Accept NumPy integer types (e.g. from np.arange / np.where) as well as
+        # Python int; isinstance(..., int) alone silently rejected np.int64 and
+        # fell through to the compare-vs-all-frames branch.
+        if frame2 > -1 and isinstance(frame2, (int, np.integer)):
             # our target is now a single (i.e. doing RMSD of two structures)
             target = self.traj.slice(frame2)
         else:
@@ -2299,8 +2313,9 @@ class SSProtein:
 
             # just as a convenience, build a sorted list of the residues which makes
             # the data a bit easier to play with going forward.
-            res2res_keys = list(res2res.keys())
-            np.sort(res2res_keys)
+            # sorted() actually sorts; np.sort() returned a new (discarded)
+            # array, leaving res2res_keys in dict-insertion order.
+            res2res_keys = sorted(res2res.keys())
             sorted_residues = []
 
             for lk in res2res_keys:
@@ -2569,6 +2584,15 @@ class SSProtein:
         else:
             distance_dims = int((self.n_frames / stride)) + 1
 
+        # need at least two conformations to build a pairwise distance matrix
+        # and cluster; raise a clear error rather than a cryptic scipy one.
+        if distance_dims < 2:
+            raise SSException(
+                f"get_clusters() needs at least 2 frames to cluster, but "
+                f"stride={stride} leaves {distance_dims} of {self.n_frames} "
+                "frames. Reduce stride."
+            )
+
         distances = np.zeros((distance_dims, distance_dims))
 
         idx = 0
@@ -2585,9 +2609,16 @@ class SSProtein:
         # having computed the RMSD distance matrix we do Ward based hierachical clustering
         # and then separate out into n_clusters
 
-        # we feed ward a redundant distance matrix
-        # See: http://docs.scipy.org/doc/scipy/reference/generated/scipy.cluster.hierarchy.ward.html#scipy.cluster.hierarchy.ward
-        linkage = scipy.cluster.hierarchy.ward(distances)
+        # Cluster on the precomputed pairwise RMSD matrix. scipy's ward()
+        # interprets a 2-D input as observation vectors and computes the
+        # EUCLIDEAN distance between rows - so passing the square RMSD matrix
+        # directly clustered on "RMSD-profile similarity", not on RMSD itself.
+        # We must hand ward the condensed (1-D) form of the distance matrix
+        # via squareform(). Symmetrise and zero the diagonal first to absorb
+        # any floating-point asymmetry in the pairwise RMSDs.
+        sym_distances = 0.5 * (distances + distances.transpose())
+        np.fill_diagonal(sym_distances, 0.0)
+        linkage = scipy.cluster.hierarchy.ward(squareform(sym_distances, checks=False))
 
         # linkage is the hierachical clustering encoded as a linkage matrix
         labels = scipy.cluster.hierarchy.fcluster(
@@ -3002,9 +3033,15 @@ class SSProtein:
         # the eigenvalues, so this reproduces the previous per-frame LA.eig loop.
         EIG = np.linalg.eigvalsh(gyration_tensor_vector)  # (n_frames, 3)
         e0, e1, e2 = EIG[:, 0], EIG[:, 1], EIG[:, 2]
-        asph_vector = 1 - 3 * (
-            (e0 * e1 + e1 * e2 + e2 * e0) / np.power(e0 + e1 + e2, 2)
+        # Guard the division for degenerate frames (trace == 0, e.g. a single
+        # zero-extent bead), matching get_acylindricity / get_prolateness.
+        # Previously a bare divide gave 0/0 -> NaN and a RuntimeWarning.
+        tr = e0 + e1 + e2
+        num = e0 * e1 + e1 * e2 + e2 * e0
+        ratio = np.divide(
+            num, np.power(tr, 2), out=np.zeros_like(num), where=tr > 0
         )
+        asph_vector = 1 - 3 * ratio
 
         # optional deterministic frame re-weighting (collapses frame axis)
         weights = self.__check_weights(weights, 1, etol)
@@ -5163,7 +5200,12 @@ class SSProtein:
         for seq_sep in range(1, self.n_residues):
             ssio.status_message(f"On sequence separation {seq_sep}", verbose)
 
-            for pos in range(start, end - seq_sep):
+            # NOTE: +1 so B = pos + seq_sep can reach the terminal CA residue
+            # `end`. Without it every pair whose second residue is the
+            # C-terminal residue was silently dropped (the terminal residue
+            # never entered the local-vs-global correlation), unlike the
+            # analogous loop in get_internal_scaling.
+            for pos in range(start, end - seq_sep + 1):
                 # define the two positions
                 A = pos
                 B = pos + seq_sep
@@ -5560,9 +5602,16 @@ class SSProtein:
         # if we want per-frame
         if return_per_frame is True:
             for f in dssp_data:
-                C_vector.append(np.array(f == "C", dtype=int).tolist())
-                E_vector.append(np.array(f == "E", dtype=int).tolist())
-                H_vector.append(np.array(f == "H", dtype=int).tolist())
+                is_H = f == "H"
+                is_E = f == "E"
+                # Coil = anything that is neither helix nor strand. This folds
+                # mdtraj's 'NA' code (emitted where DSSP cannot classify a
+                # residue, e.g. chain termini / caps) into coil, so H/E/C form
+                # a complete partition. Previously 'NA' matched none of H/E/C,
+                # so those residues summed to < 1, contradicting the docstring.
+                C_vector.append((~is_H & ~is_E).astype(int).tolist())
+                E_vector.append(is_E.astype(int).tolist())
+                H_vector.append(is_H.astype(int).tolist())
 
             return (reslist, np.array(H_vector), np.array(E_vector), np.array(C_vector))
 
@@ -5570,28 +5619,23 @@ class SSProtein:
         else:
             n_frames = self.n_frames
 
+            dssp_T = dssp_data.transpose()
             for i in range(len(reslist)):
+                col = dssp_T[i]
+                is_H = col == "H"
+                is_E = col == "E"
+                # Coil = neither helix nor strand, so mdtraj's 'NA' code (chain
+                # termini / caps, where DSSP cannot classify) folds into coil
+                # and H/E/C sum to 1 at every residue (see per-frame branch).
+                is_C = ~is_H & ~is_E
                 if wv is False:
-                    C_vector.append(
-                        float(sum(dssp_data.transpose()[i] == "C")) / n_frames
-                    )
-                    E_vector.append(
-                        float(sum(dssp_data.transpose()[i] == "E")) / n_frames
-                    )
-                    H_vector.append(
-                        float(sum(dssp_data.transpose()[i] == "H")) / n_frames
-                    )
+                    C_vector.append(float(np.sum(is_C)) / n_frames)
+                    E_vector.append(float(np.sum(is_E)) / n_frames)
+                    H_vector.append(float(np.sum(is_H)) / n_frames)
                 else:
-                    col = dssp_data.transpose()[i]
-                    C_vector.append(
-                        ssutils.weighted_mean((col == "C").astype(float), wv)
-                    )
-                    E_vector.append(
-                        ssutils.weighted_mean((col == "E").astype(float), wv)
-                    )
-                    H_vector.append(
-                        ssutils.weighted_mean((col == "H").astype(float), wv)
-                    )
+                    C_vector.append(ssutils.weighted_mean(is_C.astype(float), wv))
+                    E_vector.append(ssutils.weighted_mean(is_E.astype(float), wv))
+                    H_vector.append(ssutils.weighted_mean(is_H.astype(float), wv))
 
             return (reslist, np.array(H_vector), np.array(E_vector), np.array(C_vector))
 
@@ -5888,11 +5932,17 @@ class SSProtein:
         CN_lengths = []
 
         for i in self.resid_with_CA:
-            # this extracts the C->N vector for each frame for each residue
+            # this extracts the C->N vector for each frame for each residue.
+            # xyz is (n_frames, 1, 3); squeeze ONLY the length-1 atom axis
+            # (axis=1). A bare np.squeeze() also collapses the frame axis when
+            # n_frames == 1, giving a (3,) array that then breaks the axis=1
+            # norm below (single-frame trajectories crashed with an AxisError).
             value = np.squeeze(
-                self.traj.atom_slice(self.__residue_atom_lookup(i, atom1)).xyz
+                self.traj.atom_slice(self.__residue_atom_lookup(i, atom1)).xyz,
+                axis=1,
             ) - np.squeeze(
-                self.traj.atom_slice(self.__residue_atom_lookup(i, atom2)).xyz
+                self.traj.atom_slice(self.__residue_atom_lookup(i, atom2)).xyz,
+                axis=1,
             )
 
             # CN_vectors becomes a list where each element is [3 x nframes] array where 3 is the x/y/z

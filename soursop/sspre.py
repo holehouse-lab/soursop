@@ -165,7 +165,7 @@ class SSPRE:
     Example
     -------
     >>> P = traj.proteinTrajectoryList[0]
-    >>> spre = SSPRE(P, tau_c=5.0, t_delay=10.0, R_2D=10.0, W_H=600000000)
+    >>> spre = SSPRE(P, tau_c=5.0, t_delay=10.0, R_2D=10.0, W_H=2*np.pi*600e6)  # 600 MHz (angular)
     >>> profile, gamma = spre.generate_PRE_profile(label_position=42)
     """
 
@@ -204,10 +204,18 @@ class SSPRE:
             value of around 10 is typical.
 
         W_H : float
-            Proton Larmor frequency of the magnet, in Hz - i.e. the
-            nominal "MHz" rating of the magnet expressed in Hz (a 600 MHz
-            magnet uses ``600000000``). The proton Larmor frequency at
-            1 Tesla is 267530000 per second per Tesla.
+            Proton Larmor frequency as an **angular** frequency, in rad/s
+            (``omega_H = 2*pi*nu_H``). The spectral-density term of the
+            relaxation prefactor evaluates ``J(omega_H) = ... /(1 + omega_H^2
+            tau_c^2)``, so the value passed here is used directly as the
+            angular frequency. For a 600 MHz magnet pass ``2*np.pi*600e6``
+            (approximately ``3.77e9``), **not** ``600000000``. This matches the
+            convention used by DEER-PREdict and by SOURSOP's shipped
+            label-cloud calibration. Passing the linear frequency (``nu_H``,
+            e.g. ``600000000``) instead makes the dispersive term a factor of
+            ``(2*pi)^2 ~ 39.5`` too small, overestimating gamma by roughly 7%
+            at ``tau_c = 5`` ns and giving results inconsistent with the
+            calibrated defaults.
 
         Raises
         ------
@@ -217,7 +225,7 @@ class SSPRE:
         Example
         -------
         >>> P = traj.proteinTrajectoryList[0]
-        >>> spre = SSPRE(P, tau_c=5.0, t_delay=10.0, R_2D=10.0, W_H=600000000)
+        >>> spre = SSPRE(P, tau_c=5.0, t_delay=10.0, R_2D=10.0, W_H=2*np.pi*600e6)  # 600 MHz (angular)
         """
 
         # NOTE: NO CHANGES SHOULD BE MADE TO THE SSPO by the object - this should be treated
@@ -257,10 +265,17 @@ class SSPRE:
                 % (self.tau_c)
             )
 
-        # if Larmor frequency less than 100 MhZ or above 2 GHz assume something is wrong
-        if W_H < 50000000 or W_H > 2000000000:
+        # W_H is the ANGULAR proton Larmor frequency (rad/s); for a 300 MHz -
+        # 1 GHz magnet omega_H = 2*pi*nu_H is ~1.9e9 - 6.3e9. Warn outside a
+        # generous angular band. A value near ~6e8 usually means the caller
+        # passed the linear frequency (nu_H) by mistake.
+        if W_H < 1000000000 or W_H > 1000000000000:
             SSWarning(
-                f"WARNING: The value of W_h {self.W_H} (proton Larmor frequency) is far from the normal expected value of ~600 000 000 - recal this value should be provided in Herz"
+                f"WARNING: W_H = {self.W_H} looks unusual for a proton Larmor "
+                "frequency. W_H must be the ANGULAR frequency omega_H = 2*pi*nu_H "
+                "in rad/s (e.g. 2*pi*600e6 ~ 3.77e9 for a 600 MHz magnet). If you "
+                "passed the linear frequency (~6e8) the dispersive relaxation term "
+                "will be ~(2*pi)^2 too small."
             )
 
         # # convert tau_c to seconds and calculate tau_c squared

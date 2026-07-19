@@ -25,6 +25,7 @@ from soursop.ssexceptions import SSException
 from soursop import ssutils
 from typing import Union, List
 import os
+import re
 from natsort import natsorted
 import pathlib
 
@@ -325,7 +326,15 @@ def find_trajectory_files(
             # exclude directories in exclude_dirs
             dirnames[:] = [d for d in dirnames if d not in exclude_dirs]
 
-        if dirpath.endswith(tuple(str(i) for i in range(0, num_replicates + 1))):
+        # A replicate directory is one whose name ends in an integer replicate
+        # index in [0, num_replicates]. We parse the trailing integer and
+        # range-check it, rather than testing whether the path *ends with* one
+        # of the digit strings - the latter (str.endswith over a tuple of
+        # digit strings) wrongly matched e.g. 'rep15' for num_replicates=5
+        # (ends in '5') while dropping 'rep7', silently gathering the wrong
+        # set of replicates.
+        _trailing = re.search(r"(\d+)$", os.path.basename(dirpath))
+        if _trailing is not None and 0 <= int(_trailing.group(1)) <= num_replicates:
             # extract the parent directory name
             parent_dirname = os.path.basename(os.path.dirname(dirpath))
             traj_file = os.path.join(dirpath, f"{traj_name}")

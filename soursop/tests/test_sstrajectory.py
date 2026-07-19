@@ -1043,3 +1043,80 @@ def test_interchain_distance_out_of_bounds_residue_per_mode(GMX_2CHAINS, mode):
         GMX_2CHAINS.get_interchain_distance(
             0, 1, R1=99999, R2=0, A1="CA", A2="CA", mode=mode
         )
+
+
+# -------------------------------------------------------------------------------------------------
+# Multi-model PDB fast path.
+#
+# When the trajectory file IS the topology file and both are a PDB (i.e. a
+# multi-model PDB, as written by idpconformergenerator/PED/NMR entries),
+# __readTrajectory calls md.load_pdb() once instead of md.load(..., top=...),
+# which would parse the whole file twice. These tests pin (a) the predicate that
+# selects the fast path and (b) that the fast path is numerically a no-op.
+# -------------------------------------------------------------------------------------------------
+
+_same_pdb_file = sstrajectory.SSTrajectory._SSTrajectory__same_pdb_file
+
+
+def test_same_pdb_file_predicate(tmp_path):
+    import mdtraj as md
+
+    pdb = os.path.join(soursop.get_data("test_data"), "ctl9_AA.pdb")
+    xtc = os.path.join(soursop.get_data("test_data"), "ctl9_AA.xtc")
+
+    # the fast path fires only for the same on-disk PDB
+    assert _same_pdb_file(pdb, pdb) is True
+    assert _same_pdb_file(os.path.join(os.path.dirname(pdb), ".", os.path.basename(pdb)), pdb) is True
+
+    # ...and must NOT fire for anything else
+    assert _same_pdb_file(xtc, pdb) is False           # the normal xtc + pdb case
+    assert _same_pdb_file(xtc, xtc) is False           # same file, but not a PDB
+    assert _same_pdb_file(None, pdb) is False
+    assert _same_pdb_file(pdb, None) is False
+
+    # a genuinely different PDB is not the same file
+    other = str(tmp_path / "other.pdb")
+    md.load(xtc, top=pdb)[0].save_pdb(other)
+    assert _same_pdb_file(other, pdb) is False
+
+
+def test_multimodel_pdb_load_is_equivalent(tmp_path):
+    """SSTrajectory(pdb, pdb) must match the md.load(pdb, top=pdb) path exactly."""
+    import mdtraj as md
+
+    pdb = os.path.join(soursop.get_data("test_data"), "ctl9_AA.pdb")
+    xtc = os.path.join(soursop.get_data("test_data"), "ctl9_AA.xtc")
+
+    # build a small genuine multi-model PDB
+    multi = str(tmp_path / "multi.pdb")
+    md.load(xtc, top=pdb)[0:4].save_pdb(multi)
+
+    reference = sstrajectory.SSTrajectory(TRJ=md.load(multi, top=multi))  # old path
+    fast = sstrajectory.SSTrajectory(multi, multi)                        # new fast path
+
+    assert fast.n_frames == reference.n_frames == 4
+    assert fast.traj.topology == reference.traj.topology
+    assert np.array_equal(fast.traj.xyz, reference.traj.xyz)
+
+    # and a real observable is bit-identical
+    assert np.array_equal(
+        fast.proteinTrajectoryList[0].get_radius_of_gyration(),
+        reference.proteinTrajectoryList[0].get_radius_of_gyration(),
+    )
+
+
+def test_multimodel_pdb_pdblead_still_prepends(tmp_path):
+    """pdblead=True keeps prepending the PDB even on the fast path."""
+    import mdtraj as md
+
+    pdb = os.path.join(soursop.get_data("test_data"), "ctl9_AA.pdb")
+    xtc = os.path.join(soursop.get_data("test_data"), "ctl9_AA.xtc")
+
+    multi = str(tmp_path / "multi.pdb")
+    md.load(xtc, top=pdb)[0:3].save_pdb(multi)
+
+    expected = md.load(multi) + md.load(multi, top=multi)  # old behaviour
+    got = sstrajectory.SSTrajectory(multi, multi, pdblead=True)
+
+    assert got.n_frames == expected.n_frames == 6
+    assert np.array_equal(got.traj.xyz, expected.xyz)

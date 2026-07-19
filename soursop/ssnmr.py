@@ -1655,9 +1655,13 @@ def compute_random_coil_chemical_shifts(
     for j in range(len(sequence) - 4):
         output.append({"Res": aminos[j], "Index": j})
 
-    # deuterated parameters not available for phosphorylated Residues
+    # deuterated parameters not available for phosphorylated residues.
+    # The phospho codes are SEP=20, TPO=21, PTR=22 (see key_aa3); the guard
+    # previously checked 22/25/28, so only pTyr (22) was caught while pSer (20)
+    # and pThr (21) slipped through and later crashed with an IndexError on the
+    # 20-element deuteration tables.
     if (
-        (22 in sequence) or (25 in sequence) or (28 in sequence)
+        (20 in sequence) or (21 in sequence) or (22 in sequence)
     ) and use_perdeuteration:
         raise SSException(
             "Phosphorylated amino acids not supported in deuterated proteins"
@@ -1877,15 +1881,23 @@ def __set_sequence(sequence, key1, key3):
         set = regex[i]
         if set[0] == "":
             aa1 = set[1]
-            aminos.append(aa1)
             code = ord(aa1[0]) - 65
-            if (code < 0 or code > 35) or (key_aa1[code] == -1):
+            # key_aa1 has 26 entries (indices 0-25); the bound was `code > 35`,
+            # which let codes 26-35 (chars '[ \ ] ^ _ ` a b c d') through to
+            # `key_aa1[code]` and raised IndexError.
+            if (code < 0 or code > 25) or (key_aa1[code] == -1):
                 continue
+            # Only record the residue in `aminos` once it is known-valid and
+            # appended to `sequence`. Appending before the validity check let
+            # `aminos` desync from `sequence` on any skipped character, which
+            # shifted/mislabelled every downstream residue and dropped trailing
+            # residues from the output.
+            aminos.append(aa1)
             sequence.append(key_aa1[code])
         else:
             aa3 = set[0].upper()
-            aminos.append(aa3)
             if aa3 in key_aa3:
+                aminos.append(aa3)
                 sequence.append(key_aa3[aa3])
             else:
                 continue

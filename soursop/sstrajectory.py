@@ -10,6 +10,8 @@
 ## Copyright 2014 - 2026
 ##
 
+import os
+
 import mdtraj as md
 import numpy as np
 from .ssdata import ALL_VALID_RESIDUE_NAMES
@@ -362,6 +364,49 @@ class SSTrajectory:
     # oxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxo
     #
     #
+    @staticmethod
+    def __same_pdb_file(trajectory_filename, pdb_filename):
+        """Is the trajectory file the same PDB file as the topology file?
+
+        Returns True only when both names resolve to the same file on disk AND
+        that file is a PDB. This is the (common) case of loading a multi-model
+        PDB - e.g. the output of idpconformergenerator, PED downloads, or any
+        NMR-style multi-MODEL entry - where the trajectory is its own topology.
+
+        Parameters
+        ----------
+        trajectory_filename : str
+            Filename of the trajectory file.
+
+        pdb_filename : str
+            Filename of the PDB (topology) file.
+
+        Returns
+        -------
+        bool
+            True if both arguments name the same on-disk PDB file.
+        """
+
+        if trajectory_filename is None or pdb_filename is None:
+            return False
+
+        if not str(trajectory_filename).lower().endswith(".pdb"):
+            return False
+
+        # compare resolved paths so './x.pdb' and 'x.pdb' (or a symlink) match.
+        # If either path cannot be resolved just fall back to the safe default
+        # of False, which preserves the original md.load() behaviour.
+        try:
+            traj_path = os.path.realpath(trajectory_filename)
+            pdb_path = os.path.realpath(pdb_filename)
+        except (OSError, ValueError, TypeError):
+            return False
+
+        return traj_path == pdb_path
+
+    # oxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxo
+    #
+    #
     def __readTrajectory(
         self, trajectory_filename, pdb_filename, pdblead, print_warnings
     ):
@@ -409,9 +454,27 @@ class SSTrajectory:
 
         """
 
+        # Is the trajectory file its own topology (i.e. a multi-model PDB passed
+        # as both arguments)? If so we take a faster path - see below.
+        same_pdb = self.__same_pdb_file(trajectory_filename, pdb_filename)
+
         # straight up read the trajectory first using mdtraj's awesome
-        # trajectory reading facility
-        traj = md.load(trajectory_filename, top=pdb_filename)
+        # trajectory reading facility.
+        #
+        # NOTE: when the trajectory file IS the topology file and both are a
+        # PDB, we call md.load_pdb() directly rather than md.load(..., top=...).
+        # md.load() pre-parses the topology via _parse_topology(top), which for
+        # a PDB calls load_frame(top, 0); mdtraj's PDB reader has no random
+        # access, so it reads EVERY model and then discards all but the first.
+        # The file is then parsed a second time for the coordinates. For a large
+        # multi-model PDB this doubles an already-expensive pure-Python text
+        # parse (~2x wall-clock; e.g. 59 s -> 31 s for a 520 MB, 1000-model,
+        # 6.4M-atom file). load_pdb() parses once and returns an identical
+        # trajectory. Every other combination of inputs is unaffected.
+        if same_pdb:
+            traj = md.load_pdb(trajectory_filename)
+        else:
+            traj = md.load(trajectory_filename, top=pdb_filename)
 
         # check unit cell lengths
         try:
@@ -434,7 +497,14 @@ class SSTrajectory:
         # and then add it to the front (the PDB file is its own topology
         # file so no need to specificy the top= file here!
         if pdblead:
-            pdbtraj = md.load(pdb_filename)
+            # If the PDB *is* the trajectory file we have already parsed it, so
+            # reuse that result rather than paying for a third full parse of the
+            # same file. md.load(pdb_filename) on that file returns exactly the
+            # trajectory we just built, so this is behaviour-preserving.
+            if same_pdb:
+                pdbtraj = traj
+            else:
+                pdbtraj = md.load(pdb_filename)
             traj = pdbtraj + traj
 
             # having added the PDB file now check all the unit-cells match up!

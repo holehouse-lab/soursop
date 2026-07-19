@@ -598,7 +598,12 @@ class BME:
         else:
             self.initial_weights = initial_weights / np.sum(initial_weights)
 
-        self._lambdas = np.random.normal(
+        # Deterministic initialisation of the dual Lagrange multipliers. The
+        # dual problem is convex, so the optimum is independent of the start;
+        # seeding a local RNG (rather than the global np.random.normal used
+        # previously) makes fits reproducible run-to-run.
+        _lambda_rng = np.random.default_rng(0)
+        self._lambdas = _lambda_rng.normal(
             loc=0.0, scale=LAMBDA_INIT_SCALE, size=self.n_observables
         ).astype(np.float64)
         self._bounds = [obs.get_bounds() for obs in self.observables]
@@ -1646,6 +1651,21 @@ class BMECustom:
             kl = float(np.sum(w * (log_w - log_w0)))
             return self._cost(w) + theta * kl
 
+        def objective_and_grad(z):
+            # Analytic value+gradient for the DEFAULT chi^2 cost (only used on
+            # that path; custom costs have no analytic gradient and use FD).
+            log_w = z - logsumexp(z)
+            w = np.exp(log_w)
+            kl = float(np.sum(w * (log_w - log_w0)))
+            val = self._cost(w) + theta * kl
+            # d/dw of [cost + theta*KL]; the +1 from d(w log w)/dw is projected
+            # away by the softmax Jacobian below, but is kept for clarity.
+            g = self._default_cost_grad(w) + theta * (log_w - log_w0 + 1.0)
+            # chain through the softmax Jacobian J = diag(w) - w w^T:
+            # (J g)_i = w_i (g_i - w . g).
+            grad_z = w * (g - float(w @ g))
+            return val, grad_z
+
         cost_initial = self._cost(w0)
         if verbose:
             print("BMECustom Optimization")
@@ -1658,13 +1678,27 @@ class BMECustom:
         # Initial parameter: z = log w0 -> softmax(z) = w0.
         z0 = log_w0.copy()
 
-        opt = minimize(
-            objective,
-            z0,
-            method=optimizer,
-            jac="2-point",
-            options={"maxiter": max_iterations, "ftol": 1e-9, "gtol": 1e-7},
-        )
+        # Use the analytic value+gradient for the default chi^2 cost (O(N*m)
+        # per step); fall back to a finite-difference gradient only for a
+        # user-supplied custom cost, which has no closed-form derivative. The
+        # previous code always used "2-point", so the analytic gradient was
+        # dead code and the default path paid an O(N^2*m)-per-step FD penalty.
+        if self.cost_function is None:
+            opt = minimize(
+                objective_and_grad,
+                z0,
+                method=optimizer,
+                jac=True,
+                options={"maxiter": max_iterations, "ftol": 1e-9, "gtol": 1e-7},
+            )
+        else:
+            opt = minimize(
+                objective,
+                z0,
+                method=optimizer,
+                jac="2-point",
+                options={"maxiter": max_iterations, "ftol": 1e-9, "gtol": 1e-7},
+            )
 
         w_opt = softmax(opt.x)
         cost_final = self._cost(w_opt)

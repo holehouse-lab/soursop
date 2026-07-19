@@ -690,10 +690,13 @@ def test_get_distance_map_weights(GS6_CP, NTL9_CP):
                 expected_shape = (protein_residues, protein_residues)
 
                 assert distance_map.shape == expected_shape
-                assert std_dev.shape == expected_shape
+                # when weights are supplied there is no per-pair standard
+                # deviation defined, so the std map is returned as None (the
+                # documented contract); previously it was a NaN-filled array.
+                assert std_dev is None
 
-                if rms_option is True:
-                    assert np.count_nonzero(np.tril(std_dev, -1)) == 0
+                # the mean map is upper-triangular either way
+                assert np.count_nonzero(np.tril(distance_map, -1)) == 0
 
 
 def test_get_local_collapse_invalid_bins(GS6_CP, NTL9_CP):

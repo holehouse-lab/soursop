@@ -259,6 +259,12 @@ class SamplingQuality:
             # then match the lengths of the trajectories before computing dihedrals
             if self.truncate:
                 self.trajs, self.ref_trajs = self.__truncate_trajectories()
+                # __truncate_trajectories rebuilds each trajectory from the
+                # single selected protein, so after truncation that protein is
+                # at index 0 of the new proteinTrajectoryList. Reset proteinID
+                # so downstream indexing (dihedrals, sequence) is not out of
+                # range for the original proteinID > 0.
+                self.proteinID = 0
 
             # compute all dihedrals from trajectories and ref trajectories
             (
@@ -272,6 +278,9 @@ class SamplingQuality:
         else:
             if self.truncate:
                 self.trajs, self.ref_trajs = self.__truncate_trajectories()
+                # see note above: after truncation the selected protein is at
+                # index 0 of every rebuilt trajectory.
+                self.proteinID = 0
 
             (self.psi_angles, self.phi_angles) = self.__compute_dihedrals(
                 proteinID=self.proteinID, precomputed=True
@@ -298,8 +307,48 @@ class SamplingQuality:
                 nsamples=len(self.trajs[0]),
             )
 
-            self.ref_psi_angles = precomputed_interface.ref_psi_angles
-            self.ref_phi_angles = precomputed_interface.ref_phi_angles
+            # Align the EV reference count with the trajectory dihedral count.
+            # The reference is gathered once per residue, but get_angles('phi')
+            # / ('psi') return one fewer angle than there are residues for an
+            # UNCAPPED chain (phi is undefined at the N-terminal residue, psi at
+            # the C-terminal residue). Without this the EV path crashed on
+            # uncapped inputs with a broadcast error (n_res vs n_res-1). Trim
+            # the reference from the phi-start / psi-end so the arrays align.
+            self.ref_phi_angles = self.__align_reference_angles(
+                precomputed_interface.ref_phi_angles, self.phi_angles, drop="first"
+            )
+            self.ref_psi_angles = self.__align_reference_angles(
+                precomputed_interface.ref_psi_angles, self.psi_angles, drop="last"
+            )
+
+    @staticmethod
+    def __align_reference_angles(reference, trajectory, drop):
+        """Trim a per-residue reference angle array to the trajectory's count.
+
+        ``reference`` and ``trajectory`` are ``(n_trajs, n_residues, n_samples)``
+        arrays. When the reference has exactly one extra residue (the uncapped
+        case), drop it from the terminus where the corresponding backbone
+        dihedral is undefined (``'first'`` for phi, ``'last'`` for psi).
+
+        Parameters
+        ----------
+        reference : np.ndarray
+            Reference dihedral angles, ``(n_trajs, n_ref_res, n_samples)``.
+        trajectory : np.ndarray
+            Trajectory dihedral angles, ``(n_trajs, n_traj_res, n_samples)``.
+        drop : {'first', 'last'}
+            Terminus to trim from when the reference has one extra residue.
+
+        Returns
+        -------
+        np.ndarray
+            The reference array trimmed to match ``trajectory``'s residue axis.
+        """
+        n_ref = reference.shape[1]
+        n_traj = trajectory.shape[1]
+        if n_ref == n_traj + 1:
+            return reference[:, 1:, :] if drop == "first" else reference[:, :-1, :]
+        return reference
 
     def __validate_arguments(self):
         ssutils.validate_keyword_option(
