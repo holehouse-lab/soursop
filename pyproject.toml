@@ -1,7 +1,9 @@
 [build-system]
 
 # delete cython/numpy if not needed
-requires = ["setuptools>=61", "versioningit~=2.0", "numpy", ]
+# setuptools>=77 is required for the PEP 639 SPDX `license` string and
+# `license-files` keys used below.
+requires = ["setuptools>=77", "versioningit~=2.0", "numpy", ]
 build-backend = "setuptools.build_meta"
 
 
@@ -13,7 +15,8 @@ description = "Simulation analysis package for working with disordered proteins"
 authors = [
     {name = "Alex Holehouse", email = "alex.holehouse@wustl.edu"}
 ]
-license = {text = "LGPLv3"}
+license = "LGPL-3.0-only"
+license-files = ["LICENSE"]
 readme = "README.md"
 requires-python = ">=3.9"
 keywords = [
@@ -27,7 +30,6 @@ keywords = [
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: GNU Lesser General Public License v3 (LGPLv3)",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.9",
