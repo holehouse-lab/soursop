@@ -26,10 +26,75 @@ project = 'soursop'
 copyright = ("2015-2026, Alex Holehouse, Jared Lalmansingh [a MOLSSI sponsored project]")
 author = 'Alex Holehouse'
 
-# The short X.Y version
-version = ''
-# The full version, including alpha/beta/rc tags
-release = ''
+# The version is read automatically so the docs always build with the current
+# soursop version rather than a hardcoded string. The canonical source is the
+# versioningit-written soursop/_version.py in the source tree: reading it
+# directly avoids importing soursop (and its heavy runtime dependencies) and
+# avoids picking up a stale installed distribution. Falls back to the installed
+# package metadata, then to "unknown".
+import re
+
+
+def _get_soursop_version():
+    version_file = os.path.join(os.path.dirname(__file__), "..", "soursop", "_version.py")
+    try:
+        with open(version_file) as _fh:
+            _m = re.search(r"""__version__\s*=\s*['"]([^'"]+)['"]""", _fh.read())
+            if _m:
+                return _m.group(1)
+    except OSError:
+        pass
+    try:
+        from importlib.metadata import version as _v, PackageNotFoundError
+
+        try:
+            return _v("soursop")
+        except PackageNotFoundError:
+            pass
+    except Exception:
+        pass
+    return "unknown"
+
+
+def _get_release_date(rel):
+    """Month/Year the given version was released, from CHANGELOG.md.
+
+    The changelog headers carry the release month (e.g. ``## 2.0.3 (July
+    2026)``). We look up the entry matching ``rel`` and, failing that, fall
+    back to the most recent versioned entry. Returns "" if nothing is found.
+    """
+    if rel == "unknown":
+        return ""
+    changelog = os.path.join(os.path.dirname(__file__), "..", "CHANGELOG.md")
+    try:
+        with open(changelog) as _fh:
+            _text = _fh.read()
+    except OSError:
+        return ""
+    # exact match: "## <rel> (<Month Year>)"
+    _m = re.search(
+        r"^##\s+" + re.escape(rel) + r"\s+\(([^)]+)\)", _text, re.MULTILINE
+    )
+    if _m:
+        return _m.group(1).strip()
+    # fall back to the first "## X.Y.Z (<Month Year>)" header
+    _m = re.search(r"^##\s+\d[\w.]*\s+\(([^)]+)\)", _text, re.MULTILINE)
+    return _m.group(1).strip() if _m else ""
+
+
+# The full version, including alpha/beta/rc tags (PEP 440 local segment, e.g.
+# "+1.gabc123", is dropped for display); the short X.Y version is derived from it.
+release = _get_soursop_version().split("+")[0]
+version = ".".join(release.split(".")[:2]) if release != "unknown" else release
+
+# The release Month/Year (from CHANGELOG.md). Exposed to .rst as the
+# |version_info| substitution below (version, optionally with the date).
+release_date = _get_release_date(release)
+if release_date:
+    _version_info = f"{release} (released {release_date})"
+else:
+    _version_info = release
+rst_prolog = f".. |version_info| replace:: {_version_info}\n"
 
 
 # -- General configuration ---------------------------------------------------

@@ -6,7 +6,7 @@
 Welcome to the SOURSOP Documentation!
 =========================================================
 
-*Last updated: June 2026*
+*Version* |version_info|
 
 **SOURSOP** (**S**\imulation analysis **O**\f **U**\nfolded **R**\egion\ **S** **O**\f **P**\roteins) is a Python package for the analysis of all-atom and coarse-grained simulations of unfolded and disordered proteins. It provides a wide range of functionality that may not be relevant for folded proteins but is essential for extracting polymer-physics insight from simulations of intrinsically disordered proteins (IDPs) and intrinsically disordered regions (IDRs). **SOURSOP** was formerly *CAMPARITraj*, which was formerly *CTraj*, and includes all the original functionality therein.
 
@@ -108,47 +108,12 @@ Reporting bugs & requesting features
 Please report bugs, typos, or unexpected behaviour on the `GitHub issue tracker <https://github.com/holehouse-lab/soursop/issues>`_. Contributions are welcome - see :doc:`usage/development` for the plugin workflow and contribution guidelines.
 
 
-Changelog
-==========
-*Update: June 2026* (2.0.0)
-A major release. Highlights:
+Release notes
+=========================================================
 
-* **Bug fixes** across ``ssnmr`` (phospho-residue glycine corrections), ``ssprotein`` (native-contacts NaN/overflow, glycine sidechain contacts, cluster centroid), ``sstrajectory`` (interchain-map cap-residue handling), ``ssutils`` (thread count on Apple Accelerate) and ``ssmutualinformation`` (a latent ``calc_MI`` weighted-path bug).
-* **Polymer-scaling error propagation** - ``get_scaling_exponent`` (and the fit used by ``get_polymer_scaled_distance_map``) now reports a proper, dimensionally consistent reduced :math:`\chi^2` and frame-level bootstrap **confidence intervals** for :math:`\nu` / :math:`A_0` (replacing the earlier min/max range over disjoint data chunks). This also fixes a broken log-log :math:`\chi^2` residual and a latent ragged-array crash on short/few-frame trajectories. **API change:** ``subdivision_batch_size`` is replaced by ``n_bootstrap`` and ``confidence_interval``, and return slots 3–6 are now confidence-interval bounds (``nu_ci_low/high``, ``A0_ci_low/high``).
-* **Performance** - large behaviour-preserving (byte-identical) speed-ups: the inter-chain distance/contact maps in ``sstrajectory`` and the O(n\ :sup:`2`) CA-mode polymer-scaling loops in ``ssprotein`` (``get_internal_scaling``, ``get_scaling_exponent``, ``get_local_to_global_correlation``); a new ``stride`` parameter on ``get_interchain_contact_map`` / ``get_interchain_distance``.
-* **Consistent ensemble reweighting** - every function returning an ensemble-average value now accepts an optional per-frame ``weights`` vector, applied deterministically (no stochastic resampling) and validated by a single shared ``ssutils.validate_weights``; ``stride`` + ``weights`` now work together correctly. See :doc:`usage/weights`.
-* **Reweighting against experimental data** - two new modules derive frame ``weights`` from experimental observables: ``ssbme`` (Bayesian/MaxEnt ``BME``, the iterative scale/offset ``iBME``, and a vector/matrix variant ``BMECustom`` that accepts an arbitrary user goodness-of-fit function; see :doc:`modules/bme`) and ``sscoper`` (Convex Optimization for Ensemble Reweighting ``COPER`` and ``iCOPER``, a hard-χ²-constraint alternative that also reports infeasibility; see :doc:`modules/coper`). The two share an identical ``ExperimentalObservable`` interface via ``ssutils``.
-* **Scalar (J) couplings in ssnmr** - new ``compute_J3_HN_HA`` computes the backbone ³J(HN, Hα) scalar coupling per frame per residue from the φ dihedral via the Karplus relation (six literature parameterisations: Bax2007/Bax1997/Ruterjans1999/Habeck/Vuister/Pardi, ported from biceps). A generic ``karplus(...)`` evaluator is also exposed for arbitrary Karplus-form coefficients. Output shape ``(n_frames, n_phi)`` is the natural input for the BME / COPER reweighters; see :doc:`modules/ssnmr`.
-* **NOE distances in ssnmr** - new ``compute_NOE_distances`` returns per-frame inter-atom distances (Å) for arbitrary atom pairs, and ``noe_ensemble_average`` collapses them via the NOE :math:`\langle r^{-p}\rangle^{-1/p}` convention (default :math:`p = 6`). The per-frame matrix is BME/COPER-ready against experimental NOE intensities; see :doc:`modules/ssnmr`.
-* **HDX protection factors (new ``sshdx`` module)** - per-residue ln(P) via the Best-Vendruscolo formula :math:`\ln P_i = \beta_c N_c(i) + \beta_h N_h(i) + \beta_0` from per-residue heavy-atom contacts (:func:`~soursop.sshdx.compute_Nc`) and backbone H-bond counts (:func:`~soursop.sshdx.compute_Nh`, via :func:`mdtraj.wernet_nilsson`). Drop-in input for reweighting against experimental HDX protection factors; see :doc:`modules/hdx`.
-* **Testing** - new ``test_weights.py`` (~68 parametrized tests), ``test_ssbme.py`` and ``test_sscoper.py`` (BME/iBME and COPER/iCOPER), plus the pickle-based regression suite (~600+ observable tests) and extended ``sstrajectory`` coverage.
-* **Documentation** - full numpy-style docstring rewrite across all major modules, narrative overviews on every page, rewritten worked examples (including BME and COPER reweighting), new ``bme`` and ``coper`` API pages, a new ensemble-reweighting page, an expanded front page, and a worked SAXS-reweighting demo (four notebooks under ``demo_examples/``).
-* **Packaging** - reconciled dependency manifests, refreshed CI (Python 3.9-3.14), removed dead config.
-
-*Update: November. 2024* (0.2.6)
-Transition to pyproject.toml for packaging and versioning. Dramatically improved performance of loading coarse-grained ensembles.
-
-
-*Update: July. 2024*
-Official inclusion of the PENGUIN code into sssampling is now complete ahead of preprint!
-
-*Update: July. 2023*
-Added ``explicit_residue_checking`` option to SSTrajectory constructor to make parsing solvated .gro files or files where non-protein molecules are included in the same chain possible and easy.
-
-*Update: Jan. 2023*
-Finalization of code and documentation ahead of preprint deposition.
-
-*Update: Sept. 2022*
-Additional tests and docs updates ahead of preprint.
-
-*Update: April 2022*
-Moved SOURSOP onto PyPI in anticipation of the final release. Additional tests, code clean up etc.
-
-*Update: March 2022*
-Numerous updates to internal code documentation, removal of `soursop_cli`, update to pip install over git to use https.
-
-*Update: July 2021*
-The anticipated release of `soursop` is August 2021! We have nearly finished all testing and are finalizing the associated manuscript.
+Release notes and the full, versioned changelog are maintained in
+`CHANGELOG.md <https://github.com/holehouse-lab/soursop/blob/master/CHANGELOG.md>`_
+on GitHub.
 
 
 About
