@@ -27,32 +27,53 @@ copyright = ("2015-2026, Alex Holehouse, Jared Lalmansingh [a MOLSSI sponsored p
 author = 'Alex Holehouse'
 
 # The version is read automatically so the docs always build with the current
-# soursop version rather than a hardcoded string. The canonical source is the
-# versioningit-written soursop/_version.py in the source tree: reading it
-# directly avoids importing soursop (and its heavy runtime dependencies) and
-# avoids picking up a stale installed distribution. Falls back to the installed
-# package metadata, then to "unknown".
+# soursop version rather than a hardcoded string. We try, in order:
+#   1. versioningit computed straight from the git tags. This works on Read the
+#      Docs (versioningit is a docs dependency) even though RTD never installs
+#      the soursop package, and it ignores any stale installed distribution.
+#   2. the versioningit-written soursop/_version.py, for built/installed trees
+#      (e.g. an sdist) that have no .git directory. NOTE this file is gitignored,
+#      so it is absent on a fresh clone - hence versioningit is tried first.
+#   3. the installed package metadata.
+#   4. "unknown".
 import re
+
+_REPO_ROOT = os.path.join(os.path.dirname(__file__), "..")
 
 
 def _get_soursop_version():
-    version_file = os.path.join(os.path.dirname(__file__), "..", "soursop", "_version.py")
+    # 1. versioningit from git
     try:
-        with open(version_file) as _fh:
+        import versioningit
+
+        _v = versioningit.get_version(project_dir=_REPO_ROOT)
+        # reject the pyproject default-version ("1+unknown") used when git/tags
+        # cannot be resolved (e.g. a too-shallow clone with no reachable tag).
+        if _v and "unknown" not in _v:
+            return _v
+    except Exception:
+        pass
+
+    # 2. versioningit-written _version.py
+    try:
+        with open(os.path.join(_REPO_ROOT, "soursop", "_version.py")) as _fh:
             _m = re.search(r"""__version__\s*=\s*['"]([^'"]+)['"]""", _fh.read())
             if _m:
                 return _m.group(1)
     except OSError:
         pass
+
+    # 3. installed package metadata
     try:
-        from importlib.metadata import version as _v, PackageNotFoundError
+        from importlib.metadata import version as _dist_version, PackageNotFoundError
 
         try:
-            return _v("soursop")
+            return _dist_version("soursop")
         except PackageNotFoundError:
             pass
     except Exception:
         pass
+
     return "unknown"
 
 
@@ -65,7 +86,7 @@ def _get_release_date(rel):
     """
     if rel == "unknown":
         return ""
-    changelog = os.path.join(os.path.dirname(__file__), "..", "CHANGELOG.md")
+    changelog = os.path.join(_REPO_ROOT, "CHANGELOG.md")
     try:
         with open(changelog) as _fh:
             _text = _fh.read()
