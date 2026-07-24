@@ -21,6 +21,8 @@ from .ssdata import (
     THREE_TO_ONE,
     DEFAULT_SIDECHAIN_VECTOR_ATOMS,
     ALL_VALID_RESIDUE_NAMES,
+    CG_FORCEFIELDS,
+    get_cg_bead_sigmas,
 )
 from .ssexceptions import SSException
 from . import ssmutualinformation, ssio, sstools, sspolymer, ssutils
@@ -29,6 +31,28 @@ from . import ssmutualinformation, ssio, sstools, sspolymer, ssutils
 from ._internal_data import BBSEG2
 
 import scipy.cluster.hierarchy
+
+
+# Placeholder element symbols used to give each residue type its own bead radius
+# in the coarse-grained SASA calculation.
+#
+# mdtraj's shrake_rupley() looks its per-atom radii up by atom.element.symbol -
+# NOT by atom name - so the only way to hand it a per-residue-type radius is to
+# give each residue type a distinct element in a throwaway copy of the topology
+# and then override that element's radius via change_radii. Note that a
+# name-keyed change_radii dict is silently ignored by mdtraj rather than
+# raising, so this indirection is load-bearing.
+#
+# These are all real elements already present in mdtraj's radius table (so
+# change_radii just overrides a known key) and none of them can occur in a
+# coarse-grained biomolecular trajectory. Every bead in the throwaway topology
+# is reassigned, so no original element survives to collide with them.
+_CG_SASA_PLACEHOLDER_ELEMENTS = (
+    "La", "Ce", "Pr", "Nd", "Pm", "Sm", "Eu", "Gd", "Tb", "Dy",
+    "Ho", "Er", "Tm", "Yb", "Lu", "Hf", "Ta", "Re", "Os", "Ir",
+    "Pt", "Au", "Hg", "Tl", "Ac", "Th", "Pa", "Np", "Pu", "Am",
+    "Cm", "Bk", "Cf", "Es", "Fm", "Md", "No", "Lr", "Rf", "Db",
+)  # fmt: skip
 
 
 ## Order of standard args:
@@ -154,6 +178,12 @@ class SSProtein:
         # sidechain-vector and secondary-structure analyses.
         self.__swan = bool(swan)
 
+        # default coarse-grained force field used by the SASA calculation on
+        # one-bead-per-residue chains. Set here (and NOT in
+        # __initialize_memoization_and_topology) so reset_cache() discards the
+        # cached SASA values but keeps the user's choice of model.
+        self.__cg_forcefield = None
+
         ## DEVELOPMENT NOTES
         # Everything set up by __initialize_memoization_and_topology() is the
         # state that reset_cache() discards and rebuilds.
@@ -212,6 +242,7 @@ class SSProtein:
         self.__residue_COM = {}
         self.__residue_atom_COM = {}
         self.__SASA_saved = {}
+        self.__cg_sasa_topology = {}  # per-forcefield SASA topologies (CG chains)
         self.__all_angles = {}  # different dihedral (backbone and sidechain) angles
 
         # determine whether __cg_onechain can be set True. This ONLY serves to
@@ -310,6 +341,68 @@ class SSProtein:
         True
         """
         return self.__swan
+
+    @property
+    def is_coarse_grained(self):
+        """True if this protein is a one-bead-per-residue coarse-grained chain.
+
+        These are the single-site models (Mpipi, HPS, KH and friends) where
+        every residue is represented by exactly one bead, written out as a
+        ``CA`` atom. Detected on construction by comparing the atom count with
+        the residue count.
+
+        Note this is *not* the same as :attr:`is_swan`, which flags the
+        two-bead (CA/CB) representation - those chains carry a CB for every
+        non-glycine residue and so take the all-atom code paths.
+
+        Returns
+        -------
+        bool
+
+        Example
+        -------
+        >>> protein.is_coarse_grained
+        True
+        """
+        return self.__cg_onechain
+
+    @property
+    def cg_forcefield(self):
+        """Default coarse-grained force field used for SASA on CG chains.
+
+        One-bead-per-residue models write every bead as a carbon ``CA`` atom,
+        so mdtraj would otherwise give a glycine and a tryptophan bead the same
+        1.7 Angstrom radius. Setting this property tells the SASA routines
+        which model's bead sizes to use; it can be overridden on any individual
+        call with the ``forcefield`` keyword.
+
+        Must be one of ``ssdata.CG_FORCEFIELDS``, or ``None`` to clear it.
+        Setting it does not affect all-atom chains (passing a force field to
+        an all-atom SASA call raises).
+
+        Returns
+        -------
+        str or None
+
+        Raises
+        ------
+        SSException
+            If set to something other than ``None`` or a valid force-field slug.
+
+        Example
+        -------
+        >>> protein.cg_forcefield = 'mpipi-gg'
+        >>> protein.get_all_SASA(stride=1)     # now uses Mpipi-GG bead sizes
+        """
+        return self.__cg_forcefield
+
+    @cg_forcefield.setter
+    def cg_forcefield(self, forcefield):
+        if forcefield is None:
+            self.__cg_forcefield = None
+            return
+
+        self.__cg_forcefield = self.__validate_cg_forcefield(forcefield)
 
     @property
     def n_frames(self):
@@ -611,6 +704,137 @@ class SSProtein:
         # one-letter sequence: the latter raises KeyError on non-standard
         # residue names and would crash construction of CG/non-standard chains.
         return self.traj.n_atoms == self.__num_residues
+
+    # ........................................................................
+    #
+    @staticmethod
+    def __validate_cg_forcefield(forcefield):
+        """Internal function that validates a coarse-grained force-field slug.
+
+        Parameters
+        ----------
+        forcefield : str
+            The slug to validate.
+
+        Returns
+        -------
+        str
+            The validated slug (returned unchanged).
+
+        Raises
+        ------
+        SSException
+            If the slug is not one of ``ssdata.CG_FORCEFIELDS``.
+        """
+
+        if forcefield not in CG_FORCEFIELDS:
+            raise SSException(
+                f"Unknown coarse-grained force field '{forcefield}'. Valid options are: "
+                f"{', '.join(CG_FORCEFIELDS)}"
+            )
+
+        return forcefield
+
+    # ........................................................................
+    #
+    def __build_cg_sasa_trajectory(self, target, forcefield):
+        """Internal function that builds a SASA-ready view of a CG trajectory.
+
+        One-bead-per-residue models write every bead as a carbon ``CA`` atom, so
+        mdtraj's Shrake-Rupley would give every residue the same 1.7 Angstrom
+        van der Waals radius. mdtraj lets you override radii via ``change_radii``,
+        but that dictionary is keyed on ``atom.element.symbol`` - **not** on the
+        atom name - and a name-keyed dictionary is silently ignored rather than
+        rejected.
+
+        This function therefore returns a throwaway trajectory in which every
+        residue type carries its own (placeholder) element, together with the
+        matching ``change_radii`` dictionary mapping those placeholder elements
+        onto the force field's bead radii. Bead radius is ``sigma/2``, because
+        the tabulated sigma is the diagonal pair sigma - i.e. the bead diameter.
+
+        The caller's topology is never touched (``topology.copy()`` produces
+        fresh ``Atom`` objects) and the coordinate array is shared rather than
+        copied, so this is cheap. The built topology is memoised per force field.
+
+        Parameters
+        ----------
+        target : mdtraj.Trajectory
+            The (possibly strided) trajectory SASA is to be computed on.
+
+        forcefield : str
+            A validated coarse-grained force-field slug.
+
+        Returns
+        -------
+        tuple
+            ``(trajectory, change_radii)`` where ``trajectory`` is an
+            ``mdtraj.Trajectory`` sharing ``target``'s coordinates and
+            ``change_radii`` maps placeholder element symbols to bead radii in
+            nanometers (mdtraj's units).
+
+        Raises
+        ------
+        SSException
+            If a residue in the chain has no bead size in the force field's
+            table, or if the chain has more residue types than there are
+            placeholder elements available.
+        """
+
+        sigmas = get_cg_bead_sigmas(forcefield)
+
+        # distinct residue names, in the order they first appear (deterministic)
+        residue_names = list(dict.fromkeys(r.name for r in self.topology.residues))
+
+        missing = [r for r in residue_names if r not in sigmas]
+        if len(missing) > 0:
+            raise SSException(
+                f"Cannot compute coarse-grained SASA with force field '{forcefield}': "
+                f"no bead size is defined for residue type(s) {', '.join(sorted(missing))}. "
+                f"The force field defines bead sizes for: {', '.join(sorted(sigmas))}"
+            )
+
+        if len(residue_names) > len(_CG_SASA_PLACEHOLDER_ELEMENTS):
+            raise SSException(
+                f"Cannot compute coarse-grained SASA: this chain contains "
+                f"{len(residue_names)} distinct residue types but only "
+                f"{len(_CG_SASA_PLACEHOLDER_ELEMENTS)} placeholder elements are available"
+            )
+
+        # map each residue type onto its own placeholder element
+        element_for_residue = dict(
+            zip(residue_names, _CG_SASA_PLACEHOLDER_ELEMENTS[: len(residue_names)])
+        )
+
+        # 0.5 * 0.1 = sigma (a diameter, in Angstroms) -> radius in nanometers
+        change_radii = {element_for_residue[r]: 0.05 * sigmas[r] for r in residue_names}
+
+        # building the topology is O(n_atoms) and independent of the stride, so
+        # memoise it per force field
+        if forcefield not in self.__cg_sasa_topology:
+            topology = self.topology.copy()
+
+            for atom in topology.atoms:
+                resname = atom.residue.name
+                atom.element = md.core.element.Element.getBySymbol(
+                    element_for_residue[resname]
+                )
+
+                # purely cosmetic, but makes the throwaway topology
+                # self-describing if it is ever inspected while debugging
+                atom.name = f"CA-{resname}"
+
+            self.__cg_sasa_topology[forcefield] = topology
+
+        cg_traj = md.Trajectory(
+            target.xyz,
+            self.__cg_sasa_topology[forcefield],
+            time=target.time,
+            unitcell_lengths=target.unitcell_lengths,
+            unitcell_angles=target.unitcell_angles,
+        )
+
+        return (cg_traj, change_radii)
 
     # ........................................................................
     #
@@ -4461,16 +4685,33 @@ class SSProtein:
     #
     #
     def get_all_SASA(
-        self, probe_radius=1.4, mode="residue", stride=20, weights=False, etol=0.0000001
+        self,
+        probe_radius=1.4,
+        mode="residue",
+        stride=20,
+        weights=False,
+        etol=0.0000001,
+        forcefield=None,
     ):
         """Solvent-accessible surface area (SASA) per residue or per atom.
 
         Internally uses mdtraj's Shrake-Rupley implementation (Golden-Spiral
-        algorithm). Results are memoised per ``(stride, mode, probe_radius)``
-        triple so repeated calls with the same parameters are free.
+        algorithm). Results are memoised per ``(stride, mode, probe_radius,
+        forcefield)`` combination so repeated calls with the same parameters
+        are free.
 
         SASA is returned in Angstroms^2; ``probe_radius`` is in Angstroms.
         Because the calculation is expensive the default ``stride`` is 20.
+
+        **Coarse-grained chains.** On a one-bead-per-residue chain every bead
+        is written as a carbon ``CA`` atom, so mdtraj would give a glycine and a
+        tryptophan bead the same 1.7 Angstrom radius - which is not a useful
+        approximation when the models' actual bead diameters span 4.5 to 8.5
+        Angstroms. SOURSOP therefore requires the ``forcefield`` keyword (or the
+        :attr:`cg_forcefield` property) on these chains, and computes SASA with
+        that model's own per-residue bead sizes. Bead radius is taken as
+        ``sigma/2``, where sigma is the model's diagonal pair sigma (i.e. the
+        bead diameter). See ``ssdata.CG_FORCEFIELDS`` for the supported models.
 
         Parameters
         ----------
@@ -4489,6 +4730,10 @@ class SSProtein:
               selector erroneously excludes).
             * ``'all'`` - returns a 3-tuple of (residue, sidechain, backbone)
               arrays.
+
+            On one-bead-per-residue coarse-grained chains only ``'residue'``
+            and ``'atom'`` are meaningful (and are equivalent); the
+            sidechain/backbone modes raise.
         stride : int, optional
             Use every ``stride``-th frame. Default is 20.
         weights : array_like or False, optional
@@ -4499,6 +4744,12 @@ class SSProtein:
             returned (not cached).
         etol : float, optional
             Tolerance on ``|sum(weights) - 1|``. Default ``1e-7``.
+        forcefield : str or None, optional
+            Coarse-grained force field whose bead sizes should be used, e.g.
+            ``'mpipi-gg'`` (see ``ssdata.CG_FORCEFIELDS``). Required on
+            one-bead-per-residue chains unless :attr:`cg_forcefield` has been
+            set, and must be ``None`` on all-atom chains. Default is ``None``,
+            which falls back to :attr:`cg_forcefield`.
 
         Returns
         -------
@@ -4508,10 +4759,21 @@ class SSProtein:
             ``(n_residues,)`` for ``mode='residue'``; a 3-tuple of such
             arrays for ``mode='all'``).
 
+        Raises
+        ------
+        SSException
+            If this is a one-bead-per-residue chain and no force field was
+            supplied; if a force field is supplied for a chain that is not
+            one-bead-per-residue; or if a sidechain/backbone mode is requested
+            for a one-bead-per-residue chain.
+
         Example
         -------
         >>> sasa = protein.get_all_SASA(mode='residue', stride=10)
         >>> sasa.mean(axis=0)   # mean per-residue SASA across frames
+
+        >>> # one-bead-per-residue coarse-grained ensemble
+        >>> sasa = protein.get_all_SASA(mode='residue', forcefield='mpipi-gg')
         """
 
         ## >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
@@ -4565,14 +4827,57 @@ class SSProtein:
             mode, ["residue", "atom", "backbone", "sidechain", "all"], "mode"
         )
 
+        # resolve which coarse-grained force field (if any) applies, falling
+        # back to the object-level default
+        if forcefield is None:
+            forcefield = self.cg_forcefield
+
+        if forcefield is not None:
+            forcefield = self.__validate_cg_forcefield(forcefield)
+
+        if self.__cg_onechain:
+            # a CG bead is not a carbon atom, and silently pretending it is
+            # gives every residue the same 1.7 A radius - so insist the model
+            # is named rather than quietly returning meaningless numbers
+            if forcefield is None:
+                raise SSException(
+                    "This is a one-bead-per-residue coarse-grained chain, so SASA cannot be "
+                    "computed without knowing the bead sizes: every bead is written as a "
+                    "carbon 'CA' atom and would otherwise be given the same 1.7 Angstrom "
+                    "van der Waals radius. Pass the model whose bead sizes should be used, "
+                    "e.g. get_all_SASA(forcefield='mpipi-gg'), or set it once for this "
+                    "protein with `protein.cg_forcefield = 'mpipi-gg'`. Bead radii are taken "
+                    f"as sigma/2. Valid options are: {', '.join(CG_FORCEFIELDS)}"
+                )
+
+            if mode in ["sidechain", "backbone", "all"]:
+                raise SSException(
+                    f"get_all_SASA(mode='{mode}') is not defined for one-bead-per-residue "
+                    "coarse-grained chains: a single bead represents the whole residue, so "
+                    "there is no backbone/sidechain decomposition to make. Use "
+                    "mode='residue' (or the equivalent mode='atom')."
+                )
+
+        elif forcefield is not None:
+            raise SSException(
+                f"A coarse-grained force field ('{forcefield}') was supplied, but this chain "
+                "is not a one-bead-per-residue coarse-grained chain, so per-residue bead "
+                "sizes do not apply and the force field would be silently ignored. Remove "
+                "the `forcefield` argument (and clear `cg_forcefield` if it is set) to use "
+                "mdtraj's atomic van der Waals radii. Note that two-bead (CA/CB) models are "
+                "not covered by the coarse-grained bead-size tables either."
+            )
+
         # optional deterministic frame re-weighting. The weights are
         # validated against the STRIDED frame axis (the validator applies
         # the stride + renormalises). The memoisation cache is only used
         # for the unweighted path so cached results stay byte-identical.
         wv = self.__check_weights(weights, stride, etol)
 
-        # build a specific memoized name for this request
-        memoized_name = f"SASA_{stride}_{mode}_{probe_radius}"
+        # build a specific memoized name for this request. The force field is
+        # part of the key so results computed with different bead sizes cannot
+        # collide.
+        memoized_name = f"SASA_{stride}_{mode}_{probe_radius}_{forcefield}"
 
         # return already computed SASA is available...
         if wv is False and memoized_name in self.__SASA_saved:
@@ -4581,15 +4886,28 @@ class SSProtein:
         # downsample based on the stride
         target = self.__get_subtrajectory(self.traj, stride)
 
+        # on a coarse-grained chain we hand mdtraj a throwaway view of the
+        # trajectory in which each residue type carries its own element, plus
+        # the matching per-element bead radii (see __build_cg_sasa_trajectory)
+        cg_radii = None
+        if self.__cg_onechain:
+            target, cg_radii = self.__build_cg_sasa_trajectory(target, forcefield)
+
         # 100* to convert from nm^2 to A^2, and *0.1 for probe radius to convert from A to nm
         if mode == "residue":
             return_data = 100 * md.shrake_rupley(
-                target, mode="residue", probe_radius=probe_radius * 0.1
+                target,
+                mode="residue",
+                probe_radius=probe_radius * 0.1,
+                change_radii=cg_radii,
             )
 
         if mode == "atom":
             return_data = 100 * md.shrake_rupley(
-                target, mode="atom", probe_radius=probe_radius * 0.1
+                target,
+                mode="atom",
+                probe_radius=probe_radius * 0.1,
+                change_radii=cg_radii,
             )
 
         if mode == "sidechain" or mode == "backbone" or mode == "all":
@@ -4641,6 +4959,7 @@ class SSProtein:
         stride=20,
         weights=False,
         etol=0.0000001,
+        forcefield=None,
     ):
         """Mean & std SASA for selected residue types or specific residue indices.
 
@@ -4674,6 +4993,10 @@ class SSProtein:
             (population) std.
         etol : float, optional
             Tolerance on ``|sum(weights) - 1|``. Default ``1e-7``.
+        forcefield : str or None, optional
+            Coarse-grained force field whose bead sizes should be used; see
+            :meth:`get_all_SASA`. Required on one-bead-per-residue chains
+            unless :attr:`cg_forcefield` has been set. Default ``None``.
 
         Returns
         -------
@@ -4685,7 +5008,9 @@ class SSProtein:
         ------
         SSException
             If ``input_list`` contains a residue name not in the canonical
-            20 + caps set when ``mode='residue_type'``.
+            20 + caps set when ``mode='residue_type'``, or if the force field
+            is inconsistent with the resolution of the chain (see
+            :meth:`get_all_SASA`).
 
         Example
         -------
@@ -4729,7 +5054,9 @@ class SSProtein:
 
         # next compute ALL SASA for all residues (need the full protein based SASA
         ALL_SASA = np.transpose(
-            self.get_all_SASA(stride=stride, probe_radius=probe_radius)
+            self.get_all_SASA(
+                stride=stride, probe_radius=probe_radius, forcefield=forcefield
+            )
         )
 
         lookup = self.get_amino_acid_sequence()
@@ -4754,7 +5081,14 @@ class SSProtein:
     #
     #
     def get_regional_SASA(
-        self, R1, R2, probe_radius=1.4, stride=20, weights=False, etol=0.0000001
+        self,
+        R1,
+        R2,
+        probe_radius=1.4,
+        stride=20,
+        weights=False,
+        etol=0.0000001,
+        forcefield=None,
     ):
         """Mean total SASA summed over a contiguous residue range.
 
@@ -4782,12 +5116,22 @@ class SSProtein:
             weighted mean before summing.
         etol : float, optional
             Tolerance on ``|sum(weights) - 1|``. Default ``1e-7``.
+        forcefield : str or None, optional
+            Coarse-grained force field whose bead sizes should be used; see
+            :meth:`get_all_SASA`. Required on one-bead-per-residue chains
+            unless :attr:`cg_forcefield` has been set. Default ``None``.
 
         Returns
         -------
         float
             Sum over residues ``[R1, R2)`` of the time-averaged per-residue
             SASA in Angstroms^2.
+
+        Raises
+        ------
+        SSException
+            If the force field is inconsistent with the resolution of the
+            chain (see :meth:`get_all_SASA`).
 
         Example
         -------
@@ -4797,7 +5141,9 @@ class SSProtein:
 
         # NOTE - we HAVE to compute SASA over the full ensemble to take into acount
         # atoms OUTSIDE the region getting in the way of the regional SASA
-        total = self.get_all_SASA(stride=stride, probe_radius=probe_radius)
+        total = self.get_all_SASA(
+            stride=stride, probe_radius=probe_radius, forcefield=forcefield
+        )
 
         total = np.transpose(total)
 

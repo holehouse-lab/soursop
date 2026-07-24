@@ -221,6 +221,19 @@ deviation, e.g. heteropolymeric structure).
 
     accessibility = protein.get_site_accessibility()
 
+**Coarse-grained ensembles.** One-bead-per-residue models represent every residue as a single ``CA`` bead, so mdtraj's atomic van der Waals radii would give a glycine and a tryptophan the same 1.7 Å radius. For these chains you must name the force field, and SOURSOP uses that model's own per-residue bead sizes (radius = :math:`\sigma/2`) instead::
+
+    protein.is_coarse_grained        # True for a one-bead-per-residue chain
+
+    # pass the model per call ...
+    mean_sasa = protein.get_all_SASA(mode='residue', forcefield='mpipi-gg')
+
+    # ... or set it once
+    protein.cg_forcefield = 'mpipi-gg'
+    mean_sasa = protein.get_all_SASA(mode='residue')
+
+Calling SASA on a coarse-grained chain without a force field raises an ``SSException`` rather than silently returning atomic-radius numbers. See :ref:`cg-sasa` for the list of supported models and the details.
+
 
 7. Multi-chain systems
 ---------------------------------------------------------

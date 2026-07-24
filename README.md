@@ -37,7 +37,10 @@ SOURSOP was originally developed by Jared Lalmansingh in the [Pappu lab](https:/
   (*Q*).
 - **Secondary structure** — per-frame DSSP assignments and BBSEG
   backbone-torsion classification.
-- **Solvent accessibility** — per-residue, regional, and site-level SASA.
+- **Solvent accessibility** — per-residue, regional, and site-level SASA, with
+  a dedicated path for one-bead-per-residue coarse-grained ensembles that uses
+  the force field's own per-residue bead sizes (Mpipi, HPS, KH and friends)
+  rather than atomic van der Waals radii.
 - **NMR observables** — random-coil chemical shifts, ³J(HN, Hα) scalar
   couplings, NOE distances (`ssnmr`), and paramagnetic relaxation enhancement
   (`sspre`), computed by default with a coarse-grained spin-label cloud model
@@ -126,8 +129,12 @@ the default — a breaking change relative to the point-at-CB model of `2.0.1`
 multi-model PDB files load ~2x faster and fixes a batch of correctness bugs from
 a package-wide review (a few of which change numerical output — notably
 `get_local_to_global_correlation`, coarse-grained/`COM`-mode strided distance
-maps, `get_clusters`, and DSSP fractions at termini). See the
-[changelog](CHANGELOG.md) for details.
+maps, `get_clusters`, and DSSP fractions at termini). The latest **2.0.4** adds
+first-class SASA support for one-bead-per-residue coarse-grained models,
+computed against each model's own bead sizes — a breaking change, in that SASA
+on a coarse-grained chain now requires the force field to be named (e.g.
+`forcefield='mpipi-gg'`) rather than silently treating every bead as a carbon
+atom. See the [changelog](CHANGELOG.md) for details.
 
 The full, versioned changelog is in [CHANGELOG.md](CHANGELOG.md).
 

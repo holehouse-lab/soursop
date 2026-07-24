@@ -1,0 +1,2 @@
+mol_type,chain_idx,chain_name,dom_type,dom_idx,dom_name,start_pos,end_pos,rigid,complex
+protein,0,GCG,IDR,0,GCG_IDR_1,1,3,False,None

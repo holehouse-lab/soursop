@@ -24,7 +24,7 @@ Most molecular-simulation analysis tools are oriented towards folded proteins (R
 * **Polymer scaling** - internal-scaling profiles, apparent scaling exponents (with frame-level bootstrap confidence intervals and a reduced-:math:`\chi^2` fit-quality estimate), and homopolymer-deviation maps.
 * **Distance & contact maps** - mean / RMS inter-residue distance maps and fractional contact maps, including fast inter-chain maps for multi-chain systems.
 * **Local structure** - DSSP and BBSEG2 secondary structure, dihedral angles and dihedral mutual information, sliding-window local heterogeneity and local collapse.
-* **Solvent exposure** - per-residue / per-atom / sidechain / backbone SASA and regional accessibility.
+* **Solvent exposure** - per-residue / per-atom / sidechain / backbone SASA and regional accessibility, including a coarse-grained path that computes SASA from a one-bead-per-residue force field's own bead sizes (Mpipi, HPS, KH and friends) instead of atomic van der Waals radii.
 * **NMR & PRE observables** - sequence-corrected random-coil chemical shifts, backbone ³J(HN, Hα) scalar couplings, and per-frame NOE distances (``ssnmr``), plus synthetic paramagnetic relaxation enhancement profiles (``sspre``) — computed by default with a coarse-grained spin-label cloud model calibrated against DEER-PREdict — for direct comparison with experiment.
 * **HDX protection factors** - per-residue Best-Vendruscolo ln(P) from heavy-atom contacts and backbone H-bonds (``sshdx``), ready for reweighting against experimental HDX data.
 * **Sampling quality** - assessment of ensemble convergence via the PENGUIN tools in ``sssampling``.
