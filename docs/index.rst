@@ -72,7 +72,7 @@ Documentation map
 * :doc:`usage/examples` - worked, copy-pasteable IDP analysis recipes.
 * :doc:`usage/weights` - the consistent ensemble-reweighting (frame ``weights``) system and the shared validation helpers.
 * :doc:`usage/development` - extending SOURSOP, the plugin system, and contributing.
-* **Module API references** - :doc:`modules/sstrajectory`, :doc:`modules/ssprotein`, :doc:`modules/ssnmr`, :doc:`modules/sspre`, :doc:`modules/sssampling`, :doc:`modules/bme`, :doc:`modules/coper`, :doc:`modules/hdx`.
+* **Module API references** - :doc:`modules/sstrajectory`, :doc:`modules/ssprotein`, :doc:`modules/ssnmr`, :doc:`modules/sspre`, :doc:`modules/sssampling`, :doc:`modules/bme`, :doc:`modules/coper`, :doc:`modules/hdx`, :doc:`modules/utilities`.
 
 
 .. toctree::
@@ -91,6 +91,7 @@ Documentation map
    modules/bme
    modules/coper
    modules/hdx
+   modules/utilities
    usage/development
 
 

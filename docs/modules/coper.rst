@@ -275,12 +275,23 @@ Foundational and closely related work:
 The ``ExperimentalObservable`` container is documented under
 :doc:`../usage/weights` (it is shared with BME).
 
+.. autoclass:: soursop.ssutils.ExperimentalObservable
+        :no-index:
+
+        .. automethod:: __init__
+                :no-index:
+        .. automethod:: get_bounds
+                :no-index:
+
 .. autoclass:: soursop.sscoper.COPER
 
         .. automethod:: __init__
         .. automethod:: fit
         .. automethod:: scan_chi2_limit
         .. automethod:: predict
+        .. autoattribute:: result
+        .. autoattribute:: chi2_limit
+        .. autoattribute:: scan_result
 
 .. autoclass:: soursop.sscoper.iCOPER
 
@@ -290,12 +301,17 @@ The ``ExperimentalObservable`` container is documented under
         .. automethod:: predict
         .. automethod:: get_icoper_weights
         .. automethod:: get_icoper_stats
+        .. autoattribute:: result
+        .. autoattribute:: chi2_limit
+        .. autoattribute:: scan_result
 
 .. autoclass:: soursop.sscoper.COPERResult
 
         .. automethod:: predict
         .. automethod:: diagnostics
         .. automethod:: print_diagnostics
+        .. autoattribute:: kl_divergence
+        .. autoattribute:: reweighting_factors
 
 .. autoclass:: soursop.sscoper.COPERScanResult
 

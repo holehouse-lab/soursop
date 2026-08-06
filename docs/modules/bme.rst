@@ -206,12 +206,23 @@ Foundational and closely related methodology:
 The ``ExperimentalObservable`` container is documented under
 :doc:`../usage/weights` (it is shared with COPER).
 
+.. autoclass:: soursop.ssutils.ExperimentalObservable
+        :no-index:
+
+        .. automethod:: __init__
+                :no-index:
+        .. automethod:: get_bounds
+                :no-index:
+
 .. autoclass:: soursop.ssbme.BME
 
         .. automethod:: __init__
         .. automethod:: fit
         .. automethod:: scan_theta
         .. automethod:: predict
+        .. autoattribute:: result
+        .. autoattribute:: theta
+        .. autoattribute:: theta_scan_result
 
 .. autoclass:: soursop.ssbme.iBME
 
@@ -221,6 +232,9 @@ The ``ExperimentalObservable`` container is documented under
         .. automethod:: predict
         .. automethod:: get_ibme_weights
         .. automethod:: get_ibme_stats
+        .. autoattribute:: result
+        .. autoattribute:: theta
+        .. autoattribute:: theta_scan_result
 
 .. autoclass:: soursop.ssbme.BMECustom
 
@@ -228,18 +242,23 @@ The ``ExperimentalObservable`` container is documented under
         .. automethod:: fit
         .. automethod:: scan_theta
         .. automethod:: predict
+        .. autoattribute:: result
+        .. autoattribute:: theta
+        .. autoattribute:: theta_scan_result
 
 .. autoclass:: soursop.ssbme.BMEResult
 
         .. automethod:: predict
         .. automethod:: diagnostics
         .. automethod:: print_diagnostics
+        .. autoattribute:: kl_divergence
 
 .. autoclass:: soursop.ssbme.BMECustomResult
 
         .. automethod:: predict
         .. automethod:: diagnostics
         .. automethod:: print_diagnostics
+        .. autoattribute:: kl_divergence
 
 .. autoclass:: soursop.ssbme.ThetaScanResult
 

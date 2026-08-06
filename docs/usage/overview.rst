@@ -112,8 +112,8 @@ SOURSOP is organised into a small number of focused modules:
   paramagnetic relaxation enhancement (PRE) intensity ratios and gamma
   profiles for a spin label placed at an arbitrary sequence position.
 
-* ``sssampling`` - the ``SSSampling`` class and PENGUIN support, for
-  assessing the sampling quality / convergence of disordered-protein
+* ``sssampling`` - the ``SamplingQuality`` class and PENGUIN support,
+  for assessing the sampling quality / convergence of disordered-protein
   ensembles.
 
 * ``ssbme`` - the ``BME``, ``iBME`` and ``BMECustom`` classes; Bayesian
@@ -148,6 +148,16 @@ SOURSOP is organised into a small number of focused modules:
   the package (chunking, residue-name normalisation, the polymer
   power-law model, minimum-image distances, trajectory-file discovery).
 
+* ``ssdata`` - reference data tables: residue-name mappings, the
+  coarse-grained force-field bead sizes used for coarse-grained SASA,
+  and the precomputed excluded-volume dihedral distributions.
+
+* ``sspolymer`` - polymer-physics relations that operate on numbers
+  rather than trajectories (e.g. the overlap concentration).
+
+* ``ssexceptions`` - ``SSException``, the single exception type every
+  user-facing SOURSOP error is raised as.
+
 In addition, SOURSOP is designed to be extended via user-contributed
 plugins in ``soursop/plugins`` - see the :doc:`development` page.
 
@@ -164,6 +174,11 @@ Where to go next
 * The per-module API references (``sstrajectory``, ``ssprotein``,
   ``ssnmr``, ``sspre``, ``sssampling``, ``ssbme``, ``sscoper``,
   ``sshdx``) for the full list of available analysis routines.
+
+* :doc:`../modules/utilities` - the supporting modules (``ssdata``,
+  ``sstools``, ``sspolymer``, ``ssmutualinformation``, ``ssutils``,
+  ``ssexceptions``), including the coarse-grained force-field bead-size
+  tables and the shared validation helpers.
 
 * :doc:`../modules/bme` and :doc:`../modules/coper` - reweighting an
   ensemble against experimental data (BME / iBME, or COPER / iCOPER) to

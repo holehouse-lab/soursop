@@ -89,10 +89,12 @@ SSProtein objects have a set of object variables associated with them.
         .. autoattribute:: ncap
         .. autoattribute:: ccap
         .. autoattribute:: is_coarse_grained
+        .. autoattribute:: is_swan
         .. autoattribute:: cg_forcefield
         .. autoattribute:: n_frames
         .. autoattribute:: n_residues
         .. autoattribute:: residue_index_list
+        .. autoattribute:: unitcell
         .. autoattribute:: length
 
 
@@ -106,10 +108,13 @@ SSProtein Functions
         .. automethod:: print_residues
         .. automethod:: get_amino_acid_sequence
         .. automethod:: get_residue_atom_indices
+        .. automethod:: get_all_atomic_indices
         .. automethod:: get_CA_index
         .. automethod:: get_multiple_CA_index
         .. automethod:: get_residue_COM
         .. automethod:: get_residue_mass
+        .. automethod:: get_center_of_mass
+        .. automethod:: get_molecular_volume
         .. automethod:: calculate_all_CA_distances
         .. automethod:: get_inter_residue_COM_distance
         .. automethod:: get_inter_residue_COM_vector

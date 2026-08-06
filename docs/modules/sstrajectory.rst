@@ -60,8 +60,9 @@ Properties
 .. autoattribute:: soursop.sstrajectory.SSTrajectory.n_frames
 .. autoattribute:: soursop.sstrajectory.SSTrajectory.n_proteins
 .. autoattribute:: soursop.sstrajectory.SSTrajectory.length
+.. autoattribute:: soursop.sstrajectory.SSTrajectory.unitcell
 
-In addition to these three functions, the Python builtin ``len()`` returns the number of frames in a trajectory.
+In addition to these functions, the Python builtin ``len()`` returns the number of frames in a trajectory.
 
 
 SSTrajectory Functions
@@ -77,4 +78,39 @@ Functions
 .. automethod:: soursop.sstrajectory.SSTrajectory.get_interchain_distance_map
 .. automethod:: soursop.sstrajectory.SSTrajectory.get_interchain_contact_map
 .. automethod:: soursop.sstrajectory.SSTrajectory.get_interchain_distance
+
+.. note::
+
+   The ``mode`` keyword is spelled differently by the two inter-chain map
+   functions: ``get_interchain_distance_map`` accepts ``'CA'`` / ``'COM'``,
+   whereas ``get_interchain_contact_map`` accepts lower-case ``'atom'`` /
+   ``'ca'`` / ``'closest'`` / ``'closest-heavy'`` / ``'sidechain'`` /
+   ``'sidechain-heavy'``. The contact cutoff keyword is also ``threshold``
+   here, while the single-chain
+   :meth:`~soursop.ssprotein.SSProtein.get_contact_map` calls it
+   ``distance_thresh``.
+
+
+Loading many trajectories in parallel
+--------------------------------------
+
+Reading a large set of replicate trajectories is usually I/O- and parse-bound,
+so SOURSOP provides a helper that loads them across multiple processes and
+returns a list of ``SSTrajectory`` objects::
+
+    from soursop.sstrajectory import parallel_load_trjs
+
+    trj_files = ['rep0/traj.xtc', 'rep1/traj.xtc', 'rep2/traj.xtc']
+    top_files = ['rep0/start.pdb', 'rep1/start.pdb', 'rep2/start.pdb']
+
+    trajectories = parallel_load_trjs(trj_files, top_files, n_procs=4)
+
+    for trajectory in trajectories:
+        protein = trajectory.proteinTrajectoryList[0]
+        print(protein.get_radius_of_gyration().mean())
+
+Any additional keyword arguments are passed straight through to the
+``SSTrajectory`` constructor.
+
+.. autofunction:: soursop.sstrajectory.parallel_load_trjs
 			

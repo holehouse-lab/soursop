@@ -18,8 +18,9 @@ Overview
 
    **Breaking change in SOURSOP 2.0.2.** ``generate_PRE_profile`` now defaults to ``use_label=True``, so the paramagnetic centre is modelled as a DEER-PREdict-calibrated spin-label cloud rather than sitting directly on the CB atom. This yields different — and more accurate — profiles than SOURSOP ≤ 2.0.1. To reproduce results from earlier versions exactly, pass ``use_label=False``.
 
-**Workflow.** An ``SSPRE`` object is created by supplying an ``SSProtein`` and the four experimental parameters: effective correlation time :math:`\tau_c` (ns), INEPT delay :math:`t_\text{delay}` (ms), diamagnetic transverse relaxation rate :math:`R_{2D}` (Hz), and proton Larmor frequency :math:`\omega_H` (Hz). ``generate_PRE_profile`` then computes the full-length intensity ratio and :math:`\Gamma_2` profiles for a given label position::
+**Workflow.** An ``SSPRE`` object is created by supplying an ``SSProtein`` and the four experimental parameters: effective correlation time :math:`\tau_c` (ns), INEPT delay :math:`t_\text{delay}` (ms), diamagnetic transverse relaxation rate :math:`R_{2D}` (Hz), and the **angular** proton Larmor frequency :math:`\omega_H` (rad/s). ``generate_PRE_profile`` then computes the full-length intensity ratio and :math:`\Gamma_2` profiles for a given label position::
 
+    import numpy as np
     from soursop.sstrajectory import SSTrajectory
     from soursop.sspre import SSPRE
 
@@ -27,10 +28,22 @@ Overview
     protein = TrajOb.proteinTrajectoryList[0]
 
     # 600 MHz magnet, tau_c = 5 ns, t_delay = 16 ms, R_2D = 10 Hz
-    pre = SSPRE(protein, tau_c=5, t_delay=16, R_2D=10, W_H=600000000)
+    pre = SSPRE(protein, tau_c=5, t_delay=16, R_2D=10, W_H=2 * np.pi * 600e6)
 
     # spin label at residue 42; uses the calibrated label-cloud model by default
     intensity_ratio, gamma2 = pre.generate_PRE_profile(label_position=42)
+
+.. warning::
+
+   ``W_H`` is the **angular** proton Larmor frequency,
+   :math:`\omega_H = 2\pi\nu_H` in rad/s — this is what the Solomon–Bloembergen
+   spectral-density term the code evaluates requires, and what SOURSOP's
+   shipped label-cloud calibration used. For a 600 MHz magnet pass
+   ``2*np.pi*600e6`` (:math:`\approx 3.8 \times 10^{9}`), **not** ``600e6``.
+   Passing the linear frequency makes the dispersive relaxation term a factor
+   of :math:`(2\pi)^2` too small and overestimates :math:`\Gamma_2` by roughly
+   7% at :math:`\tau_c = 5` ns. SOURSOP warns if ``W_H`` falls outside the
+   plausible angular range.
 
 **Coarse-grained spin-label cloud (the default since 2.0.2).** Rather than placing the paramagnetic centre directly on the ``spin_label_atom`` (``CB``), the nitroxide is modelled as a coarse-grained cloud of beads placed a fixed ``label_distance`` (default 7.0 Å) from the anchor atom — the geometry of an MTSL side chain — without requiring an explicit all-atom rotamer library. When a distinct CB is available the cloud is a cone about the CA→CB direction (so it points away from the backbone); on coarse-grained CA-only chains it falls back to a full isotropic sphere, so the same call works at both resolutions. The relaxation is averaged over the whole cloud as well as over frames, so the :math:`r^{-6}` non-linearity is preserved across both the conformer cloud and the ensemble. The cloud is generated deterministically (a Fibonacci lattice), so results are reproducible. To recover the classic point-at-CB model used by SOURSOP ≤ 2.0.1, pass ``use_label=False``::
 

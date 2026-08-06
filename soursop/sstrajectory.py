@@ -729,14 +729,59 @@ class SSTrajectory:
 
         """
 
-        group_atoms = []
-
         # extract full system topology
         topology = trajectory.topology
 
+        # A topology selection returns atoms in topology order, regardless of
+        # the order in the selection string.  Previously this meant malformed
+        # groups such as [2, 1, 0] appeared to work while being silently
+        # reordered; overlapping groups also duplicated residues into multiple
+        # SSProtein objects.  Validate the documented contract before selecting
+        # any atoms so invalid input cannot produce plausible-but-wrong output.
+        try:
+            normalized_groups = [list(group) for group in residue_grouping]
+        except TypeError as exc:
+            raise SSException(
+                "protein_grouping must be an iterable of residue-index iterables"
+            ) from exc
+
+        seen_residues = set()
+        for group_index, group in enumerate(normalized_groups):
+            if len(group) == 0:
+                raise SSException(
+                    f"protein_grouping group {group_index} is empty"
+                )
+
+            normalized = []
+            for resid in group:
+                if not isinstance(resid, (int, np.integer)):
+                    raise SSException(
+                        f"protein_grouping group {group_index} contains a non-integer "
+                        f"residue index: {resid!r}"
+                    )
+                normalized.append(int(resid))
+
+            if any(a >= b for a, b in zip(normalized, normalized[1:])):
+                raise SSException(
+                    f"protein_grouping group {group_index} must contain strictly "
+                    f"increasing, non-duplicate residue indices; received {group!r}"
+                )
+
+            overlap = seen_residues.intersection(normalized)
+            if overlap:
+                raise SSException(
+                    "protein_grouping groups must not overlap; residue indices "
+                    f"{sorted(overlap)} occur in more than one group"
+                )
+
+            seen_residues.update(normalized)
+            normalized_groups[group_index] = normalized
+
+        group_atoms = []
+
         # for each chain in this toplogy determine if the
         # first residue is protein or not
-        for group in residue_grouping:
+        for group in normalized_groups:
             # build a string of the resids
             res_string = ""
             for r in group:

@@ -1964,7 +1964,8 @@ class SSProtein:
         tuple of (list, list, list, np.ndarray)
             ``(mean, std, histo, bins)`` where:
 
-            * ``mean`` (list of float, length ``n_residues - fragment_size``):
+            * ``mean`` (list of float, length
+              ``n_residues - fragment_size + 1``):
               mean intra-window RMSD per starting residue.
             * ``std`` (list of float, same length): standard deviation of the
               same RMSD distribution.
@@ -2043,8 +2044,10 @@ class SSProtein:
 
         # cycle over each sub-region in the sequence
 
-        # untested - for loop used to be frag_idx in res_idx_list[0:-fragment_size]:
-        for frag_idx in range(0, self.n_residues - fragment_size):
+        # There are n - k + 1 inclusive windows of k residues.  The region
+        # accepted by get_RMSD is inclusive at both ends, hence the final
+        # residue is start + fragment_size - 1 (not start + fragment_size).
+        for frag_idx in range(0, self.n_residues - fragment_size + 1):
             tmp = []
             ssio.status_message(f"On range {frag_idx}", verbose)
 
@@ -2053,7 +2056,11 @@ class SSProtein:
             # frame (after adjusting for stride) for a subregion of the protein
             for j in range(0, n_frames, stride):
                 tmp.extend(
-                    self.get_RMSD(j, -1, region=[frag_idx, frag_idx + fragment_size])
+                    self.get_RMSD(
+                        j,
+                        -1,
+                        region=[frag_idx, frag_idx + fragment_size - 1],
+                    )
                 )
 
             # compute a histogram for this large dataset
@@ -5997,6 +6004,12 @@ class SSProtein:
         lookup table distributed with CAMPARI. Implementation is in pure
         Python, so the result is version-stable across mdtraj releases.
 
+        Only residues for which *both* phi and psi are defined are classified.
+        On a capped chain (ACE/NME) that is every real residue; on an uncapped
+        chain the terminal residues are excluded, because phi is undefined at
+        the N-terminus and psi at the C-terminus. ``resid_list`` always matches
+        the classification arrays element-for-element.
+
         BBSEG2 classes:
 
         * 0 - unclassified
@@ -6035,16 +6048,26 @@ class SSProtein:
         tuple of (list, dict)
             ``(resid_list, per_class)`` where:
 
-            * ``resid_list`` (list of int): residue indices covered.
+            * ``resid_list`` (list of int): residue indices covered - i.e.
+              those with both a phi and a psi angle defined.
             * ``per_class`` (dict): keys 0..8 (int), values are either
               1D fractional-occupancy arrays (length ``len(resid_list)``)
               or 2D ``(n_frames, len(resid_list))`` binary masks depending
               on ``return_per_frame``.
 
+        Raises
+        ------
+        SSException
+            If this is a two-bead (CA/CB) coarse-grained model, if no residue
+            in the selected region has both phi and psi defined, or if
+            ``weights`` is supplied with ``return_per_frame=True``.
+
         Example
         -------
         >>> resids, classes = protein.get_secondary_structure_BBSEG()
         >>> classes[4].mean()    # mean right-handed-alpha occupancy across chain
+        >>> len(resids) == len(classes[4])    # always True
+        True
 
         """
 
@@ -6062,19 +6085,56 @@ class SSProtein:
         # units, so this means we automatically select the right sets of residues
         out = self.__get_first_and_last(R1, R2, withCA=False)
 
-        # note we select RESID using withCA = True
-        out_selector = self.__get_first_and_last(R1, R2, withCA=True)
-        R1_real = out_selector[0]
-        R2_real = out_selector[1]
-        reslist = list(range(R1_real, R2_real + 1))
+        target = self.traj.atom_slice(self.topology.select(f"{out[2]}"))
 
-        # extract the phi/psi angles in degrees
-        phi_data = np.degrees(
-            md.compute_phi(self.traj.atom_slice(self.topology.select(f"{out[2]}")))[1]
-        )
-        psi_data = np.degrees(
-            md.compute_psi(self.traj.atom_slice(self.topology.select(f"{out[2]}")))[1]
-        )
+        # extract the phi/psi angles in degrees.
+        #
+        # NOTE these MUST be aligned explicitly rather than paired positionally.
+        # mdtraj returns one phi for every residue that has a preceding residue
+        # and one psi for every residue that has a following one. On a capped
+        # chain the caps supply both, so the two arrays already line up - but on
+        # an UNCAPPED chain phi is undefined at the N-terminus and psi at the
+        # C-terminus, so phi[k] and psi[k] belong to two *different* (adjacent)
+        # residues. Pairing them by position would classify a (phi, psi) drawn
+        # from two separate residues, and would additionally leave the returned
+        # resid list one element longer than the classification arrays.
+        phi_atoms, phi_raw = md.compute_phi(target)
+        psi_atoms, psi_raw = md.compute_psi(target)
+
+        phi_data = np.degrees(phi_raw)
+        psi_data = np.degrees(psi_raw)
+
+        # phi dihedrals are [C(i-1), N(i), CA(i), C(i)] and psi dihedrals are
+        # [N(i), CA(i), C(i), N(i+1)], so in both cases the atom at index 1
+        # belongs to the central residue i. Map each dihedral onto that residue
+        # so the two can be intersected.
+        phi_for_resid = {
+            target.topology.atom(atoms[1]).residue.index: idx
+            for idx, atoms in enumerate(phi_atoms)
+        }
+        psi_for_resid = {
+            target.topology.atom(atoms[1]).residue.index: idx
+            for idx, atoms in enumerate(psi_atoms)
+        }
+
+        # keep only residues where BOTH dihedrals are defined, in ascending order
+        shared_resids = sorted(set(phi_for_resid) & set(psi_for_resid))
+
+        if len(shared_resids) == 0:
+            raise SSException(
+                "get_secondary_structure_BBSEG(): no residue in the selected region has "
+                "both a phi and a psi angle defined, so no BBSEG classification can be "
+                "made. This needs at least three consecutive residues (or two plus a "
+                "terminal cap)."
+            )
+
+        phi_data = phi_data[:, [phi_for_resid[r] for r in shared_resids]]
+        psi_data = psi_data[:, [psi_for_resid[r] for r in shared_resids]]
+
+        # the selection string is always a contiguous "resid A to B" range, so a
+        # residue's index within the sliced topology maps back onto the full
+        # chain by adding the index of the first selected residue.
+        reslist = [r + out[0] for r in shared_resids]
 
         # extract the relevant information (note shape of phi_data and psi_data will be identical)
         # shape info here is (number_of_frames, number_of_residues) sized

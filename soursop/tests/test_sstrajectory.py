@@ -145,20 +145,30 @@ def test_read_in_protein_grouping_invalid_residues():
 
 
 def test_read_in_protein_grouping_multiple_mixed_order():
-    # TODO: This test passes - it shouldn't. Look into this further.
     protein_groups = [[1, 2, 0], [10, 3, 7], [11, 1, 3]]
     pdb_filename = os.path.join(soursop.get_data("test_data"), "ntl9_AA.pdb")
     traj_filename = os.path.join(
         soursop.get_data("test_data"), "ntl9_AA.xtc"
     )  # ntl9 has 56 residues
-    trajectory = sstrajectory.SSTrajectory(
-        trajectory_filename=traj_filename,
-        pdb_filename=pdb_filename,
-        protein_grouping=protein_groups,
-    )
+    with pytest.raises(SSException, match="strictly increasing"):
+        sstrajectory.SSTrajectory(
+            trajectory_filename=traj_filename,
+            pdb_filename=pdb_filename,
+            protein_grouping=protein_groups,
+        )
 
-    # verify that we have loaded the number of proteins expected
-    assert trajectory.n_proteins == len(protein_groups)
+
+def test_read_in_protein_grouping_overlapping_groups():
+    protein_groups = [[0, 1, 2], [2, 3, 4]]
+    pdb_filename = os.path.join(soursop.get_data("test_data"), "ntl9_AA.pdb")
+    traj_filename = os.path.join(soursop.get_data("test_data"), "ntl9_AA.xtc")
+
+    with pytest.raises(SSException, match="must not overlap"):
+        sstrajectory.SSTrajectory(
+            trajectory_filename=traj_filename,
+            pdb_filename=pdb_filename,
+            protein_grouping=protein_groups,
+        )
 
 
 # -------------------------------------------------------------------------------------------------

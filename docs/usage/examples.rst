@@ -58,10 +58,10 @@ The most common IDP observables describe the overall size and shape of the chain
     asph = protein.get_asphericity()
     print(f"Mean asphericity = {np.mean(asph):.3f}")
 
-**Correlation between** :math:`r_{ee}` **and** :math:`R_g` — a useful diagnostic for whether the two global size metrics are capturing consistent information::
+**Correlation between** :math:`r_{ee}` **and** :math:`R_g` — a useful diagnostic for whether the two global size metrics are capturing consistent information. This returns a single Pearson correlation coefficient::
 
-    pearson_r, pval = protein.get_end_to_end_vs_rg_correlation()
-    print(f"Pearson r(e2e, Rg) = {pearson_r:.3f}  (p = {pval:.2e})")
+    pearson_r = protein.get_end_to_end_vs_rg_correlation()
+    print(f"Pearson r(e2e, Rg) = {pearson_r:.3f}")
 
 **Overlap concentration** :math:`c^*` estimates the concentration above which chains begin to crowd one another::
 
@@ -108,61 +108,94 @@ model (≈1 indicates the data are consistent with a single homopolymer scaling
 law within their bootstrap errors; substantially larger values flag systematic
 deviation, e.g. heteropolymeric structure).
 
-**Polymer-scaled distance map** normalises the mean inter-residue distance matrix by the expected excluded-volume scaling, highlighting regions that are more compact or more expanded than a reference random coil. It returns the map together with the ``nu``, ``A0`` and reduced :math:`\chi^2` of the homopolymer fit it performs internally::
+**Polymer-scaled distance map** normalises the mean inter-residue distance matrix by the expected homopolymer scaling, highlighting regions that are more compact or more expanded than a reference random coil. It returns the map together with the ``nu``, ``A0`` and reduced :math:`\chi^2` of the homopolymer fit it performs internally. Note ``mode`` here selects how the deviation is *expressed*, not which atoms are used — the options are ``'fractional-change'`` (the default), ``'signed-fractional-change'``, ``'scaled'``, and ``'signed-absolute-change'``::
 
-    dmap, nu, A0, redchi = protein.get_polymer_scaled_distance_map(mode='CA')
+    dmap, nu, A0, redchi = protein.get_polymer_scaled_distance_map(
+        mode='signed-fractional-change')
 
     plt.imshow(dmap, origin='lower', cmap='RdBu_r')
-    plt.colorbar(label='Normalized distance')
+    plt.colorbar(label='Fractional deviation from homopolymer')
     plt.xlabel('Residue index')
     plt.ylabel('Residue index')
-    plt.title('Polymer-scaled distance map')
+    plt.title(f'Polymer-scaled distance map (ν = {nu:.3f})')
     plt.show()
 
-**Local heterogeneity** in the scaling behaviour measures how the local Flory exponent varies along the chain, revealing compact or expanded subregions::
+If you already know the scaling behaviour you want to normalise against — for example the AFRC or an independently fitted :math:`\nu` — pass it in directly rather than letting the function fit it::
 
-    local_het = protein.get_local_heterogeneity(window_size=10)
+    dmap, nu, A0, redchi = protein.get_polymer_scaled_distance_map(nu=0.588, A0=5.5)
+
+**Local heterogeneity** measures how much the local conformational behaviour varies along the chain, by computing the intra-window RMSD distribution for a sliding window of ``fragment_size`` residues. It returns the per-window mean and standard deviation of that distribution, along with the underlying histograms::
+
+    mean_rmsd, std_rmsd, histograms, bins = protein.get_local_heterogeneity(
+        fragment_size=10, stride=1)
+
+    plt.plot(mean_rmsd)
+    plt.xlabel('Window start residue')
+    plt.ylabel('Mean intra-window RMSD (Å)')
+    plt.title('Local conformational heterogeneity')
+    plt.show()
 
 
 4. Secondary structure and backbone angles
 ---------------------------------------------------------
 
-**DSSP secondary structure** assigns a secondary structure label to each residue in every frame::
+**DSSP secondary structure** collapses the per-frame DSSP assignment into per-residue fractional occupancies of three buckets — helix, extended (strand), and coil. It returns four arrays: the residue indices covered, and the helix / extended / coil fractions, which sum to 1 at every residue::
 
-    dssp = protein.get_secondary_structure_DSSP()
-    # returns an (n_frames, n_residues) array of single-character labels
+    resids, helix, extended, coil = protein.get_secondary_structure_DSSP()
+    # each of helix/extended/coil has shape (len(resids),)
 
-    # mean helicity per residue
-    helicity = np.mean(dssp == 'H', axis=0)
-
-    plt.bar(range(protein.n_residues), helicity)
+    plt.bar(resids, helix)
     plt.xlabel('Residue index')
     plt.ylabel('Fractional helicity')
     plt.title('Per-residue α-helix propensity')
     plt.show()
 
-**BBSEG backbone-torsion classification** provides an 8-state assignment based on φ/ψ backbone dihedral regions, which is particularly useful for IDRs where the DSSP labels can be sparse or noisy::
+Pass ``return_per_frame=True`` if you need the raw per-frame assignment instead — the three arrays then become ``(n_frames, len(resids))`` binary masks::
 
-    bbseg = protein.get_secondary_structure_BBSEG()
-    # returns an (n_frames, n_residues) array of integer labels (0–7)
-    # 0=unassigned, 1=α-helix, 2=PPII, 3=β-strand, 4=turn, ...
+    resids, helix, extended, coil = protein.get_secondary_structure_DSSP(
+        return_per_frame=True)
 
-**Backbone dihedral angles**::
+    # fraction of frames helical at each residue (equivalent to the above)
+    helicity = helix.mean(axis=0)
 
-    angles = protein.get_angles()
-    # returns a dict with keys 'phi' and 'psi', each (n_frames, n_residues)
+**BBSEG backbone-torsion classification** provides a 9-state assignment based on φ/ψ backbone dihedral regions, which is particularly useful for IDRs where the DSSP labels can be sparse or noisy. It returns the residue indices plus a dictionary keyed by class (0–8), where ``bbseg[k]`` is the fractional occupancy of class ``k``::
 
-    phi = angles['phi']
-    psi = angles['psi']
+    resids, bbseg = protein.get_secondary_structure_BBSEG()
 
-    # Ramachandran plot for residue 10
-    residue_idx = 10
-    plt.scatter(np.degrees(phi[:, residue_idx]),
-                np.degrees(psi[:, residue_idx]),
-                alpha=0.3, s=2)
+    plt.plot(resids, bbseg[1], label='helix (class 1)')
+    plt.plot(resids, bbseg[2], label='PPII (class 2)')
+    plt.xlabel('Residue index')
+    plt.ylabel('Fractional occupancy')
+    plt.legend()
+    plt.show()
+
+Only residues with *both* φ and ψ defined are classified, and ``resid_list`` always matches the class arrays element-for-element. On a capped chain (ACE/NME) that is every real residue; on an uncapped chain the two terminal residues are excluded, since φ is undefined at the N-terminus and ψ at the C-terminus.
+
+.. note::
+
+   This changed in SOURSOP 2.0.4. Before that release, uncapped chains returned
+   a ``resid_list`` one element longer than the class arrays, and the φ/ψ pair
+   classified at a given index was drawn from two *adjacent* residues rather
+   than one — so BBSEG assignments on uncapped chains were wrong. Capped chains
+   were correct then and are unchanged now.
+
+**Backbone dihedral angles.** ``get_angles`` takes the name of the dihedral to compute (``'phi'``, ``'psi'``, ``'omega'``, or ``'chi1'``–``'chi5'``) and returns a two-element list: the ``mdtraj.Atom`` objects defining each dihedral, and the angles themselves. Note the angle array is ``(n_dihedrals, n_frames)`` — dihedrals first — and is already **in degrees**::
+
+    phi_atoms, phi = protein.get_angles('phi')
+    psi_atoms, psi = protein.get_angles('psi')
+    # phi.shape == (n_phi, n_frames)
+
+    # Ramachandran plot for the 10th phi/psi pair. Note phi is undefined at the
+    # N-terminus and psi at the C-terminus of an uncapped chain, so the two
+    # arrays can be offset relative to one another - check the atom lists if
+    # you need to map a dihedral back to a specific residue.
+    idx = 10
+    plt.scatter(phi[idx], psi[idx], alpha=0.3, s=2)
     plt.xlabel('φ (°)')
     plt.ylabel('ψ (°)')
-    plt.title(f'Ramachandran plot — residue {residue_idx}')
+    plt.xlim(-180, 180)
+    plt.ylim(-180, 180)
+    plt.title(f'Ramachandran plot — dihedral {idx}')
     plt.show()
 
 
@@ -180,9 +213,10 @@ deviation, e.g. heteropolymeric structure).
     plt.title('Mean inter-residue distance map')
     plt.show()
 
-**Contact map** — fraction of frames in which each residue pair is within a cutoff distance (default 8 Å)::
+**Contact map** — fraction of frames in which each residue pair is within a cutoff distance (``distance_thresh``, default 5 Å). It returns both the map and the per-residue contact order. Valid ``mode`` values are ``'closest-heavy'`` (the default), ``'ca'``, ``'closest'``, ``'sidechain'`` and ``'sidechain-heavy'``::
 
-    contact_map = protein.get_contact_map(distance_thresh=8.0, mode='CA')
+    contact_map, contact_order = protein.get_contact_map(
+        distance_thresh=8.0, mode='ca')
 
     plt.imshow(contact_map, origin='lower', cmap='hot_r', vmin=0, vmax=1)
     plt.colorbar(label='Contact frequency')
@@ -191,35 +225,57 @@ deviation, e.g. heteropolymeric structure).
     plt.title('Contact map (CA, 8 Å cutoff)')
     plt.show()
 
-**RMSD** to a reference frame (here, frame 0)::
+    plt.plot(contact_order)
+    plt.xlabel('Residue index')
+    plt.ylabel('Mean fractional contacts')
+    plt.show()
 
-    rmsd = protein.get_RMSD(frame_index=0, region=[0, protein.n_residues])
+**RMSD** to a reference frame (here, frame 0). ``frame1`` is the reference; leaving ``frame2`` at its default compares every frame against it::
+
+    rmsd = protein.get_RMSD(frame1=0, region=[0, protein.n_residues])
     print(f"Mean RMSD from frame 0: {np.mean(rmsd):.2f} Å")
+
+    # ... or compare two specific frames
+    rmsd_0_to_5 = protein.get_RMSD(frame1=0, frame2=5)
 
 
 6. Solvent accessibility
 ---------------------------------------------------------
 
-**Per-residue SASA** averaged across the trajectory::
+**Per-residue SASA.** ``get_all_SASA`` returns the *per-frame* array, shape ``(n_frames_strided, n_residues)``, in Å². Because the calculation is expensive the default ``stride`` is 20, so reduce it if your trajectory is short::
 
-    mean_sasa, std_sasa = protein.get_all_SASA()
-    # mean_sasa: shape (n_residues,), units Å²
+    sasa = protein.get_all_SASA(mode='residue', stride=10)
+    # sasa.shape == (n_frames_strided, n_residues)
 
-    plt.bar(range(protein.n_residues), mean_sasa, yerr=std_sasa, capsize=2)
+    mean_sasa = sasa.mean(axis=0)
+    std_sasa = sasa.std(axis=0)
+
+    plt.bar(range(len(mean_sasa)), mean_sasa, yerr=std_sasa, capsize=2)
     plt.xlabel('Residue index')
     plt.ylabel('SASA (Å²)')
     plt.title('Per-residue solvent accessibility')
     plt.show()
 
-**Regional SASA** for a specific stretch of residues — useful for assessing the accessibility of a functional linear motif::
+Other granularities are available via ``mode``: ``'atom'`` for per-atom SASA, ``'sidechain'`` / ``'backbone'`` for the per-residue sum over those atoms only, and ``'all'`` for a 3-tuple of ``(residue, sidechain, backbone)`` arrays::
 
-    # SASA for residues 10 to 20 (inclusive)
-    mean_region, std_region = protein.get_regional_SASA(R1=10, R2=20)
-    print(f"Mean SASA (residues 10–20) = {mean_region:.1f} ± {std_region:.1f} Å²")
+    residue_sasa, sidechain_sasa, backbone_sasa = protein.get_all_SASA(
+        mode='all', stride=10)
 
-**Site accessibility** returns the fraction of frames in which a residue's SASA exceeds a threshold, giving a per-residue accessibility score::
+**Regional SASA** for a specific stretch of residues — useful for assessing the accessibility of a functional linear motif. This returns a single number: the sum, over residues ``R1`` to ``R2-1``, of each residue's time-averaged SASA::
 
-    accessibility = protein.get_site_accessibility()
+    # total SASA of residues 10-19
+    region_sasa = protein.get_regional_SASA(R1=10, R2=20, stride=10)
+    print(f"Mean total SASA (residues 10–19) = {region_sasa:.1f} Å²")
+
+**Site accessibility** summarises the SASA of chosen residues, returning a dictionary keyed by ``"RESNAME-RESID"`` whose values are ``[mean_SASA, std_SASA]`` in Å². By default the input is interpreted as residue *types*, so every matching residue in the chain is reported — handy for comparing chemically identical residues at different positions::
+
+    accessibility = protein.get_site_accessibility(['TRP', 'TYR'], stride=10)
+    for site, (mean_sasa, std_sasa) in accessibility.items():
+        print(f"{site}: {mean_sasa:.1f} ± {std_sasa:.1f} Å²")
+
+    # ... or ask for specific residues by index
+    accessibility = protein.get_site_accessibility(
+        [10, 11, 12], mode='resid', stride=10)
 
 **Coarse-grained ensembles.** One-bead-per-residue models represent every residue as a single ``CA`` bead, so mdtraj's atomic van der Waals radii would give a glycine and a tryptophan the same 1.7 Å radius. For these chains you must name the force field, and SOURSOP uses that model's own per-residue bead sizes (radius = :math:`\sigma/2`) instead::
 
@@ -253,8 +309,19 @@ For systems with more than one protein chain, system-level analyses are performe
 
     # inter-chain contact map
     contact_map = traj.get_interchain_contact_map(
-        proteinID1=0, proteinID2=1, distance_thresh=8.0
+        proteinID1=0, proteinID2=1, threshold=8.0, mode='ca'
     )
+
+.. note::
+
+   Two easy things to trip over here. The contact-map cutoff keyword is
+   ``threshold`` (not ``distance_thresh``, which is what the single-chain
+   :meth:`~soursop.ssprotein.SSProtein.get_contact_map` uses), and the two
+   inter-chain functions spell their ``mode`` values differently:
+   ``get_interchain_distance_map`` takes ``'CA'`` / ``'COM'``, while
+   ``get_interchain_contact_map`` takes lower-case ``'atom'`` / ``'ca'`` /
+   ``'closest'`` / ``'closest-heavy'`` / ``'sidechain'`` /
+   ``'sidechain-heavy'``.
 
 
 8. NMR comparison
@@ -280,9 +347,11 @@ For systems with more than one protein chain, system-level analyses are performe
     # per-frame, per-residue J-couplings (shape n_frames x n_phi)
     atoms, J = compute_J3_HN_HA(protein, model="Bax2007")
 
-    # ensemble mean + the model's forward-model uncertainty in Hz
-    atoms, J_mean, sigma = compute_J3_HN_HA(
-        protein, weights=False, return_uncertainty=True)
+    # the same call, additionally returning the model's forward-model
+    # uncertainty in Hz (a single scalar for the chosen parameterisation)
+    atoms, J, sigma = compute_J3_HN_HA(protein, return_uncertainty=True)
+
+    # ensemble mean per dihedral
     J_mean = J.mean(axis=0)
 
     # feeding the result to BME against an experimental J vector
@@ -330,10 +399,13 @@ For systems with more than one protein chain, system-level analyses are performe
 
 **Paramagnetic relaxation enhancement (PRE)** profiles compare the ensemble to an experiment in which a nitroxide spin label at a chosen position relaxes neighbouring amide protons. The intensity ratio I_para/I_dia decays toward 0 for residues near the label and stays near 1 for distant residues::
 
+    import numpy as np
     from soursop.sspre import SSPRE
 
-    # 600 MHz magnet; tau_c = 5 ns, t_delay = 16 ms, R_2D = 10 Hz
-    pre = SSPRE(protein, tau_c=5, t_delay=16, R_2D=10, W_H=600000000)
+    # 600 MHz magnet; tau_c = 5 ns, t_delay = 16 ms, R_2D = 10 Hz.
+    # NOTE W_H is the ANGULAR proton Larmor frequency, omega_H = 2*pi*nu_H
+    # (rad/s) - so a 600 MHz magnet is 2*pi*600e6, not 600e6.
+    pre = SSPRE(protein, tau_c=5, t_delay=16, R_2D=10, W_H=2 * np.pi * 600e6)
 
     # spin label at residue 20; since SOURSOP 2.0.2 this uses the calibrated
     # coarse-grained spin-label cloud model by default (pass use_label=False

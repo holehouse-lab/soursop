@@ -71,6 +71,18 @@ The most relevant parts of the repository are:
   * ``sshdx.py`` - per-residue HDX protection factors via the
     Best-Vendruscolo formula (heavy-atom contacts + backbone H-bonds).
   * ``sstools.py`` - shared numerical helpers.
+  * ``ssutils.py`` - validation and reduction helpers, including the
+    package-wide ``weights`` validator and the reweighting primitives
+    shared by ``ssbme`` and ``sscoper``.
+  * ``ssdata.py`` - reference data tables (residue-name maps, the
+    coarse-grained force-field bead sizes, the excluded-volume dihedral
+    distributions).
+  * ``sspolymer.py`` - polymer-physics relations.
+  * ``ssmutualinformation.py`` - mutual-information helpers.
+  * ``ssexceptions.py`` - ``SSException`` and the warning helper.
+  * ``data/`` - bundled data files, including ``data/cg/`` (the
+    coarse-grained bead-size tables) and ``data/test_data/`` (the
+    trajectories the test suite runs against).
   * ``plugins/`` - user-contributed analysis plugins.
   * ``tests/`` - the PyTest suite, including the parametrized
     regression suite that recomputes every public observable against
