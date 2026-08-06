@@ -22,7 +22,7 @@ states, and other flexible biopolymers. It is built on top of
 atomic representation, and adds an analysis layer of polymer-physics-aware
 observables designed specifically for disordered ensembles.
 
-SOURSOP was originally developed by Jared Lalmansingh in the [Pappu lab](https://pappulab.wustl.edu/) and Alex Holehouse in the [Holehouse Lab](https://www.holehouselab.com/) at Washington University in St. Louis.
+SOURSOP was originally developed by Jared Lalmansingh in the [Pappu lab](https://pappulab.wustl.edu/) and Alex Holehouse in the [Holehouse Lab](https://www.holehouselab.com/) at Washington University in St. Louis. Since its original release in 2023, we have substantially expanded and extended the codebase.
 
 ## Features
 
