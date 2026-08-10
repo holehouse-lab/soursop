@@ -173,10 +173,16 @@ def test_unknown_forcefield_raises():
         get_cg_bead_sigmas("not-a-forcefield")
 
 
-def test_sigma_lookup_is_memoised():
-    # the loader caches by (forcefield, buried), so repeated calls return the
-    # same object rather than re-reading the CSV
-    assert get_cg_bead_sigmas("mpipi") is get_cg_bead_sigmas("mpipi")
+def test_sigma_lookup_is_memoised_but_defensive():
+    # the loader caches by (forcefield, buried) so repeated calls do not
+    # re-read the CSV, but each call returns a fresh copy - mutating the
+    # result must not poison the cache for later callers
+    first = get_cg_bead_sigmas("mpipi")
+    assert first is not get_cg_bead_sigmas("mpipi")
+
+    original = first["GLY"]
+    first["GLY"] = -1.0
+    assert get_cg_bead_sigmas("mpipi")["GLY"] == original
 
 
 # ........................................................................

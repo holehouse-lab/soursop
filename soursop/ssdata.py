@@ -298,9 +298,11 @@ def get_cg_bead_sigmas(forcefield, buried=False):
     4.69511
     """
 
+    # return a copy so a caller mutating the result cannot poison the cache
+    # (and hence every subsequent CG-SASA radius) for the rest of the process
     key = (forcefield, bool(buried))
     if key in _CG_SIGMA_CACHE:
-        return _CG_SIGMA_CACHE[key]
+        return dict(_CG_SIGMA_CACHE[key])
 
     if forcefield not in CG_FORCEFIELDS:
         raise SSException(
@@ -337,4 +339,4 @@ def get_cg_bead_sigmas(forcefield, buried=False):
         )
 
     _CG_SIGMA_CACHE[key] = sigmas
-    return sigmas
+    return dict(sigmas)

@@ -2,6 +2,28 @@
 
 All notable changes to SOURSOP are documented in this file.
 
+## 2.0.5 (August 2026)
+
+A correctness and documentation release from a follow-up package-wide review after 2.0.4: six bug fixes (one interpreter-crashing, several silently-wrong), a documentation audit pass, and expanded regression coverage. No new features and no API changes beyond stricter input validation.
+
+### Bug fixes
+* `sstrajectory.SSTrajectory(..., explicit_residue_checking=True)`: **Fixed a crash on topologies containing a chain with no protein residues** — the exact case the flag exists for (topologies carrying thousands of solvent molecules). A chain with zero valid residues contributed an *empty* atom list, and `atom_slice([])` built an empty topology whose first-residue lookup raised `IndexError`. Such chains are now skipped (with a debug message), matching what the default chain-detection path has always done.
+* `ssprotein.get_RMSD` (and the shared region-selection helper behind `get_Q` and `get_D_vector`): **Fixed a fully out-of-range `region` producing garbage values and then segfaulting the interpreter.** An empty atom selection was passed straight to mdtraj's `rmsd()`, which returns uninitialized-memory values and crashes with SIGSEGV. A region that selects no atoms now raises a clear `SSException` naming the valid residue range. A *partially* out-of-range region (e.g. `[0, n_residues]`) is still clipped by mdtraj exactly as before — verified bitwise identical.
+* `ssprotein.get_RMSD`: a non-integer `frame2` (e.g. `3.5`) now raises an `SSException` instead of silently falling into the compare-against-all-frames branch and answering a different question than the caller asked.
+* `ssnmr.compute_random_coil_chemical_shifts`: **Fixed lowercase one-letter residue codes being silently dropped from the sequence.** The single-letter branch of the parser checked `ord(ch) - 65` without uppercasing (the parenthesised three-letter branch has always uppercased), so `'AsGaS'` silently parsed as the 3-residue A-G-S — computing every remaining shift with the wrong nearest-neighbour context — and an all-lowercase sequence returned an empty list, with no warning in either case. Single-letter parsing is now case-insensitive, matching the three-letter branch.
+* `ssdata.get_cg_bead_sigmas`: now returns a defensive copy rather than the cache-resident dictionary, so a caller mutating the returned sigma table can no longer poison every subsequent CG-SASA radius lookup for the rest of the process.
+* `sspolymer.get_overlap_concentration`: Avogadro's number corrected from the truncated `6.023e23` to the exact 2019 SI value `6.02214076e23`. **This changes the returned c\* by +0.014%** (a systematic error, not noise); the committed reference values were rebuilt, and a key-by-key diff confirmed `get_overlap_concentration` is the only observable that moved in any reference file.
+
+### Documentation
+* A docs-vs-code audit after the 2.0.4 fixes caught and corrected: the BBSEG example labelling class 1 as "helix" (class 1 is **beta**; the right-handed alpha helix is class 4 — the example now plots classes 4, 2 and 1 with correct labels); the RMSD example passing the out-of-range `region=[0, n_residues]` (region bounds are inclusive, so the correct idiom is `[0, n_residues - 1]`); the overlap-concentration examples printing "mg/mL" when the function returns **molar** units (as its docstring has always said); the README calling both 2.0.3 and 2.0.4 "the latest"; and the `sspre.generate_PRE_profile` docstring claiming `label_steric='hard'` is the default when the calibrated default is `'soft'`.
+* `SSTrajectory.__init__`'s `protein_grouping` parameter documentation (and the internal grouping helper's docstring) now spell out the validation rules added in 2.0.4 — non-empty groups of strictly increasing, non-duplicate integer indices, no residue in more than one group — and note that pre-2.0.4 versions silently accepted and reordered malformed groups.
+* `get_local_heterogeneity` / `get_local_collapse` docstrings now state the exact inclusive window (`[i, i + k - 1]`, k residues), and `get_local_heterogeneity` additionally documents its stride semantics precisely: reference frames are strided, each is compared against **all** frames, and the zero self-comparison is included in the pooled distribution.
+
+### Testing
+* Extended `tests/test_bugfixes_2_0_4.py` with regressions for each fix above: the all-solvent-chain `explicit_residue_checking` path, case-insensitive chemical-shift sequence parsing, the empty-region `SSException` (and that partially out-of-range regions remain bitwise identical to the clipped call), the non-integer `frame2` rejection, and c\* pinned against the closed form with the exact Avogadro number. The CG-SASA suite's memoisation test now asserts the sigma table is returned as a defensive copy.
+* Rebuilt the committed reference pickles for the Avogadro correction; the key-by-key diff shows `global.get_overlap_concentration` (relative shift 1.43e-4) is the **only** value that moved in each of the five files.
+* `tests/test_bugfixes_2_0_3.py`'s out-of-range-character test now uses genuinely invalid punctuation characters, since lowercase letters — its previous probe — are no longer skipped but parsed as their uppercase amino acid.
+
 ## 2.0.4 (August 2026)
 
 A feature release adding first-class SASA support for one-bead-per-residue coarse-grained models (Mpipi, HPS, KH and friends), computed against each model's own bead sizes rather than mdtraj's atomic van der Waals radii. Also fixes a correctness bug in the BBSEG secondary-structure assignment on uncapped chains, and corrects a batch of documented examples that did not match the API.

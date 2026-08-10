@@ -66,7 +66,7 @@ The most common IDP observables describe the overall size and shape of the chain
 **Overlap concentration** :math:`c^*` estimates the concentration above which chains begin to crowd one another::
 
     c_star = protein.get_overlap_concentration()
-    print(f"c* = {c_star:.4f} mg/mL")
+    print(f"c* = {c_star:.4f} M")
 
 
 3. Polymer scaling and internal structure
@@ -162,8 +162,9 @@ Pass ``return_per_frame=True`` if you need the raw per-frame assignment instead 
 
     resids, bbseg = protein.get_secondary_structure_BBSEG()
 
-    plt.plot(resids, bbseg[1], label='helix (class 1)')
+    plt.plot(resids, bbseg[4], label='alpha helix (class 4)')
     plt.plot(resids, bbseg[2], label='PPII (class 2)')
+    plt.plot(resids, bbseg[1], label='beta (class 1)')
     plt.xlabel('Residue index')
     plt.ylabel('Fractional occupancy')
     plt.legend()
@@ -232,7 +233,7 @@ Only residues with *both* φ and ψ defined are classified, and ``resid_list`` a
 
 **RMSD** to a reference frame (here, frame 0). ``frame1`` is the reference; leaving ``frame2`` at its default compares every frame against it::
 
-    rmsd = protein.get_RMSD(frame1=0, region=[0, protein.n_residues])
+    rmsd = protein.get_RMSD(frame1=0, region=[0, protein.n_residues - 1])
     print(f"Mean RMSD from frame 0: {np.mean(rmsd):.2f} Å")
 
     # ... or compare two specific frames

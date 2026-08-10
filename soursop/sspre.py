@@ -436,18 +436,18 @@ class SSPRE:
             explicit MTSL rotamer PRE profiles; it is not a bare CA-CA
             contact distance. Only used when ``use_label`` is ``True``.
 
-        label_steric : {'hard', 'soft'}, optional
+        label_steric : {'soft', 'hard'}, optional
             How the bead cloud is sterically excluded from the chain.
-            ``'hard'`` (default) keeps a bead only if it clears every
-            non-label CA by ``label_bead_radius`` and averages uniformly over
-            the survivors. ``'soft'`` instead weights every bead by a smooth
+            ``'soft'`` (the default) weights every bead by a smooth
             WCA-like repulsive wall against the CA atoms,
             ``w_i = exp(-sum_j (label_bead_radius / d_ij)**label_wall_stiffness)``,
-            and takes the weighted cloud average. The soft wall reduces to the
-            hard cutoff as ``label_wall_stiffness`` grows, but is less
+            and takes the weighted cloud average. ``'hard'`` instead keeps a
+            bead only if it clears every non-label CA by ``label_bead_radius``
+            and averages uniformly over the survivors. The soft wall reduces
+            to the hard cutoff as ``label_wall_stiffness`` grows, but is less
             sensitive to ``label_bead_radius`` and transfers better between
-            folded and disordered chains. Only used when ``use_label`` is
-            ``True``.
+            folded and disordered chains (which is why it is the calibrated
+            default). Only used when ``use_label`` is ``True``.
 
         label_wall_stiffness : float, optional
             Exponent of the soft repulsive wall (only used when

@@ -173,15 +173,19 @@ def test_perdeuteration_phospho_raises_ssexception(seq):
         compute_random_coil_chemical_shifts(seq, use_perdeuteration=True)
 
 
-@pytest.mark.parametrize("seq", ["AAcAA", "AA]AA"])
+@pytest.mark.parametrize("seq", ["AA]AA", "AA[AA", "AA_AA"])
 def test_out_of_range_character_does_not_crash(seq):
     from soursop.ssnmr import compute_random_coil_chemical_shifts
 
-    # characters that map to codes 26-35 previously raised IndexError; they are
-    # now skipped, and the skipped residue does not desync the output labels.
+    # characters outside A-Z previously raised IndexError; they are now
+    # skipped, and the skipped character does not desync the output labels.
+    # NOTE lowercase letters are no longer in this category: since the 2.0.4
+    # case-insensitivity fix they parse as their uppercase amino acid, so the
+    # parametrization here uses genuinely invalid punctuation characters.
     out = compute_random_coil_chemical_shifts(seq)
     assert isinstance(out, list)
-    # 'AAcAA' -> the 'c' is skipped, leaving 4 valid residues (AAAA)
+    # the invalid character is skipped, leaving 4 valid residues (AAAA)
+    assert len(out) == 4
     assert all(d["Res"] in ("A",) for d in out)
 
 

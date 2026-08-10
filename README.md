@@ -125,16 +125,19 @@ forward-model observables (scalar `³J(HN, Hα)` couplings and NOE distances in
 wide-ranging bug fixes and behaviour-preserving speed-ups. **2.0.2** added a
 coarse-grained spin-label cloud model to the `sspre` PRE calculation and made it
 the default — a breaking change relative to the point-at-CB model of `2.0.1`
-(pass `use_label=False` to reproduce older profiles). The latest **2.0.3** makes
+(pass `use_label=False` to reproduce older profiles). **2.0.3** makes
 multi-model PDB files load ~2x faster and fixes a batch of correctness bugs from
 a package-wide review (a few of which change numerical output — notably
 `get_local_to_global_correlation`, coarse-grained/`COM`-mode strided distance
-maps, `get_clusters`, and DSSP fractions at termini). The latest **2.0.4** adds
+maps, `get_clusters`, and DSSP fractions at termini). **2.0.4** adds
 first-class SASA support for one-bead-per-residue coarse-grained models,
 computed against each model's own bead sizes — a breaking change, in that SASA
 on a coarse-grained chain now requires the force field to be named (e.g.
 `forcefield='mpipi-gg'`) rather than silently treating every bead as a carbon
-atom. See the [changelog](CHANGELOG.md) for details.
+atom. The latest **2.0.5** is a correctness and documentation release from a
+follow-up package-wide review — six bug fixes (one interpreter-crashing,
+several silently-wrong) with regression tests for each. See the
+[changelog](CHANGELOG.md) for details.
 
 The full, versioned changelog is in [CHANGELOG.md](CHANGELOG.md).
 

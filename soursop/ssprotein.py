@@ -1131,6 +1131,21 @@ class SSProtein:
                 f"Trying to select a subsection of atoms, but the provided 'region' tuple/list is not of exactly length two [region={region}].\nCould indicate a problem, so be safe raising an exception"
             )
 
+        # An empty selection must not propagate: mdtraj's rmsd() on an empty
+        # atom set returns uninitialized-memory garbage and then segfaults the
+        # interpreter.
+        if len(selectionatoms) == 0:
+            if region is None:
+                raise SSException(
+                    "Atom selection matched no atoms - this chain appears to "
+                    "contain no backbone atoms."
+                )
+            raise SSException(
+                f"The provided 'region' {list(region)} selects no atoms - both "
+                f"endpoints are inclusive residue indices and this chain has "
+                f"residues 0 to {self.n_residues - 1}."
+            )
+
         return selectionatoms
 
     # ........................................................................
@@ -1931,10 +1946,14 @@ class SSProtein:
         """Sliding-window heterogeneity: per-position distribution of intra-window RMSDs.
 
         At each starting residue ``i`` (from 0 to ``n_residues - fragment_size``)
-        the method computes the RMSD of the local fragment ``[i, i+fragment_size]``
-        across every (strided) frame, then summarises that distribution by
-        its mean, standard deviation, and histogram. The Phi parameter of
-        Lyle, Das & Pappu (2013) is built from this same family of D-values.
+        the method computes the RMSD of the local ``fragment_size``-residue
+        fragment ``[i, i+fragment_size-1]`` (inclusive), pooling every strided
+        reference frame against every frame of the trajectory (the reference
+        frames are strided; the comparison frames are not, and each reference's
+        zero self-comparison is included in the pool), then summarises that
+        distribution by its mean, standard deviation, and histogram. The Phi
+        parameter of Lyle, Das & Pappu (2013) is built from this same family
+        of D-values.
 
         Computational cost scales with ``n_residues * (n_frames / stride)``;
         the default ``stride=20`` keeps things tractable on long trajectories.
@@ -2254,7 +2273,15 @@ class SSProtein:
         # if a second frame number was provided with which we're going to work with.
         # Accept NumPy integer types (e.g. from np.arange / np.where) as well as
         # Python int; isinstance(..., int) alone silently rejected np.int64 and
-        # fell through to the compare-vs-all-frames branch.
+        # fell through to the compare-vs-all-frames branch. A non-integer
+        # frame2 (e.g. 3.5) would silently take that same branch, so reject it
+        # outright rather than quietly answering a different question.
+        if not isinstance(frame2, (int, np.integer)):
+            raise SSException(
+                f"frame2 must be an integer frame index (or -1 to compare "
+                f"against all frames); received {frame2!r}"
+            )
+
         if frame2 > -1 and isinstance(frame2, (int, np.integer)):
             # our target is now a single (i.e. doing RMSD of two structures)
             target = self.traj.slice(frame2)
@@ -6437,7 +6464,8 @@ class SSProtein:
         """Sliding-window local radius of gyration profile.
 
         At every starting residue ``i`` the local Rg is computed over the
-        window ``[i, i + window_size]``, producing a per-position profile of
+        ``window_size``-residue window ``[i, i + window_size - 1]`` (inclusive),
+        producing a per-position profile of
         compaction along the chain. Useful for identifying locally collapsed
         regions in otherwise extended IDPs (and vice versa).
 

@@ -145,8 +145,15 @@ class SSTrajectory:
             from which the SSTrajectory object is constructed. Default = None
 
         protein_grouping : list of lists of ints
-            Lets you manually define protein groups to be considered independently.
-            Default = None
+            Lets you manually define protein groups to be considered
+            independently: each inner list holds the (0-indexed) residue
+            indices of one protein. The groups are validated on load - each
+            must be a non-empty iterable of integer residue indices in
+            strictly increasing order (no duplicates), and no residue may
+            appear in more than one group; violations raise an
+            ``SSException``. Note that prior to 2.0.4 malformed groups were
+            accepted and silently reordered (or duplicated across proteins)
+            by the underlying topology selection. Default = None
 
         pdblead : bool
             Lets you set the PDB file (which is normally ONLY used as a topology
@@ -651,7 +658,17 @@ class SSTrajectory:
                         # if yes
                         local_atoms.extend([a.index for a in res.atoms])
 
-                chainAtoms.append(local_atoms)
+                # only keep chains that actually contained protein residues -
+                # a chain with none (e.g. a solvent chain, the very case this
+                # flag exists for) would otherwise contribute an empty atom
+                # list, and atom_slice([]) builds an empty topology that
+                # crashes downstream residue lookups
+                if len(local_atoms) > 0:
+                    chainAtoms.append(local_atoms)
+                elif debug:
+                    ssio.debug_message(
+                        f"Skipping {chain}: no valid protein residues found"
+                    )
 
         # for each protein chain that we have atomic indices
         # for (hopefully all of them!) cycle through and create
@@ -713,13 +730,16 @@ class SSTrajectory:
             relevant defects such as unitcell issues etc)
 
         residue_grouping : list of list of integers
-            Must be a list containing one or more lists, where each internal
-            list contains a set of monotonically increasing residues (which
-            correspond to the full protein trajectory). In other words, each
-            sub-list  defines a single protein. The integer indexing here -
-            importantly - uses the  CAMPARITraj internal residue indexing,
-            meaning that  indexing begins at 0 from the first residue in the
-            PDB file.
+            Must be a list containing one or more non-empty lists, where each
+            internal list contains a set of strictly increasing (no
+            duplicates) integer residue indices, and no residue index may
+            appear in more than one list. In other words, each sub-list
+            defines a single protein. Violations of any of these rules raise
+            an ``SSException`` (previously such input was silently reordered
+            or duplicated by the topology selector). The integer indexing
+            here - importantly - uses the CAMPARITraj internal residue
+            indexing, meaning that indexing begins at 0 from the first
+            residue in the PDB file.
 
         Returns
         ---------

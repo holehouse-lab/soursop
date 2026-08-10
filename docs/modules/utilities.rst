@@ -79,7 +79,7 @@ Polymer-physics relations that operate on numbers rather than trajectories. :fun
     from soursop.sspolymer import get_overlap_concentration
 
     c_star = get_overlap_concentration(25.0)      # Rg in Angstroms
-    print(f"c* = {c_star:.4f} mg/mL")
+    print(f"c* = {c_star:.4f} M")
 
 .. autofunction:: soursop.sspolymer.get_overlap_concentration
 

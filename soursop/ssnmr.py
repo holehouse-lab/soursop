@@ -1880,7 +1880,12 @@ def __set_sequence(sequence, key1, key3):
     for i in range(len(regex)):
         set = regex[i]
         if set[0] == "":
-            aa1 = set[1]
+            # case-insensitive, matching the parenthesised three-letter branch
+            # below (which has always upper()d its input). Without this,
+            # lowercase letters fell outside the A-Z ord() window and were
+            # silently dropped - corrupting the nearest-neighbour context of
+            # every surrounding residue rather than raising.
+            aa1 = set[1].upper()
             code = ord(aa1[0]) - 65
             # key_aa1 has 26 entries (indices 0-25); the bound was `code > 35`,
             # which let codes 26-35 (chars '[ \ ] ^ _ ` a b c d') through to

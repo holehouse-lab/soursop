@@ -35,8 +35,9 @@ def get_overlap_concentration(rg):
 
     """
 
-    # Avogadro's number!
-    Na = 6.023e23
+    # Avogadro's number (exact, 2019 SI redefinition). Was previously the
+    # truncated 6.023e23, a 0.014% systematic error in the returned c*.
+    Na = 6.02214076e23
 
     # get rg in meters (convert from Angstroms to meters)
     rg = rg * 1e-10

@@ -267,3 +267,79 @@ def test_local_heterogeneity_uses_every_exact_size_window(NTL9, monkeypatch):
 
     assert len(mean) == len(std) == len(histo) == 1
     assert regions == [(0, NTL9.n_residues - 1)]
+
+
+# ........................................................................
+# fixes from the post-2.0.4-commit review round
+#
+
+
+def test_explicit_residue_checking_skips_all_solvent_chains():
+    """A chain with zero protein residues must be skipped, not crash.
+
+    Under ``explicit_residue_checking=True`` an all-solvent chain used to
+    contribute an empty atom list; atom_slice([]) built an empty topology and
+    the first-residue lookup raised IndexError - defeating the exact use case
+    (solvent-heavy topologies) the flag exists for.
+    """
+    gs6 = md.load(os.path.join(test_data_dir, "gs6_AA.pdb"))
+
+    topology = md.Topology()
+    chain = topology.add_chain()
+    residue = topology.add_residue("HOH", chain)
+    topology.add_atom("O", md.core.element.oxygen, residue)
+    water = md.Trajectory(np.zeros((1, 1, 3), dtype=np.float32), topology)
+
+    combo = gs6[0].stack(water)
+
+    traj = sstrajectory.SSTrajectory(TRJ=combo, explicit_residue_checking=True)
+    assert traj.n_proteins == 1
+    assert traj.proteinTrajectoryList[0].n_residues == gs6.n_residues
+
+
+def test_chemical_shift_sequence_parsing_is_case_insensitive():
+    """Lowercase one-letter codes were silently dropped, corrupting the
+    nearest-neighbour context of every surrounding residue."""
+    from soursop.ssnmr import compute_random_coil_chemical_shifts
+
+    upper = compute_random_coil_chemical_shifts("ASGAS")
+    lower = compute_random_coil_chemical_shifts("asgas")
+    mixed = compute_random_coil_chemical_shifts("AsGaS")
+
+    assert len(upper) == len(lower) == len(mixed) == 5
+    for res_up, res_low, res_mixed in zip(upper, lower, mixed):
+        assert res_up == res_low == res_mixed
+
+
+def test_get_rmsd_empty_region_raises_not_segfaults(NTL9):
+    """A fully out-of-range region selects zero atoms; passing that to
+    mdtraj's rmsd() returned garbage and then segfaulted the interpreter."""
+    with pytest.raises(SSException, match="selects no atoms"):
+        NTL9.get_RMSD(0, region=[NTL9.n_residues + 5, NTL9.n_residues + 10])
+
+
+def test_get_rmsd_partially_out_of_range_region_still_clips(NTL9):
+    # a partially out-of-range region is clipped by mdtraj and remains
+    # bitwise identical to the properly bounded call - preserve that
+    a = NTL9.get_RMSD(0, region=[0, NTL9.n_residues])
+    b = NTL9.get_RMSD(0, region=[0, NTL9.n_residues - 1])
+    assert np.array_equal(a, b)
+
+
+def test_get_rmsd_non_integer_frame2_raises(NTL9):
+    """frame2=3.5 used to silently fall into the compare-vs-all-frames
+    branch, answering a different question than the caller asked."""
+    with pytest.raises(SSException, match="frame2 must be an integer"):
+        NTL9.get_RMSD(0, frame2=3.5)
+
+
+def test_overlap_concentration_uses_exact_avogadro():
+    """Pin c* against the closed form with the exact (2019 SI) Avogadro
+    number; the truncated 6.023e23 gave a 0.014% systematic error."""
+    from soursop.sspolymer import get_overlap_concentration
+
+    rg_angstrom = 25.0
+    volume_litres = (4.0 / 3.0) * np.pi * (rg_angstrom * 1e-10) ** 3 * 1000.0
+    expected = 1.0 / (volume_litres * 6.02214076e23)
+
+    assert np.isclose(get_overlap_concentration(rg_angstrom), expected, rtol=1e-12)
