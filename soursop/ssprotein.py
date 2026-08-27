@@ -3717,13 +3717,18 @@ class SSProtein:
         Parameters
         ----------
         R1 : int, optional
-            First residue of the region. ``None`` (default) means the first
-            residue including caps.
+            First residue of the region (inclusive). ``None`` (default) means
+            the first residue - including caps for ``mode='nygaard'``, and the
+            first CA-bearing residue for ``mode='kr'``.
         R2 : int, optional
-            Last residue of the region. ``None`` (default) means the last
-            residue including caps.
+            Last residue of the region (inclusive). ``None`` (default) means
+            the last residue - including caps for ``mode='nygaard'``, and the
+            last CA-bearing residue for ``mode='kr'``.
         mode : {'nygaard', 'kr'}, optional
-            Which estimator to use. Default is ``'nygaard'``.
+            Which estimator to use. Default is ``'nygaard'``. In ``'kr'`` mode
+            the sum runs over every pair of CA-bearing residues inside the
+            region (caps, which have no CA, never contribute), and the region
+            must contain at least two such residues.
         alpha1, alpha2, alpha3 : float, optional
             Parameters of equation (7) of Nygaard et al. Defaults reproduce
             the published values (0.216, 4.06, 0.821). Ignored for ``mode='kr'``.
@@ -3743,6 +3748,13 @@ class SSProtein:
         np.ndarray or float
             Per-frame :math:`R_h` (length ``n_frames``), or the scalar
             weighted mean if ``weights`` is supplied. Angstroms.
+
+        Raises
+        ------
+        SSException
+            If ``mode`` or ``distance_mode`` is invalid, if the residue range
+            is out of bounds, or (``mode='kr'``) if the region holds fewer
+            than two CA-bearing residues.
 
         Example
         -------
@@ -3790,27 +3802,44 @@ class SSProtein:
 
         # if we're using the Kirkwood-Riseman mode
         elif mode == "kr":
-            all_rij = []
+            # resolve the requested region. withCA=True means the defaults are the
+            # first and last CA-bearing residues - ACE/NME caps have no CA and so
+            # can never enter the sum
+            (R1, R2, _) = self.__get_first_and_last(R1, R2, withCA=True)
 
-            # build empty lists associated with each frame
-            for _ in range(self.n_frames):
-                all_rij.append([])
+            # the beads in the Kirkwood-Riseman sum are the CA-bearing residues
+            # that lie inside the region. Note that prior to 2.0.6 this branch
+            # looped over every CA-bearing residue in the chain and ignored
+            # R1/R2 entirely, so a sub-region request silently returned the
+            # whole-chain value
+            region_resids = [r for r in self.resid_with_CA if R1 <= r <= R2]
+            if len(region_resids) < 2:
+                raise SSException(
+                    f"The Kirkwood-Riseman hydrodynamic radius needs at least two CA-bearing residues in the selected region, but residues {R1}-{R2} contain {len(region_resids)}"
+                )
 
-            # now use our efficient implementation for calculating non-redundant
-            # and non-overlaping inter-residue distances for each residue over
-            # every frame
-            for idx in self.resid_with_CA:
-                rij = self.calculate_all_CA_distances(idx, mode=distance_mode)
+            # accumulate, frame by frame, the sum of inverse distances over every
+            # non-redundant residue pair inside the region
+            inverse_distance_sum = np.zeros(self.n_frames)
+            n_pairs = 0
 
-                # this breaks rij down into each frame
-                for idx, f in enumerate(rij):
-                    # extend the contribugion for each residue's set of non-redundant
-                    # inverse distances
-                    all_rij[idx].extend((1 / f).tolist())
+            for ridx in region_resids:
+                # distances from ridx to every CA-bearing residue C-terminal of
+                # it, in ascending residue order (one column per partner)
+                rij = self.calculate_all_CA_distances(ridx, mode=distance_mode)
 
-            # finally, take per-frame inverse of the inverse distance
-            # to get Rh
-            Rh = np.reciprocal(np.mean(all_rij, axis=1).astype(float))
+                # keep only the partners that also lie inside the region
+                partners = [r for r in self.resid_with_CA if r > ridx]
+                keep = np.array([r <= R2 for r in partners], dtype=bool)
+                if not np.any(keep):
+                    continue
+
+                inverse_distance_sum += np.sum(1.0 / rij[:, keep], axis=1)
+                n_pairs += int(np.sum(keep))
+
+            # per-frame Rh is the inverse of the per-frame mean inverse distance,
+            # i.e. Rh = 1 / <1/r_ij>_{i != j}
+            Rh = n_pairs / inverse_distance_sum
 
             if wv is False:
                 return Rh

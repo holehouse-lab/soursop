@@ -2,6 +2,19 @@
 
 All notable changes to SOURSOP are documented in this file.
 
+## 2.0.6 (unreleased)
+
+A small correctness release: one silently-wrong bug fix in the Kirkwood-Riseman hydrodynamic radius. No new features and no API changes.
+
+### Bug fixes
+* `ssprotein.get_hydrodynamic_radius(mode='kr')`: **Fixed `R1`/`R2` being silently ignored.** The Kirkwood-Riseman branch looped over every CA-bearing residue in the chain and never consulted the requested region, so asking for the hydrodynamic radius of a sub-region returned the whole-chain value with no warning (the `'nygaard'` branch has always honoured `R1`/`R2`). The sum now runs over the pairs of CA-bearing residues inside `[R1, R2]` only. Whole-chain calls are numerically unchanged (the pinned reference values in `test_ssproteins.py` are untouched). Two consequences of taking the region seriously: caps (which have no CA) never contribute, so `R1=None`/`R2=None` now resolve to the first/last CA-bearing residue in this mode, and a region holding fewer than two CA-bearing residues raises an `SSException` rather than dividing by zero. The per-frame accumulation was also rewritten to run on NumPy arrays instead of growing Python lists.
+
+### Documentation
+* `get_hydrodynamic_radius` now documents the region semantics for each mode (inclusive endpoints; caps excluded in `'kr'` mode), the minimum region size, and lists the conditions under which it raises.
+
+### Testing
+* Added `tests/test_bugfixes_2_0_6.py`: sub-region Kirkwood-Riseman values are checked against an explicit sum over raw mdtraj CA (and COM) distances, the whole-chain values are pinned to their previous reference values, default and explicit full ranges agree, swapped endpoints agree, caps are excluded, and too-small or out-of-range regions raise.
+
 ## 2.0.5 (August 2026)
 
 A correctness and documentation release from a follow-up package-wide review after 2.0.4: six bug fixes (one interpreter-crashing, several silently-wrong), a documentation audit pass, and expanded regression coverage. No new features and no API changes beyond stricter input validation.
