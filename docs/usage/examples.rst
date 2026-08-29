@@ -53,6 +53,8 @@ The most common IDP observables describe the overall size and shape of the chain
     print(f"Mean Rh  = {np.mean(rh):.2f} ± {np.std(rh):.2f} Å")
     print(f"Mean e2e = {np.mean(e2e):.2f} ± {np.std(e2e):.2f} Å")
 
+Both ``get_hydrodynamic_radius`` and ``get_t`` accept ``R1`` / ``R2`` to restrict the calculation to a sub-region; the chain length ``N`` that enters each formula is then the number of residues in that region (``R2 - R1 + 1``), while the default call uses every residue in the chain, caps included.
+
 **Asphericity** describes how far the chain deviates from a sphere (0 = perfectly spherical, 1 = rod-like)::
 
     asph = protein.get_asphericity()
@@ -257,10 +259,11 @@ Only residues with *both* φ and ψ defined are classified, and ``resid_list`` a
     plt.title('Per-residue solvent accessibility')
     plt.show()
 
-Other granularities are available via ``mode``: ``'atom'`` for per-atom SASA, ``'sidechain'`` / ``'backbone'`` for the per-residue sum over those atoms only, and ``'all'`` for a 3-tuple of ``(residue, sidechain, backbone)`` arrays::
+Other granularities are available via ``mode``: ``'atom'`` for per-atom SASA, ``'sidechain'`` / ``'backbone'`` for the per-residue sum over those atoms only, and ``'all'`` for a 3-tuple of ``(residue, sidechain, backbone)`` arrays. In ``'all'`` mode the three arrays are column-aligned over the CA-bearing residues (``protein.resid_with_CA``), so on a capped chain the residue array here excludes the ACE/NME caps that ``mode='residue'`` on its own includes::
 
     residue_sasa, sidechain_sasa, backbone_sasa = protein.get_all_SASA(
         mode='all', stride=10)
+    assert residue_sasa.shape == sidechain_sasa.shape == backbone_sasa.shape
 
 **Regional SASA** for a specific stretch of residues — useful for assessing the accessibility of a functional linear motif. This returns a single number: the sum, over residues ``R1`` to ``R2-1``, of each residue's time-averaged SASA::
 

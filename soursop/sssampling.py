@@ -67,7 +67,9 @@ def compute_joint_hellinger_distance(p, q):
     b_coefficient = np.sum(np.sqrt(p * q))
 
     # Compute the Hellinger's distance - note this doesn't need the normalization by sqrt(2)
-    distance = np.sqrt(1 - b_coefficient)
+    # For identical distributions floating point can push BC a hair above 1,
+    # which would give sqrt of a negative number (nan); clamp at 0.
+    distance = np.sqrt(max(1.0 - b_coefficient, 0.0))
 
     return distance
 
@@ -117,13 +119,60 @@ def hellinger_distance(p: np.ndarray, q: np.ndarray) -> np.ndarray:
     return np.sqrt(numerator) / denominator
 
 
+def smooth_pdf(pdf: np.ndarray, pseudocount: float = 1e-6) -> np.ndarray:
+    """Add a pseudocount to every bin of a PDF and renormalise.
+
+    Histogrammed dihedral distributions routinely contain empty bins, and
+    the Kullback-Leibler divergence is undefined (infinite) wherever the
+    reference bin is empty but the trajectory bin is not. Adding a small
+    constant mass to every bin and renormalising along the last axis
+    gives every distribution full support so the divergence is finite.
+
+    Parameters
+    ----------
+    pdf : np.ndarray
+        Probability mass array. The last axis is the distribution axis;
+        leading axes are treated independently.
+    pseudocount : float, optional
+        Mass added to every bin before renormalising. ``0`` returns the
+        input unchanged. Default ``1e-6``.
+
+    Returns
+    -------
+    np.ndarray
+        Smoothed array of the same shape, each row summing to 1.
+
+    Example
+    -------
+    >>> import numpy as np
+    >>> from soursop.sssampling import smooth_pdf
+    >>> smooth_pdf(np.array([1.0, 0.0]), pseudocount=0.5)
+    array([0.75, 0.25])
+    """
+    pdf = np.asarray(pdf, dtype=float)
+    if pseudocount < 0:
+        raise SSException(f"pseudocount must be non-negative. Received {pseudocount}")
+    if pseudocount == 0:
+        return pdf
+    smoothed = pdf + pseudocount
+    return smoothed / np.sum(smoothed, axis=-1, keepdims=True)
+
+
 def rel_entropy(p: np.ndarray, q: np.ndarray) -> np.ndarray:
     """Kullback-Leibler relative entropy :math:`D_{KL}(P || Q)`.
 
-    Computed via ``scipy.special.rel_entr`` (which handles ``p == 0`` and
-    ``q == 0`` correctly), summed along the last axis. Asymmetric in
-    ``p`` and ``q``; the result is always non-negative and is 0 only when
-    ``p == q`` almost everywhere.
+    Computed via ``scipy.special.rel_entr`` summed along the last axis.
+    Asymmetric in ``p`` and ``q``; the result is always non-negative and
+    is 0 only when ``p == q`` almost everywhere.
+
+    Note that KL divergence is undefined on disjoint support: any bin
+    with ``p > 0`` and ``q == 0`` contributes ``inf``. This function
+    returns that raw value and does no smoothing. The
+    :class:`SamplingQuality` methods that call it
+    (:meth:`~SamplingQuality.compute_dihedral_rel_entropy` and
+    :meth:`~SamplingQuality.get_all_to_all_trj_comparisons`) apply a
+    pseudocount via :func:`smooth_pdf` by default, because histogrammed
+    dihedral distributions almost always contain empty bins.
 
     Parameters
     ----------
@@ -135,6 +184,7 @@ def rel_entropy(p: np.ndarray, q: np.ndarray) -> np.ndarray:
     -------
     np.ndarray
         Relative entropy values with shape ``p.shape[:-1]``, in nats.
+        ``inf`` wherever ``q`` is zero on part of ``p``'s support.
 
     Example
     -------
@@ -166,6 +216,8 @@ class SamplingQuality:
         n_cpus: int = None,
         truncate: bool = False,
         force_sequential: bool = False,
+        seed: Union[int, None] = None,
+        verbose: bool = True,
         **kwargs: dict,
     ):
         """Compare sampling quality of one or more trajectories against a reference.
@@ -189,17 +241,22 @@ class SamplingQuality:
             Trajectory file paths for the reference ensembles. If ``None``,
             the precomputed EV limiting-polymer dihedrals are used as the
             reference.
-        top_file : str, optional
-            Topology PDB for the simulated trajectories. Default
-            ``"__START.pdb"``.
-        ref_top : str or None, optional
-            Topology PDB for the reference trajectories. Only required when
+        top_file : str or list of str, optional
+            Topology PDB for the simulated trajectories. Either a single
+            path shared by every trajectory, or a list with one entry per
+            element of ``traj_list``. Default ``"__START.pdb"``.
+        ref_top : str or list of str or None, optional
+            Topology PDB for the reference trajectories; a single path or
+            one per element of ``reference_list``. Only required when
             ``reference_list`` is supplied.
         method : {'2D angle distributions', '1D angle distributions'}, optional
             Histogram strategy used when computing Hellinger distances and
             relative entropies. Default ``'2D angle distributions'``.
         bwidth : float, optional
-            Histogram bin width in radians. Default ``deg2rad(15)``.
+            Histogram bin width in radians. Must lie in ``(0, 2*pi]`` and
+            divide 360 degrees into an integer number of bins (so 15, 10,
+            7.5 or 5 degrees are fine, 7 degrees is not). Default
+            ``deg2rad(15)``.
         proteinID : int, optional
             Index into each trajectory's ``proteinTrajectoryList`` that
             picks the chain to analyse. Default 0.
@@ -213,15 +270,40 @@ class SamplingQuality:
         force_sequential : bool, optional
             If True, load trajectories one-by-one rather than in parallel.
             Default False.
+        seed : int or None, optional
+            Seed for the random number generator used to resample the
+            precomputed EV reference dihedrals when no ``reference_list``
+            is supplied. Passing an integer makes the EV reference (and
+            hence every downstream Hellinger distance) reproducible. None
+            (default) draws a fresh, unseeded generator.
+        verbose : bool, optional
+            If True, print a short status message when trajectories are
+            truncated. Default True.
         **kwargs : dict
-            Extra keyword arguments forwarded to :class:`SSTrajectory` (e.g.
-            ``stride``).
+            Extra keyword arguments forwarded verbatim to
+            :class:`SSTrajectory`, e.g. ``extra_valid_residue_names``,
+            ``explicit_residue_checking``, ``protein_grouping`` or
+            ``pdblead``. Note that there is no stride or frame-weighting
+            support here: every frame of every trajectory is used.
+
+        Attributes
+        ----------
+        residue_indices : list of int
+            0-based residue indices (in the analysed chain's own numbering) of
+            the columns of every dihedral array. Every residue that carries
+            both a phi and a psi: all non-cap residues on a capped chain, the
+            interior residues on an uncapped one.
 
         Raises
         ------
         SSException
-            If ``method`` is not one of the allowed options, ``bwidth`` is
-            out of range, or ``traj_list`` is empty.
+            If ``method`` is not one of the allowed options; if ``bwidth``
+            is outside ``(0, 2*pi]`` or does not divide 360 degrees into a
+            whole number of bins; if ``traj_list`` is empty; if
+            ``reference_list`` (or a per-trajectory ``top_file`` /
+            ``ref_top`` list) does not match the length of ``traj_list``;
+            or if the loaded trajectories do not all have the same number of
+            frames and ``truncate`` is False.
 
         Example
         -------
@@ -243,14 +325,22 @@ class SamplingQuality:
         self.n_cpus = n_cpus
         self.truncate = truncate
         self.force_sequential = force_sequential
+        self.seed = seed
+        self.verbose = verbose
         self.kwargs = kwargs
 
-        self.bins = self.get_degree_bins()
         self.__precomputed = {}
 
+        # validate before building the bin grid: get_degree_bins relies on
+        # bwidth being sane, and a tiny bwidth would otherwise try to
+        # allocate an enormous array before we ever got to check it.
         self.__validate_arguments()
 
+        self.bins = self.get_degree_bins()
+
         self.__load_trajectories()
+
+        self.__check_frame_counts()
 
         # if reference trajectories have been provided
         # then self.ref_trajs should have been initialized.
@@ -305,60 +395,45 @@ class SamplingQuality:
                 bins=self.bins,
                 num_trajs=len(self.trajs),
                 nsamples=len(self.trajs[0]),
+                seed=self.seed,
             )
 
-            # Align the EV reference count with the trajectory dihedral count.
-            # The reference is gathered once per residue, but get_angles('phi')
-            # / ('psi') return one fewer angle than there are residues for an
-            # UNCAPPED chain (phi is undefined at the N-terminal residue, psi at
-            # the C-terminal residue). Without this the EV path crashed on
-            # uncapped inputs with a broadcast error (n_res vs n_res-1). Trim
-            # the reference from the phi-start / psi-end so the arrays align.
-            self.ref_phi_angles = self.__align_reference_angles(
-                precomputed_interface.ref_phi_angles, self.phi_angles, drop="first"
-            )
-            self.ref_psi_angles = self.__align_reference_angles(
-                precomputed_interface.ref_psi_angles, self.psi_angles, drop="last"
-            )
-
-    @staticmethod
-    def __align_reference_angles(reference, trajectory, drop):
-        """Trim a per-residue reference angle array to the trajectory's count.
-
-        ``reference`` and ``trajectory`` are ``(n_trajs, n_residues, n_samples)``
-        arrays. When the reference has exactly one extra residue (the uncapped
-        case), drop it from the terminus where the corresponding backbone
-        dihedral is undefined (``'first'`` for phi, ``'last'`` for psi).
-
-        Parameters
-        ----------
-        reference : np.ndarray
-            Reference dihedral angles, ``(n_trajs, n_ref_res, n_samples)``.
-        trajectory : np.ndarray
-            Trajectory dihedral angles, ``(n_trajs, n_traj_res, n_samples)``.
-        drop : {'first', 'last'}
-            Terminus to trim from when the reference has one extra residue.
-
-        Returns
-        -------
-        np.ndarray
-            The reference array trimmed to match ``trajectory``'s residue axis.
-        """
-        n_ref = reference.shape[1]
-        n_traj = trajectory.shape[1]
-        if n_ref == n_traj + 1:
-            return reference[:, 1:, :] if drop == "first" else reference[:, :-1, :]
-        return reference
+            # The reference tables hold one row per (cap-stripped) sequence
+            # position. Select the rows for exactly the residues that carry
+            # both a phi and a psi in the trajectories (self.residue_indices),
+            # so trajectory column k and reference column k are the same
+            # residue. On a capped chain that is every non-cap residue; on an
+            # uncapped chain the two terminal residues are excluded.
+            protein = self.trajs[0].proteinTrajectoryList[self.proteinID]
+            offset = 1 if protein.ncap else 0
+            rows = [r - offset for r in self.residue_indices]
+            self.ref_phi_angles = precomputed_interface.ref_phi_angles[:, rows, :]
+            self.ref_psi_angles = precomputed_interface.ref_psi_angles[:, rows, :]
 
     def __validate_arguments(self):
         ssutils.validate_keyword_option(
             self.method, ["2D angle distributions", "1D angle distributions"], "method"
         )
 
-        if self.bwidth > 2 * np.pi or not self.bwidth > 0:
+        if (
+            not np.isfinite(self.bwidth)
+            or self.bwidth > 2 * np.pi
+            or not self.bwidth > 0
+        ):
             raise SSException(
-                f"The bwidth parameter must be between 0 and 2*pi.\
-                    Received {self.bwidth}"
+                f"The bwidth parameter must be between 0 and 2*pi. Received {self.bwidth}"
+            )
+
+        # The bin grid must tile [-180, 180] exactly, so 360 degrees has to be
+        # an integer multiple of the bin width. Anything else either leaves a
+        # ragged final bin or (previously) got silently rounded to whole
+        # degrees.
+        n_bins = 2 * np.pi / self.bwidth
+        if abs(n_bins - np.round(n_bins)) > 1e-6:
+            raise SSException(
+                "The bwidth parameter must divide 360 degrees into a whole "
+                f"number of bins. Received {np.rad2deg(self.bwidth):.6g} degrees, "
+                f"which gives {n_bins:.6g} bins. Use e.g. 15, 10, 7.5 or 5 degrees."
             )
 
         if not self.n_cpus:
@@ -370,6 +445,38 @@ class SamplingQuality:
                     Received len(traj_list)={len(self.traj_list)}"
             )
 
+        # Trajectories and references are paired one-to-one (zip), so the
+        # two lists must have the same length. Previously a mismatch either
+        # silently dropped the extra entries or, for a single trajectory with
+        # several references, never set self.ref_trajs and failed later with
+        # an AttributeError.
+        if self.reference_list and len(self.reference_list) != len(self.traj_list):
+            raise SSException(
+                "reference_list must contain one reference trajectory per "
+                "input trajectory (they are paired one-to-one). Received "
+                f"len(traj_list)={len(self.traj_list)} and "
+                f"len(reference_list)={len(self.reference_list)}."
+            )
+
+        # per-trajectory topology lists must line up with the trajectories
+        if not isinstance(self.top, str) and len(self.top) != len(self.traj_list):
+            raise SSException(
+                "top_file must be a single path or a list with one entry per "
+                f"trajectory. Received len(top_file)={len(self.top)} and "
+                f"len(traj_list)={len(self.traj_list)}."
+            )
+        if (
+            self.reference_list
+            and self.ref_top is not None
+            and not isinstance(self.ref_top, str)
+            and len(self.ref_top) != len(self.reference_list)
+        ):
+            raise SSException(
+                "ref_top must be a single path or a list with one entry per "
+                f"reference trajectory. Received len(ref_top)={len(self.ref_top)} "
+                f"and len(reference_list)={len(self.reference_list)}."
+            )
+
     def __load_trajectories(self):
         # weird thing I have to do to prevent issues with multiprocessing
         # parallel loading when there is only 1 trajectory to load
@@ -378,7 +485,11 @@ class SamplingQuality:
         if len(self.traj_list) == 1:
             self.trajs = []
             self.trajs.append(
-                SSTrajectory(self.traj_list, pdb_filename=self.top, **self.kwargs)
+                SSTrajectory(
+                    self.traj_list,
+                    pdb_filename=self.__topology_for(self.top, 0),
+                    **self.kwargs,
+                )
             )
 
             # if the reference list has been provided initialize the reference trajectories
@@ -390,7 +501,9 @@ class SamplingQuality:
                 self.ref_trajs = []
                 self.ref_trajs.append(
                     SSTrajectory(
-                        self.reference_list, pdb_filename=self.ref_top, **self.kwargs
+                        self.reference_list,
+                        pdb_filename=self.__topology_for(self.ref_top, 0),
+                        **self.kwargs,
                     )
                 )
 
@@ -398,17 +511,23 @@ class SamplingQuality:
             if self.force_sequential:
                 # Load trajectories sequentially
                 self.trajs = []
-                for traj in self.traj_list:
+                for i, traj in enumerate(self.traj_list):
                     self.trajs.append(
-                        SSTrajectory([traj], pdb_filename=self.top, **self.kwargs)
+                        SSTrajectory(
+                            [traj],
+                            pdb_filename=self.__topology_for(self.top, i),
+                            **self.kwargs,
+                        )
                     )
 
                 if self.reference_list:
                     self.ref_trajs = []
-                    for ref_traj in self.reference_list:
+                    for i, ref_traj in enumerate(self.reference_list):
                         self.ref_trajs.append(
                             SSTrajectory(
-                                [ref_traj], pdb_filename=self.ref_top, **self.kwargs
+                                [ref_traj],
+                                pdb_filename=self.__topology_for(self.ref_top, i),
+                                **self.kwargs,
                             )
                         )
             else:
@@ -426,6 +545,41 @@ class SamplingQuality:
                         n_procs=self.n_cpus,
                         **self.kwargs,
                     )
+
+    @staticmethod
+    def __topology_for(top, index):
+        """Resolve the topology path for the trajectory at ``index``.
+
+        ``top`` may be a single path (shared by every trajectory), a
+        per-trajectory list, or None. Length agreement is checked in
+        ``__validate_arguments``.
+        """
+        if top is None or isinstance(top, str):
+            return top
+        return top[index]
+
+    def __check_frame_counts(self):
+        """Raise if the loaded trajectories cannot be stacked into one array.
+
+        Dihedral angles from every trajectory (and its paired reference,
+        or the resampled EV reference) are stacked into a single array, so
+        every trajectory must contain the same number of frames unless
+        ``truncate=True`` was requested. Previously a mismatch surfaced as
+        an opaque inhomogeneous-shape ValueError from numpy.
+        """
+        if self.truncate:
+            return
+
+        lengths = [trj.n_frames for trj in self.trajs]
+        if self.reference_list:
+            lengths.extend(ref_trj.n_frames for ref_trj in self.ref_trajs)
+
+        if len(set(lengths)) > 1:
+            raise SSException(
+                "All trajectories (and reference trajectories) must contain the "
+                f"same number of frames. Received frame counts {lengths}. Pass "
+                "truncate=True to slice every trajectory to the shortest length."
+            )
 
     def __truncate_trajectories(self) -> Tuple[List[SSTrajectory], List[SSTrajectory]]:
         """Internal function used to truncate the lengths of trajectories
@@ -456,11 +610,12 @@ class SamplingQuality:
                         ]
                     )
                 )
-            print(
-                f"Successfully truncated.\n\
+            if self.verbose:
+                print(
+                    f"Successfully truncated.\n\
                     The shortest trajectory is: {self.min_length} frames.\
                     All trajectories truncated to {self.min_length}"
-            )
+                )
             return (temp_trajs, None)
 
         for trj, ref_trj in zip(self.trajs, self.ref_trajs):
@@ -487,70 +642,112 @@ class SamplingQuality:
                 )
             )
 
-        print(
-            f"Successfully truncated.\n\
+        if self.verbose:
+            print(
+                f"Successfully truncated.\n\
                 The shortest trajectory is: {self.min_length} frames.\
                 All trajectories truncated to {self.min_length}"
-        )
+            )
 
         return (temp_trajs, temp_ref_trjs)
+
+    @staticmethod
+    def __aligned_dihedrals(protein):
+        """Phi and psi of one protein, restricted to residues that have both.
+
+        ``SSProtein.get_angles('phi')`` is undefined for the first residue of
+        an uncapped chain and ``get_angles('psi')`` for the last, so the two
+        arrays are offset by one residue relative to each other. PENGUIN
+        compares the *joint* (phi, psi) distribution per residue, so both
+        arrays are cut down to the residues that carry both angles - every
+        non-cap residue on a capped chain, the interior residues on an
+        uncapped one.
+
+        Parameters
+        ----------
+        protein : SSProtein
+
+        Returns
+        -------
+        (phi, psi, residue_indices)
+            ``phi`` and ``psi`` are ``(n_residues, n_frames)`` arrays in
+            degrees; ``residue_indices`` is the list of 0-based residue
+            indices (in the protein's own numbering) of the columns.
+        """
+        phi_atoms, phi = protein.get_angles("phi")
+        psi_atoms, psi = protein.get_angles("psi")
+
+        # the central residue of phi = [C(i-1), N(i), CA(i), C(i)] and of
+        # psi = [N(i), CA(i), C(i), N(i+1)] is the residue of atom 1
+        phi_res = [quad[1].residue.index for quad in phi_atoms]
+        psi_res = [quad[1].residue.index for quad in psi_atoms]
+        common = sorted(set(phi_res) & set(psi_res))
+        if len(common) == 0:
+            raise SSException(
+                "No residue carries both a phi and a psi backbone dihedral; "
+                "PENGUIN needs at least one such residue."
+            )
+
+        phi_lookup = {r: k for k, r in enumerate(phi_res)}
+        psi_lookup = {r: k for k, r in enumerate(psi_res)}
+        phi = np.asarray(phi)[[phi_lookup[r] for r in common]]
+        psi = np.asarray(psi)[[psi_lookup[r] for r in common]]
+        return phi, psi, common
 
     def __compute_dihedrals(
         self, proteinID: int = 0, precomputed: bool = False
     ) -> np.ndarray:
-        """internal function to computes the phi/psi backbone dihedrals
-        at a given index proteinID in the ``SSTrajectory.proteinTrajectoryList`` of an SSTrajectory.
+        """Compute residue-aligned phi/psi dihedrals for every loaded trajectory.
+
+        Angles are taken from chain ``proteinID`` of each trajectory (and each
+        reference trajectory when ``precomputed`` is False) and restricted to
+        the residues that carry both a phi and a psi (see
+        ``__aligned_dihedrals``), so that column ``k`` of every returned array
+        is the same residue. The residue indices of the columns are stored on
+        ``self.residue_indices``.
 
         Parameters
         ----------
         proteinID : int, optional
-            The ID of the protein where the ID is the proteins position
-            in the ``SSTrajectory.proteinTrajectoryList`` list, by default 0.
+            Position of the chain in each ``SSTrajectory.proteinTrajectoryList``.
+        precomputed : bool, optional
+            If True only the simulated trajectories are processed (the
+            reference comes from the precomputed EV tables).
 
         Returns
         -------
         np.ndarray
-            Returns the psi and phi backbone dihedrals for the simulated trajectory and the limiting polyer model.
+            ``(psi, ref_psi, phi, ref_phi)`` when ``precomputed`` is False,
+            else ``(psi, phi)``; each element is
+            ``(n_trajectories, n_residues, n_frames)``.
         """
-        psi_angles = []
-        phi_angles = []
-        ref_psi_angles = []
-        ref_phi_angles = []
+        psi_angles, phi_angles = [], []
+        ref_psi_angles, ref_phi_angles = [], []
 
-        # if we're not using precomputed dihedrals, compute from the reference trajs
-        if not precomputed:
-            for trj, ref_trj in zip(self.trajs, self.ref_trajs):
-                psi_angles.append(
-                    trj.proteinTrajectoryList[proteinID].get_angles("psi")[1]
-                )
-                phi_angles.append(
-                    trj.proteinTrajectoryList[proteinID].get_angles("phi")[1]
-                )
-                ref_psi_angles.append(
-                    ref_trj.proteinTrajectoryList[proteinID].get_angles("psi")[1]
-                )
-                ref_phi_angles.append(
-                    ref_trj.proteinTrajectoryList[proteinID].get_angles("phi")[1]
-                )
+        self.residue_indices = None
+        for trj in self.trajs:
+            phi, psi, resids = self.__aligned_dihedrals(
+                trj.proteinTrajectoryList[proteinID]
+            )
+            if self.residue_indices is None:
+                self.residue_indices = resids
+            phi_angles.append(phi)
+            psi_angles.append(psi)
 
-            # return the angles for everything
-            return np.array((psi_angles, ref_psi_angles, phi_angles, ref_phi_angles))
-
-        # else only compute dihedrals from the simulated trajectories
-        else:
-            for trj in self.trajs:
-                psi_angles.append(
-                    trj.proteinTrajectoryList[proteinID].get_angles("psi")[1]
-                )
-                phi_angles.append(
-                    trj.proteinTrajectoryList[proteinID].get_angles("phi")[1]
-                )
-
-            # return the angles for simulated trajectories only
+        if precomputed:
             return np.array((psi_angles, phi_angles))
 
+        for ref_trj in self.ref_trajs:
+            phi, psi, _ = self.__aligned_dihedrals(
+                ref_trj.proteinTrajectoryList[proteinID]
+            )
+            ref_phi_angles.append(phi)
+            ref_psi_angles.append(psi)
+
+        return np.array((psi_angles, ref_psi_angles, phi_angles, ref_phi_angles))
+
     def compute_frac_helicity(
-        self, proteinID: int = 0, recompute: bool = False
+        self, proteinID: Union[int, None] = None, recompute: bool = False
     ) -> np.ndarray:
         """Per-residue fractional helicity for every loaded trajectory and reference.
 
@@ -565,9 +762,10 @@ class SamplingQuality:
 
         Parameters
         ----------
-        proteinID : int, optional
+        proteinID : int or None, optional
             Index of the chain in each trajectory's ``proteinTrajectoryList``.
-            Default 0.
+            If None (default) the chain the :class:`SamplingQuality` instance
+            was constructed with (``self.proteinID``) is used.
         recompute : bool, optional
             If True, ignore any cached result and recompute. Default False.
 
@@ -589,6 +787,10 @@ class SamplingQuality:
             return self.__precomputed["trj_helicity"], self.__precomputed[
                 "ref_helicity"
             ]
+
+        # Default to the chain this SamplingQuality instance was built on.
+        if proteinID is None:
+            proteinID = self.proteinID
 
         trj_helicity = [
             trj.proteinTrajectoryList[proteinID].get_secondary_structure_DSSP()[1]
@@ -633,7 +835,7 @@ class SamplingQuality:
 
         Raises
         ------
-        NotImplementedError
+        SSException
             If ``method`` is not one of the two supported strings.
 
         Example
@@ -670,10 +872,9 @@ class SamplingQuality:
             return np.array((phi_hellingers, psi_hellingers))
 
         else:
-            raise NotImplementedError(
-                f"{self.method} is not defined!\
-                                      Please use either 1D angle distributions\
-                                      or 2D angle distributions"
+            raise SSException(
+                f"method '{self.method}' is not defined. Please use either "
+                "'1D angle distributions' or '2D angle distributions'."
             )
 
     def __compute_2d_dihedral_hellingers(self, trj_pdfs, ref_pdfs):
@@ -727,11 +928,26 @@ class SamplingQuality:
 
         return hellinger_distances
 
-    def compute_dihedral_rel_entropy(self) -> np.ndarray:
+    def compute_dihedral_rel_entropy(self, pseudocount: float = 1e-6) -> np.ndarray:
         """Per-residue Kullback-Leibler relative entropy between simulated and reference dihedrals.
 
         Histograms phi and psi 1D distributions independently, then
-        computes :math:`D_{KL}(P || Q)` per residue via :func:`rel_entropy`.
+        computes :math:`D_{KL}(P || Q)` per residue via :func:`rel_entropy`,
+        with ``P`` the trajectory distribution and ``Q`` the reference.
+
+        KL divergence is infinite whenever a reference bin is empty but
+        the corresponding trajectory bin is populated, which with 15
+        degree bins on finite ensembles is the norm rather than the
+        exception. To keep the values usable, both distributions are
+        smoothed with :func:`smooth_pdf` (a small pseudocount added to
+        every bin, then renormalised) before the divergence is taken.
+
+        Parameters
+        ----------
+        pseudocount : float, optional
+            Mass added to every histogram bin before renormalising. Set to
+            ``0`` to recover the raw, unsmoothed divergence (which may be
+            ``inf``). Default ``1e-6``.
 
         Returns
         -------
@@ -752,8 +968,14 @@ class SamplingQuality:
         psi_trj_pdfs = self.compute_pdf(self.psi_angles, bins=self.bins)
         psi_ref_trj_pdfs = self.compute_pdf(self.ref_psi_angles, bins=self.bins)
 
-        phi_rel_entr = rel_entropy(phi_trj_pdfs, phi_ref_trj_pdfs)
-        psi_rel_entr = rel_entropy(psi_trj_pdfs, psi_ref_trj_pdfs)
+        phi_rel_entr = rel_entropy(
+            smooth_pdf(phi_trj_pdfs, pseudocount),
+            smooth_pdf(phi_ref_trj_pdfs, pseudocount),
+        )
+        psi_rel_entr = rel_entropy(
+            smooth_pdf(psi_trj_pdfs, pseudocount),
+            smooth_pdf(psi_ref_trj_pdfs, pseudocount),
+        )
 
         return np.array((phi_rel_entr, psi_rel_entr))
 
@@ -832,15 +1054,17 @@ class SamplingQuality:
         Operates on either a 2D ``(n_residues, n_frames)`` array or a 3D
         ``(n_trajectories, n_residues, n_frames)`` stack. Each
         residue-level histogram is normalised by ``np.histogram(...,
-        density=True)`` and rescaled by the bin width (in degrees), so
-        each row sums to ~1.
+        density=True)`` and then multiplied by the width of each bin in
+        ``bins`` to convert density to probability mass, so each row sums
+        to 1 whatever bin edges are passed.
 
         Parameters
         ----------
         arr : np.ndarray
             2D or 3D angle array. The last axis is the frame axis.
         bins : np.ndarray
-            1D array of bin edges.
+            1D array of bin edges (in the same units as ``arr``). Need not
+            match ``self.bins``.
 
         Returns
         -------
@@ -856,31 +1080,39 @@ class SamplingQuality:
         # Lambda function is used to ignore the bin edges returned by np.histogram at index 1
         # xhistogram is ~2x faster, but introduces depedency - keeping lambda function for legacy for now
 
+        # KEY POINT: multiplying by the per-bin width converts probability
+        # *density* to probability *mass*. This must use the bins actually
+        # passed in, not self.bwidth, otherwise rows only sum to 1 when the
+        # two happen to agree.
+        bins = np.asarray(bins, dtype=float)
+        bin_widths = np.diff(bins)
+
         # if (traj x n_res x frames), histogram axis (2) associated all the frames
         if arr.ndim == 3:
-            pdf = np.apply_along_axis(
-                lambda col: np.histogram(col, bins=bins, density=True)[0],
-                axis=2,
-                arr=arr,
-            ) * np.round(np.rad2deg(self.bwidth))
-
-            # KEY POINT: multiplying by bin width to convert probability *density* to probabilty *mass*
-            # implementation details may have to change here if supporting other methods.
-            # pdf = histogram(arr, bins=bins, axis=2, density=True)[0]*np.round(np.rad2deg(self.bwidth))
+            pdf = (
+                np.apply_along_axis(
+                    lambda col: np.histogram(col, bins=bins, density=True)[0],
+                    axis=2,
+                    arr=arr,
+                )
+                * bin_widths
+            )
         # else (n_res x n_frames), histogram axis (1) associated with frames
         else:
-            pdf = np.apply_along_axis(
-                lambda col: np.histogram(col, bins=bins, density=True)[0],
-                axis=1,
-                arr=arr,
-            ) * np.round(np.rad2deg(self.bwidth))
-            # pdf = histogram(arr, bins=bins, axis=1, density=True)[0]*np.round(np.rad2deg(self.bwidth))
+            pdf = (
+                np.apply_along_axis(
+                    lambda col: np.histogram(col, bins=bins, density=True)[0],
+                    axis=1,
+                    arr=arr,
+                )
+                * bin_widths
+            )
 
         return pdf
 
     def get_all_to_all_2d_trj_comparison(
-        self, metric: str = "hellingers", recompute=False
-    ) -> Tuple[pd.DataFrame]:
+        self, metric: str = "hellingers", recompute: bool = False
+    ) -> np.ndarray:
         """All-vs-all 2D joint-dihedral Hellinger distances across trajectories.
 
         Histograms the joint ``(phi, psi)`` distribution per residue for every
@@ -896,8 +1128,8 @@ class SamplingQuality:
             Currently only ``'hellingers'`` is implemented. Default
             ``'hellingers'``.
         recompute : bool, optional
-            Currently unused (accepted for API symmetry with
-            :meth:`get_all_to_all_trj_comparisons`). Default False.
+            If True, ignore the cached joint PDFs from :meth:`trj_pdfs`
+            and rebuild them. Default False.
 
         Returns
         -------
@@ -905,19 +1137,25 @@ class SamplingQuality:
             Shape ``(n_combinations, n_residues)`` of pairwise per-residue
             Hellinger distances in ``[0, 1]``.
 
+        Raises
+        ------
+        SSException
+            If ``metric`` is anything other than ``'hellingers'``.
+
         Example
         -------
         >>> mat = sq.get_all_to_all_2d_trj_comparison()
         >>> mat.shape   # 3 trajs -> C(3,2) == 3 pairs
         (3, 56)
         """
-        # if self.method == "2D angle distributions":
-        data = np.array([self.phi_angles, self.psi_angles])
+        if metric != "hellingers":
+            raise SSException(
+                f"metric '{metric}' is not implemented for the 2D comparison; "
+                "only 'hellingers' is available."
+            )
 
         # shape = replicas, angles, phi_bins, psi_bins
-        pdfs = self.compute_series_of_histograms_along_axis(
-            data, bins=self.bins, axis=2
-        )
+        pdfs = self.trj_pdfs(dihedral="joint", recompute=recompute)
 
         if pdfs.shape[0] == 1:
             # if only 1 simulated traj, an all-to-all is just a self:self comparison.
@@ -974,7 +1212,10 @@ class SamplingQuality:
         return np.array(dist_metric)
 
     def get_all_to_all_trj_comparisons(
-        self, metric: str = "hellingers", recompute=False
+        self,
+        metric: str = "hellingers",
+        recompute: bool = False,
+        pseudocount: float = 1e-6,
     ) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """All-vs-all per-residue dihedral comparisons (separate phi and psi).
 
@@ -984,6 +1225,10 @@ class SamplingQuality:
         The two dihedrals are kept separate (unlike
         :meth:`get_all_to_all_2d_trj_comparison`).
 
+        For ``metric='relative entropy'`` the PDFs are smoothed with
+        :func:`smooth_pdf` first, since KL divergence is infinite wherever
+        the second distribution has an empty bin that the first does not.
+
         Parameters
         ----------
         metric : {'hellingers', 'relative entropy'}, optional
@@ -991,6 +1236,10 @@ class SamplingQuality:
         recompute : bool, optional
             If True, ignore cached PDFs from ``self.trj_pdfs`` and rebuild
             them. Default False.
+        pseudocount : float, optional
+            Mass added to every bin before renormalising, used only for
+            ``'relative entropy'``. ``0`` gives the raw (possibly infinite)
+            divergence. Default ``1e-6``.
 
         Returns
         -------
@@ -1001,15 +1250,25 @@ class SamplingQuality:
 
         Raises
         ------
-        NotImplementedError
+        SSException
             If ``metric`` is not one of the two supported strings.
 
         Example
         -------
         >>> phi_df, psi_df = sq.get_all_to_all_trj_comparisons()
         """
+        if metric not in ("hellingers", "relative entropy"):
+            raise SSException(
+                f"The metric '{metric}' is not implemented. Use 'hellingers' or "
+                "'relative entropy'."
+            )
+
         phi_pdfs = self.trj_pdfs(recompute=recompute, dihedral="trj_phi_pdfs")
         psi_pdfs = self.trj_pdfs(recompute=recompute, dihedral="trj_psi_pdfs")
+
+        if metric == "relative entropy":
+            phi_pdfs = smooth_pdf(phi_pdfs, pseudocount)
+            psi_pdfs = smooth_pdf(psi_pdfs, pseudocount)
 
         if phi_pdfs.shape[0] == 1 or psi_pdfs.shape[0] == 1:
             # if only 1 simulated traj and 1 ref traj all-to-all is just a 1:1 comparison.
@@ -1048,15 +1307,13 @@ class SamplingQuality:
                 psi_metric = hellinger_distance(
                     psi_combinations[0], psi_combinations[1]
                 )
-        elif metric == "relative entropy":
+        else:
             if phi_combinations.shape[0] == 1 and psi_combinations.shape[0] == 1:
                 phi_metric = rel_entropy(phi_combinations[0], phi_combinations[0])
                 psi_metric = rel_entropy(psi_combinations[0], psi_combinations[0])
             else:
                 phi_metric = rel_entropy(phi_combinations[0], phi_combinations[1])
                 psi_metric = rel_entropy(psi_combinations[0], psi_combinations[1])
-        else:
-            raise NotImplementedError(f"The metric: {metric} is not implemented.")
 
         return pd.DataFrame(phi_metric), pd.DataFrame(psi_metric)
 
@@ -1064,25 +1321,24 @@ class SamplingQuality:
         """Histogram bin edges spanning ``[-180, 180]`` degrees.
 
         Constructs the bin edges used by every histogram-based method on
-        this class. Uses ``self.bwidth`` (in radians) converted to
-        degrees and rounded to handle floating-point error so the final
-        edge lands cleanly on 180.
+        this class. The number of bins is ``2*pi / self.bwidth`` (which
+        ``__validate_arguments`` guarantees is a whole number) and the
+        edges are laid out with ``np.linspace`` so the first and last
+        edges land exactly on -180 and 180 with no rounding of the width.
 
         Returns
         -------
         np.ndarray
-            1D array of bin edges in degrees, monotonically increasing,
-            starting at -180 and ending at 180.
+            1D array of ``n_bins + 1`` bin edges in degrees, monotonically
+            increasing, starting at -180 and ending at 180.
 
         Example
         -------
         >>> sq.get_degree_bins()       # bwidth = 15 degrees
         array([-180., -165., ...,  165.,  180.])
         """
-        # have to round the conversion to handle floating point error so we get the right bins
-        bwidth = np.round(np.rad2deg(self.bwidth))
-        bins = np.arange(-180, 180 + bwidth, bwidth)
-        return bins
+        n_bins = int(np.round(2 * np.pi / self.bwidth))
+        return np.linspace(-180.0, 180.0, n_bins + 1)
 
     def quality_plot(
         self,
@@ -1099,12 +1355,15 @@ class SamplingQuality:
 
         The four panels are:
 
-        * **A** - per-residue Hellinger distance vs. the chosen reference
-          (e.g. excluded-volume limit) with per-trajectory points and
-          across-trajectory mean.
+        * **A** - per-residue Hellinger distance vs. the reference (the
+          supplied ``reference_list``, or the precomputed excluded-volume
+          limit) with per-trajectory points and across-trajectory mean.
         * **B** - per-residue all-vs-all trajectory Hellinger distances.
-        * **C** - fractional helicity (simulated trajectories + reference).
-        * **D** - paired comparison panel (configurable).
+        * **C** - per-residue spread (max minus min) of the panel A
+          Hellinger distances across trajectories.
+        * **D** - per-residue fractional helicity for each trajectory with
+          the across-trajectory mean; when a ``reference_list`` was
+          supplied the mean reference helicity is drawn as a dashed line.
 
         Layout is mosaic ``"AABB;CCDD"``. The chosen ``dihedral`` selector
         controls which of phi / psi / joint 2D is shown.
@@ -1124,14 +1383,16 @@ class SamplingQuality:
             Font size used for tick labels, titles, and axis labels.
             Default 10.
         save_dir : str or None, optional
-            If given, write the figure to ``<save_dir>/<figname>``.
-            Default None (no file written; figure is returned only).
+            If given, write the figure to
+            ``<save_dir>/<dihedral>_<figname>`` (e.g.
+            ``figs/2D_hellingers.pdf``). Default None (no file written;
+            figure is returned only).
         dihedral : {'2D', 'phi', 'psi'} or None, optional
             Which dihedral comparison to plot. ``'2D'`` requires
             ``method='2D angle distributions'``. Default ``'2D'``.
         figname : str, optional
-            File name (joined with ``save_dir``). Default
-            ``'hellingers.pdf'``.
+            File name including extension, prefixed with ``dihedral`` and
+            joined with ``save_dir``. Default ``'hellingers.pdf'``.
 
         Returns
         -------
@@ -1141,12 +1402,11 @@ class SamplingQuality:
 
         Raises
         ------
-        ValueError
-            If ``method='1D angle distributions'`` is paired with
-            ``dihedral='2D'``.
-        NotImplementedError
-            If a requested combination of method and dihedral isn't yet
-            supported.
+        SSException
+            If the requested ``dihedral`` is not compatible with the
+            instance's ``method`` (``'2D'`` requires
+            ``'2D angle distributions'``; ``'phi'`` / ``'psi'`` require
+            ``'1D angle distributions'``).
 
         Example
         -------
@@ -1161,48 +1421,58 @@ class SamplingQuality:
             facecolor="w",
             gridspec_kw={"height_ratios": [2, 2]},
         )
-        if self.method == "1D angle distributions" and dihedral == "2D":
-            raise ValueError(
-                f"Cannot plot 1D angle distributions with dihedral = {dihedral} selector.\
-                             Please set dihedral to phi or psi"
-            )
+        # Only the combinations below are meaningful: the 2D method yields a
+        # single joint (phi, psi) Hellinger distance per residue, while the 1D
+        # method yields separate phi and psi distances. Resolve the branch
+        # before computing anything so an unsupported combination fails with
+        # a clear message rather than a downstream shape error.
+        if self.method == "2D angle distributions":
+            if dihedral != "2D":
+                plt.close(fig)
+                raise SSException(
+                    f"dihedral='{dihedral}' is not available with "
+                    "method='2D angle distributions'; use dihedral='2D', or "
+                    "construct SamplingQuality with "
+                    "method='1D angle distributions' for phi/psi."
+                )
+            metric = self.hellingers_distances()
+            all_to_all = self.get_all_to_all_2d_trj_comparison()
+        elif self.method == "1D angle distributions":
+            if dihedral not in ("phi", "psi"):
+                plt.close(fig)
+                raise SSException(
+                    f"dihedral='{dihedral}' is not available with "
+                    "method='1D angle distributions'; use dihedral='phi' "
+                    "or dihedral='psi'."
+                )
+            index = 0 if dihedral == "phi" else 1
+            metric = self.hellingers_distances()[index]
+            all_to_all = self.get_all_to_all_trj_comparisons()[index]
+        else:
+            plt.close(fig)
+            raise SSException(f"Unsupported method '{self.method}'")
 
-        selector = {
-            "2D": self.compute_dihedral_hellingers(),
-            "phi": self.compute_dihedral_hellingers()[0],
-            "psi": self.compute_dihedral_hellingers()[1],
-        }
-
-        all_to_all_selector = {
-            "2D": self.get_all_to_all_2d_trj_comparison(),
-            "phi": self.get_all_to_all_trj_comparisons()[0],
-            "psi": self.get_all_to_all_trj_comparisons()[1],
-        }
-
-        metric = selector[dihedral]
-        print("metric shape: ", metric.shape)
-        all_to_all = all_to_all_selector[dihedral]
+        metric = np.asarray(metric)
 
         trj_helicity, ref_helicity = self.fractional_helicity()
-
-        # if self.method == "2D angle distributions" and dihedral == "2D":
-        #     metric = selector["2D"]
-        #     joint_all_to_all = self.get_all_to_all_2d_trj_comparison()
-        # elif self.method == "1D angle distributions" and dihedral == "phi":
-        #     metric = selector["phi"]
-        #     phi_all_to_all, psi_all_to_all = self.get_all_to_all_trj_comparisons()
-        # elif self.method == "1D angle distributions" and dihedral == "psi":
-        #     metric = selector["psi"]
-        #     phi_all_to_all, psi_all_to_all = self.get_all_to_all_trj_comparisons()
-        # else:
-        #     raise NotImplementedError(f"{self.method} cannot be used with {dihedral}." +
-        #                               f"Currently supported options are:\
-        #                               1D angle distributions and phi/psi or 2D angle distributions and 2D")
+        trj_helicity = np.asarray(trj_helicity)
+        ref_helicity = np.asarray(ref_helicity)
 
         n_res = metric.shape[-1]
         idx = np.arange(1, n_res + 1)
         xticks = np.arange(increment, idx[-1] + 1, increment)
         xticklabels = np.arange(increment, idx[-1] + 1, increment)
+
+        # Helicity is reported per residue while the dihedral panels are per
+        # dihedral; for an uncapped chain these differ by one (phi is
+        # undefined at the N-terminus, psi at the C-terminus), so panel D
+        # needs its own x-axis rather than borrowing idx.
+        helix_idx = np.arange(1, trj_helicity.shape[-1] + 1)
+
+        if self.reference_list:
+            panel_a_title = "Comparison to reference ensemble"
+        else:
+            panel_a_title = "Comparison to the Excluded Volume Limit"
 
         yticks = [0, 0.2, 0.4, 0.6, 0.8, 1]
         ytick_labels = [0, 0.2, 0.4, 0.6, 0.8, 1]
@@ -1212,9 +1482,7 @@ class SamplingQuality:
                 axd[ax].set_yticklabels(ytick_labels, fontsize=fontsize)
                 axd[ax].set_ylim([0, 1])
                 axd[ax].set_ylabel("Hellinger's Distance", fontsize=fontsize)
-                axd[ax].set_title(
-                    "Comparison to the Excluded Volume Limit", fontsize=fontsize
-                )
+                axd[ax].set_title(panel_a_title, fontsize=fontsize)
 
                 axd[ax].set_xticks(
                     xticks,
@@ -1288,19 +1556,33 @@ class SamplingQuality:
 
                 # plot red
                 axd[ax].plot(
-                    idx, trj_helicity.transpose(), ".r", ms=4, alpha=0.3, mew=0
+                    helix_idx, trj_helicity.transpose(), ".r", ms=4, alpha=0.3, mew=0
                 )
 
                 # plot line avg helicity
                 axd[ax].plot(
-                    idx,
+                    helix_idx,
                     np.mean(trj_helicity, axis=0),
                     "sk-",
                     ms=2,
                     alpha=1,
                     mew=0,
                     linewidth=0.5,
+                    label="trajectories",
                 )
+
+                # reference helicity is only meaningful when real reference
+                # trajectories were supplied (the EV tables carry no DSSP).
+                if self.reference_list:
+                    axd[ax].plot(
+                        helix_idx,
+                        np.mean(ref_helicity, axis=0),
+                        "--",
+                        color="tab:blue",
+                        linewidth=0.8,
+                        label="reference",
+                    )
+                    axd[ax].legend(fontsize=fontsize - 2, frameon=False)
 
         if panel_labels:
             for ax in axd:
@@ -1320,7 +1602,7 @@ class SamplingQuality:
         plt.tight_layout()
         if save_dir is not None:
             os.makedirs(save_dir, exist_ok=True)
-            outpath = os.path.join(save_dir, f"{dihedral}_{figname}.pdf")
+            outpath = os.path.join(save_dir, f"{dihedral}_{figname}")
             fig.savefig(f"{outpath}", dpi=dpi)
 
         return fig, axd
@@ -1356,7 +1638,7 @@ class SamplingQuality:
 
         Raises
         ------
-        NotImplementedError
+        SSException
             If ``dihedral`` is not one of the three allowed strings.
 
         Example
@@ -1365,9 +1647,9 @@ class SamplingQuality:
         """
         selectors = ["trj_phi_pdfs", "trj_psi_pdfs", "joint"]
         if dihedral not in selectors:
-            raise NotImplementedError(
-                f"Should not arrive here: {selectors} is not implemented."
-                + "Please try one of trj_phi_pdfs, trj_psi_pdfs, joint instead."
+            raise SSException(
+                f"dihedral '{dihedral}' is not a valid selector. "
+                "Use one of 'trj_phi_pdfs', 'trj_psi_pdfs' or 'joint'."
             )
 
         for selector in selectors:
@@ -1415,7 +1697,7 @@ class SamplingQuality:
 
         Raises
         ------
-        NotImplementedError
+        SSException
             If ``dihedral`` is not one of the three allowed strings.
 
         Example
@@ -1425,19 +1707,29 @@ class SamplingQuality:
         selectors = ["ref_phi_pdfs", "ref_psi_pdfs", "joint"]
 
         if dihedral not in selectors:
-            raise NotImplementedError(
-                f"Should not arrive here: {dihedral} is not implemented."
-                + "Please try one of ref_phi_pdfs, ref_psi_pdfs, joint instead."
+            raise SSException(
+                f"dihedral '{dihedral}' is not a valid selector. "
+                "Use one of 'ref_phi_pdfs', 'ref_psi_pdfs' or 'joint'."
             )
 
+        # The public selector is 'joint' (to mirror trj_pdfs) but the cache
+        # key is 'ref_joint' so the reference and trajectory joint PDFs never
+        # overwrite one another.
+        cache_keys = {
+            "ref_phi_pdfs": "ref_phi_pdfs",
+            "ref_psi_pdfs": "ref_psi_pdfs",
+            "joint": "ref_joint",
+        }
+
         for selector in selectors:
-            if selector not in self.__precomputed or recompute is True:
+            key = cache_keys[selector]
+            if key not in self.__precomputed or recompute is True:
                 if selector == "ref_phi_pdfs":
-                    self.__precomputed[selector] = self.compute_pdf(
+                    self.__precomputed[key] = self.compute_pdf(
                         self.ref_phi_angles, bins=self.bins
                     )
                 elif selector == "ref_psi_pdfs":
-                    self.__precomputed[selector] = self.compute_pdf(
+                    self.__precomputed[key] = self.compute_pdf(
                         self.ref_psi_angles, bins=self.bins
                     )
                 elif selector == "joint":
@@ -1445,9 +1737,9 @@ class SamplingQuality:
                     pdfs = self.compute_series_of_histograms_along_axis(
                         data, bins=self.bins, axis=2
                     )
-                    self.__precomputed[selector] = pdfs
+                    self.__precomputed[key] = pdfs
 
-        return self.__precomputed[dihedral]
+        return self.__precomputed[cache_keys[dihedral]]
 
     def hellingers_distances(self, recompute=False):
         """Cached accessor for per-residue Hellinger distances.
@@ -1515,7 +1807,9 @@ class SamplingQuality:
                 "ref_helicity"
             ]
 
-        trj_helicity, ref_helicity = self.compute_frac_helicity()
+        trj_helicity, ref_helicity = self.compute_frac_helicity(
+            proteinID=self.proteinID, recompute=recompute
+        )
 
         return trj_helicity, ref_helicity
 
@@ -1550,12 +1844,18 @@ class PrecomputedDihedralInterface:
         precomputed angles are tiled across this dimension.
     nsamples : int
         Number of synthetic frames to generate per replica.
+    seed : int or None, optional
+        Seed for the ``numpy.random.default_rng`` generator used for the
+        resampling. None (default) gives a fresh unseeded generator, so
+        two instances built with ``seed=None`` will differ.
 
     Attributes
     ----------
     ref_phi_angles, ref_psi_angles : np.ndarray
         Inverse-CDF-sampled reference angles of shape
         ``(num_trajs, n_residues, nsamples)``.
+    rng : np.random.Generator
+        The generator used for sampling.
 
     Example
     -------
@@ -1568,11 +1868,20 @@ class PrecomputedDihedralInterface:
     (3, 8, 1000)
     """
 
-    def __init__(self, sequence, bins, num_trajs, nsamples):
+    def __init__(
+        self,
+        sequence: str,
+        bins: np.ndarray,
+        num_trajs: int,
+        nsamples: int,
+        seed: Union[int, None] = None,
+    ):
         self.sequence = sequence
         self.num_trajs = num_trajs
         self.nsamples = nsamples
-        self.bins = bins
+        self.bins = np.asarray(bins, dtype=float)
+        self.seed = seed
+        self.rng = np.random.default_rng(seed)
 
         self.tmp_phi_angles = self.gather_phi_reference_dihedrals(self.sequence)
         self.tmp_psi_angles = self.gather_psi_reference_dihedrals(self.sequence)
@@ -1593,10 +1902,13 @@ class PrecomputedDihedralInterface:
         """Inverse-CDF sample reference dihedrals to match a target sample count.
 
         Builds a per-residue histogram from the precomputed reference
-        angles, normalises it to a CDF, and inverse-CDF samples
-        ``self.nsamples`` synthetic angles per residue using
-        ``numpy.random``. Used at construction time to populate
-        :attr:`ref_phi_angles` and :attr:`ref_psi_angles`.
+        angles on ``self.bins``, converts it to a CDF, and inverse-CDF
+        samples ``self.nsamples`` synthetic angles per residue: each draw
+        picks a bin in proportion to its mass and then a uniform position
+        within that bin's edges, so the resampled histogram reproduces the
+        reference histogram (including the bins at -180 and 180) up to
+        sampling noise. Draws come from ``self.rng``. Used at construction
+        time to populate :attr:`ref_phi_angles` and :attr:`ref_psi_angles`.
 
         Parameters
         ----------
@@ -1626,35 +1938,63 @@ class PrecomputedDihedralInterface:
             dihedral_angles = dist_selector[angle][dihedral, :]
 
             # GOAL: Generate samples that adhere to the underlying distribution
-            # Step 1: Compute the distribution & bin centers
-
+            # Step 1: Compute the histogram and its CDF on self.bins
             hist, bin_edges = np.histogram(
                 dihedral_angles, bins=self.bins, density=True
             )
 
-            bin_centers = 0.5 * (bin_edges[:-1] + bin_edges[1:])
-
-            # Step 2: Calculate the cumulative distribution function (CDF)
             cdf = np.cumsum(hist * np.diff(bin_edges))
             cdf /= cdf[-1]  # Normalize the CDF
 
-            # Step 3: Generate random values between 0 and 1 and interpolate to get corresponding bin values
-            rand_values = np.random.random(size=self.nsamples)
-            sampled_dihedrals = np.interp(rand_values, cdf, bin_centers)
+            # Step 2: Inverse-CDF sample. Pick the bin whose cumulative mass
+            # first exceeds the uniform draw, then place the sample uniformly
+            # inside that bin. Interpolating between bin centres (the old
+            # approach) biased the tails and could never reach the outermost
+            # half-bins at -180 and 180.
+            rand_values = self.rng.random(size=self.nsamples)
+            bin_idx = np.searchsorted(cdf, rand_values, side="right")
+            bin_idx = np.minimum(bin_idx, len(hist) - 1)
+
+            lower = bin_edges[bin_idx]
+            upper = bin_edges[bin_idx + 1]
+            sampled_dihedrals = lower + self.rng.random(size=self.nsamples) * (
+                upper - lower
+            )
 
             dihedral_hist.append(sampled_dihedrals)
 
         return np.array(dihedral_hist)
 
+    @staticmethod
+    def __three_letter(residue: str, position: int) -> str:
+        """Map a one-letter code to three letters, raising a clear error.
+
+        The EV tables only cover the 20 standard amino acids, so a
+        non-standard letter in the sequence (e.g. a modified residue that
+        survived caps stripping) is reported by name and position rather
+        than surfacing as a bare KeyError.
+        """
+        try:
+            return ONE_TO_THREE[residue]
+        except KeyError:
+            raise SSException(
+                f"Residue '{residue}' at position {position} is not one of the "
+                "20 standard amino acids, so no precomputed excluded-volume "
+                "reference is available for it. Supply your own reference "
+                "trajectories via reference_list instead."
+            ) from None
+
     def gather_phi_reference_dihedrals(self, sequence: str) -> np.ndarray:
         """Look up the excluded-volume reference phi distribution for each residue.
 
-        For each position ``i``, the relevant phi distribution depends on
-        the chemical context of residue ``i-1`` (the residue preceding
-        the rotatable phi bond). The lookup maps the preceding residue
-        to its EV-table key via :data:`EV_RESIDUE_MAPPER` and pulls the
-        distribution from :data:`PHI_EV_ANGLES_DICT`. For position 0 we
-        substitute alanine as the preceding context.
+        For each position ``i`` the phi distribution is that of residue
+        ``i`` itself, in the context of residue ``i-1`` (the residue
+        preceding the rotatable phi bond). The tables in
+        :data:`PHI_EV_ANGLES_DICT` are keyed first by the three-letter
+        code of residue ``i`` and second by the coarse-grained identity
+        of the preceding residue (via :data:`EV_RESIDUE_MAPPER`, which
+        collapses the 20 amino acids to ALA/LEU/PRO-like contexts). For
+        position 0 we substitute alanine as the preceding context.
 
         Parameters
         ----------
@@ -1671,7 +2011,7 @@ class PrecomputedDihedralInterface:
         Example
         -------
         >>> ev.gather_phi_reference_dihedrals('AAAA').shape
-        (4, 50000)
+        (4, 4000)
         """
 
         phi_angles = []
@@ -1681,11 +2021,16 @@ class PrecomputedDihedralInterface:
             else:
                 phi_preceeding_context = sequence[i - 1]
 
-            three_letter_residue = ONE_TO_THREE[phi_preceeding_context]
-            approximate_residue = EV_RESIDUE_MAPPER[three_letter_residue]
+            # The EV tables are keyed first by the residue whose phi we want
+            # and second by the (coarse-grained) identity of the preceding
+            # residue, i.e. PHI_EV_ANGLES_DICT[res_i][mapper(res_{i-1})].
+            three_letter_residue = self.__three_letter(residue, i)
+            approximate_context = EV_RESIDUE_MAPPER[
+                self.__three_letter(phi_preceeding_context, i - 1)
+            ]
 
             phi_angles.append(
-                PHI_EV_ANGLES_DICT[three_letter_residue][approximate_residue]
+                PHI_EV_ANGLES_DICT[three_letter_residue][approximate_context]
             )
 
         return np.array(phi_angles)
@@ -1694,10 +2039,11 @@ class PrecomputedDihedralInterface:
         """Look up the excluded-volume reference psi distribution for each residue.
 
         Mirror of :meth:`gather_phi_reference_dihedrals` for psi: the
-        distribution at position ``i`` depends on the *following*
-        residue ``i+1`` (because psi rotates the i-(i+1) bond). For the
-        last position we substitute alanine as the following context.
-        Reference distributions come from :data:`PSI_EV_ANGLES_DICT`.
+        distribution is that of residue ``i`` in the context of the
+        *following* residue ``i+1`` (because psi rotates the i-(i+1)
+        bond), looked up as
+        ``PSI_EV_ANGLES_DICT[res_i][EV_RESIDUE_MAPPER[res_{i+1}]]``. For
+        the last position we substitute alanine as the following context.
 
         Parameters
         ----------
@@ -1714,7 +2060,7 @@ class PrecomputedDihedralInterface:
         Example
         -------
         >>> ev.gather_psi_reference_dihedrals('AAAA').shape
-        (4, 50000)
+        (4, 4000)
         """
 
         psi_angles = []
@@ -1724,10 +2070,13 @@ class PrecomputedDihedralInterface:
             else:
                 psi_subsequent_context = sequence[i + 1]
 
-            three_letter_residue = ONE_TO_THREE[psi_subsequent_context]
-            approximate_residue = EV_RESIDUE_MAPPER[three_letter_residue]
+            # As for phi: PSI_EV_ANGLES_DICT[res_i][mapper(res_{i+1})].
+            three_letter_residue = self.__three_letter(residue, i)
+            approximate_context = EV_RESIDUE_MAPPER[
+                self.__three_letter(psi_subsequent_context, i + 1)
+            ]
             psi_angles.append(
-                PSI_EV_ANGLES_DICT[three_letter_residue][approximate_residue]
+                PSI_EV_ANGLES_DICT[three_letter_residue][approximate_context]
             )
 
         return np.array(psi_angles)

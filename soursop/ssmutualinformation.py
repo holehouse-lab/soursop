@@ -76,11 +76,12 @@ def calc_MI(X, Y, bins, weights=False, normalize=False):
     >>> rng = np.random.default_rng(0)
     >>> X = rng.uniform(-1, 1, 1000)
     >>> Y = X + 0.05 * rng.standard_normal(1000)
-    >>> bins = np.arange(-1.01, 1.02, 0.1)
-    >>> calc_MI(X, Y, bins)              # strong dependence
-    2.18
-    >>> calc_MI(X, rng.uniform(-1, 1, 1000), bins)  # ~independent
-    0.05
+    >>> # bins must span both X and Y (the noise pushes Y just past +-1)
+    >>> bins = np.linspace(-1.5, 1.5, 31)
+    >>> round(calc_MI(X, Y, bins), 2)              # strong dependence
+    2.1
+    >>> round(calc_MI(X, rng.uniform(-1, 1, 1000), bins), 2)  # ~independent
+    0.18
     """
 
     if len(X) != len(Y):

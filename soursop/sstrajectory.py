@@ -165,7 +165,7 @@ class SSTrajectory:
             Prints warning/help information to help debug weird stuff during
             initial  trajectory read-in. Default = False.
 
-        extra_valid_residue_names : list
+        extra_valid_residue_names : str or list of str
             By default, SOURSOP identifies chains as proteins based on the a set
             of normally seen protein residue names. These are defined in
             soursop/ssdata, and are listed below::
@@ -229,12 +229,27 @@ class SSTrajectory:
         self.__explicit_residue_checking = explicit_residue_checking
 
         if extra_valid_residue_names is not None:
+            # a bare string is almost certainly a single residue name; wrap it
+            # rather than letting list.extend() split it into characters
+            if isinstance(extra_valid_residue_names, str):
+                extra_valid_residue_names = [extra_valid_residue_names]
+
             try:
-                self.valid_residue_names.extend(extra_valid_residue_names)
-            except Exception:
-                print(
-                    "Unable to use the extra_valid_residue_names - this must be a list of strings"
+                extra_names = list(extra_valid_residue_names)
+            except TypeError:
+                raise SSException(
+                    "extra_valid_residue_names must be a string or an iterable of strings (got %s)"
+                    % type(extra_valid_residue_names).__name__
                 )
+
+            for name in extra_names:
+                if not isinstance(name, str):
+                    raise SSException(
+                        "extra_valid_residue_names must contain only strings (found %s)"
+                        % type(name).__name__
+                    )
+
+            self.valid_residue_names.extend(extra_names)
 
         # first we decide if we're reading from file or from an existing trajectory
         if (trajectory_filename is None) and (pdb_filename is None):
@@ -768,9 +783,7 @@ class SSTrajectory:
         seen_residues = set()
         for group_index, group in enumerate(normalized_groups):
             if len(group) == 0:
-                raise SSException(
-                    f"protein_grouping group {group_index} is empty"
-                )
+                raise SSException(f"protein_grouping group {group_index} is empty")
 
             normalized = []
             for resid in group:
@@ -985,9 +998,12 @@ class SSTrajectory:
         deviations. Distances are in Angstroms.
 
         Calling ``get_interchain_distance_map(i, i)`` produces the
-        intra-chain distance map of protein ``i``, which is the same as
-        ``self.proteinTrajectoryList[i].get_distance_map()`` and makes a
-        useful sanity check.
+        intra-chain distance map of protein ``i``. The per-pair values
+        match ``self.proteinTrajectoryList[i].get_distance_map()``, but
+        note that this function returns a full symmetric matrix whereas
+        :meth:`SSProtein.get_distance_map` returns an upper-triangular
+        one (zeros below the diagonal), so compare against the upper
+        triangle when using this as a sanity check.
 
         Parameters
         ----------
@@ -1501,8 +1517,14 @@ class SSTrajectory:
 
             # finally compute distances. Use minimum image convention if the periodic keyword is passed
             if periodic:
-                distances = sstools.get_distance_periodic(
-                    COM_1, COM_2, self.unitcell[0], "cube"
+                # get_distance_periodic() hands back a list, so coerce to an
+                # array to keep the return type consistent with the
+                # non-periodic branch (and so downstream comparisons work)
+                distances = np.asarray(
+                    sstools.get_distance_periodic(
+                        COM_1, COM_2, self.unitcell[0], "cube"
+                    ),
+                    dtype=float,
                 )
 
             else:

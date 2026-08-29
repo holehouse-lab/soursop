@@ -1076,11 +1076,16 @@ def test_same_pdb_file_predicate(tmp_path):
 
     # the fast path fires only for the same on-disk PDB
     assert _same_pdb_file(pdb, pdb) is True
-    assert _same_pdb_file(os.path.join(os.path.dirname(pdb), ".", os.path.basename(pdb)), pdb) is True
+    assert (
+        _same_pdb_file(
+            os.path.join(os.path.dirname(pdb), ".", os.path.basename(pdb)), pdb
+        )
+        is True
+    )
 
     # ...and must NOT fire for anything else
-    assert _same_pdb_file(xtc, pdb) is False           # the normal xtc + pdb case
-    assert _same_pdb_file(xtc, xtc) is False           # same file, but not a PDB
+    assert _same_pdb_file(xtc, pdb) is False  # the normal xtc + pdb case
+    assert _same_pdb_file(xtc, xtc) is False  # same file, but not a PDB
     assert _same_pdb_file(None, pdb) is False
     assert _same_pdb_file(pdb, None) is False
 
@@ -1102,7 +1107,7 @@ def test_multimodel_pdb_load_is_equivalent(tmp_path):
     md.load(xtc, top=pdb)[0:4].save_pdb(multi)
 
     reference = sstrajectory.SSTrajectory(TRJ=md.load(multi, top=multi))  # old path
-    fast = sstrajectory.SSTrajectory(multi, multi)                        # new fast path
+    fast = sstrajectory.SSTrajectory(multi, multi)  # new fast path
 
     assert fast.n_frames == reference.n_frames == 4
     assert fast.traj.topology == reference.traj.topology

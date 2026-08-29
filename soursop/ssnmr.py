@@ -78,10 +78,15 @@ def compute_random_coil_chemical_shifts(
     and glycine corrections are from Kjaergaard, Brander & Poulsen
     (J. Biomol. NMR 2011, 49:139-149); the correction-factor methodology
     follows Schwarzinger et al. (JACS 2001, 123:2970-2978); and the
-    perdeuteration corrections are from Cavanagh, Fairbrother, Palmer,
-    Rance & Skelton, *Protein NMR Spectroscopy*, 2nd ed. (Academic Press,
-    2007). The implementation is a port of the JavaScript tool by Alex
-    Maltsev (NIH); see
+    perdeuteration corrections follow the values currently used by the
+    Poulsen random-coil web server
+    (https://spin.niddk.nih.gov/bax/nmrserver/Poulsen_rc_CS/), which
+    are the alpha-synuclein deuterium isotope shifts of Maltsev, Ying &
+    Bax (J. Biomol. NMR 2012, 54:181-191). The older Cavanagh, Fairbrother,
+    Palmer, Rance & Skelton (*Protein NMR Spectroscopy*, 2nd ed., 2007)
+    perdeuteration table is no longer used by the server and so is not
+    used here either. The implementation is a port of the JavaScript tool
+    by Alex Maltsev (NIH); see
     https://www1.bio.ku.dk/english/research/bms/research/sbinlab/randomchemicalshifts/
 
     The input may be a standard one-letter sequence; phospho-residues can
@@ -1558,50 +1563,55 @@ def compute_random_coil_chemical_shifts(
     tpo_ph_corr = [0, 0, 0, 0, 0, 0]
     ptr_ph_corr = [0, 0, 0, 0, 0, 0]
 
-    # Arrays for CS corrections for deuterated proteins
+    # Arrays for CS corrections for deuterated proteins. These are the
+    # values currently active on the Poulsen/Maltsev web server (Maltsev,
+    # Ying & Bax, J. Biomol. NMR 2012, 54:181-191); the older Cavanagh et
+    # al. values are retained on the server only as a commented-out block.
+    # Residue order is alphabetical by one-letter code (A C D E F G H I K L
+    # M N P Q R S T V W Y), matching key_aa1/key_aa3.
     ca_deut = [
-        -0.68,
-        -0.55,
-        -0.55,
-        -0.69,
-        -0.55,
+        -0.47,
+        -0.45,
         -0.39,
-        -0.55,
-        -0.77,
-        -0.69,
-        -0.62,
-        -0.69,
-        -0.55,
-        -0.69,
-        -0.69,
-        -0.69,
-        -0.55,
-        -0.55,
-        -0.84,
-        -0.55,
-        -0.55,
+        -0.49,
+        -0.43,
+        -0.47,
+        -0.45,
+        -0.47,
+        -0.46,
+        -0.45,
+        -0.44,
+        -0.39,
+        -0.45,
+        -0.48,
+        -0.46,
+        -0.45,
+        -0.43,
+        -0.51,
+        -0.43,
+        -0.43,
     ]
     cb_deut = [
-        -1.00,
+        -0.88,
         -0.71,
-        -0.71,
-        -0.97,
-        -0.71,
+        -0.66,
+        -0.88,
+        -0.85,
         0.00,
+        -0.67,
+        -1.02,
+        -1.03,
+        -1.10,
+        -0.89,
+        -0.62,
+        -0.91,
+        -0.86,
+        -1.03,
         -0.71,
-        -1.28,
-        -1.11,
-        -1.26,
-        -0.97,
-        -0.71,
-        -1.11,
-        -0.97,
-        -1.11,
-        -0.71,
-        -0.71,
-        -1.20,
-        -0.71,
-        -0.71,
+        -0.57,
+        -0.96,
+        -0.85,
+        -0.86,
     ]
 
     # RUN
@@ -1832,7 +1842,8 @@ def __set_sequence(sequence, key1, key3):
     encoding used by the chemical-shift tables. The numeric list is padded
     with two sentinel residues (code ``23``) at each end so that the
     nearest-neighbour correction can be applied uniformly at the chain
-    termini. Unrecognised characters are skipped.
+    termini. Unrecognised characters are skipped. Unbalanced parentheses
+    are rejected rather than parsed letter by letter.
 
     Parameters
     ----------
@@ -1853,6 +1864,11 @@ def __set_sequence(sequence, key1, key3):
         A 2-tuple ``(sequence, aminos)`` where ``sequence`` is the
         sentinel-padded list of numeric residue codes and ``aminos`` is
         the list of the parsed residue abbreviations (unpadded).
+
+    Raises
+    ------
+    SSException
+        If the sequence contains an unmatched ``(`` or ``)``.
 
     Example
     -------
@@ -1875,6 +1891,24 @@ def __set_sequence(sequence, key1, key3):
 
     # Strip white space at beginning and end
     inp = inp.strip()
+
+    # an unbalanced parenthesis would otherwise be parsed letter by letter
+    # (so "A(SEP" silently becomes A, S, E, P) - reject it outright
+    depth = 0
+    for ch in inp:
+        if ch == "(":
+            depth += 1
+            if depth > 1:
+                break
+        elif ch == ")":
+            depth -= 1
+            if depth < 0:
+                break
+    if depth != 0:
+        raise SSException(
+            "Unbalanced parentheses in sequence '%s'; multi-letter residue codes must be written as e.g. 'A(SEP)A'"
+            % inp
+        )
 
     regex = re.findall(r"\(([^)]+)\)|(.)", inp)
     for i in range(len(regex)):

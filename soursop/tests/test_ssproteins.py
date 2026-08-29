@@ -175,7 +175,8 @@ def test_get_t(GS6_CP):
 
     assert len(GS6_CP.get_t()) == 5
     assert abs(GS6_CP.get_t()[0] - 0.30286034750848245) < 0.0001
-    assert abs(GS6_CP.get_t(R1=1, R2=3)[0] - 0.0766270900235029) < 0.0001
+    # sub-region t uses the regional residue count (R2 - R1 + 1) since 2.0.6
+    assert abs(GS6_CP.get_t(R1=1, R2=3)[0] - 0.30239056) < 0.0001
 
 
 def test_get_internal_scaling(GS6_CP):
@@ -773,23 +774,19 @@ def test_get_angle_decay_consistent_value(GS6_CP, NTL9_CP):
     """
     proteins = [GS6_CP, NTL9_CP]
     for protein in proteins:
-        # do this because we only caculate vector
-        # between res with CA, the indices here are position within the n-to-c
-        # vector that always starts at 1
-        # separation not index position, so we are always separation of 1-x
-        min_res = 1
-        max_res = protein.n_residues - (protein.n_residues - len(protein.resid_with_CA))
+        # pair keys are the actual residue ids of the CA-bearing residues
+        # (since 2.0.6); a window is a separation in that CA-bearing list
+        ca_res = protein.resid_with_CA
 
         (return_matrix, pair_dict) = protein.get_angle_decay(return_all_pairs=True)
 
         for window in range(1, 8):
-            if window + min_res >= max_res + 1:
+            if window >= len(ca_res):
                 continue
 
             all_pairs = []
-            for i in range(min_res, (max_res + 1) - window):
-                j = i + window
-                n = f"{i}-{j}"
+            for k in range(len(ca_res) - window):
+                n = f"{ca_res[k]}-{ca_res[k + window]}"
                 all_pairs.append(pair_dict[n])
 
             assert (np.mean(all_pairs) - return_matrix[window][1]) == 0
@@ -1079,13 +1076,15 @@ def test_get_all_SASA(GS6_CP, NTL9_CP):
     # check that 'all' works
     assert len(GS6_CP.get_all_SASA(stride=1, mode="all")) == 3
 
-    # assert all works as expected
+    # assert all works as expected; in mode='all' the residue array is
+    # restricted to the CA-bearing residues so it lines up with the
+    # sidechain/backbone arrays (caps dropped), hence the column slice here
     assert (
         np.sum(
             GS6_CP.get_all_SASA(stride=1, mode="all")[0]
-            == GS6_CP.get_all_SASA(stride=1)
+            == GS6_CP.get_all_SASA(stride=1)[:, GS6_CP.resid_with_CA]
         )
-        == 40
+        == 30
     )
     assert (
         np.sum(

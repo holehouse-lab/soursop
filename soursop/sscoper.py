@@ -301,9 +301,13 @@ class COPERResult:
     @property
     def reweighting_factors(self) -> np.ndarray:
         """Per-frame reweighting factors ``r_i = w_i / w0_i``
-        (Leung et al. eq 9a).
+        (Leung et al. eq 9a). Frames with zero prior weight (which are
+        excluded from the fit and keep weight zero) are reported as 0.
         """
-        return self.weights / self.initial_weights
+        out = np.zeros_like(self.weights)
+        active = self.initial_weights > 0
+        out[active] = self.weights[active] / self.initial_weights[active]
+        return out
 
     def predict(self, calculated_values: np.ndarray) -> np.ndarray:
         """Weighted average of arbitrary observables using these weights.
@@ -311,27 +315,36 @@ class COPERResult:
         Parameters
         ----------
         calculated_values : numpy.ndarray
-            Per-frame observable values, shape ``(n_frames, n_observables)``.
+            Per-frame observable values, shape ``(n_frames, ...)``. A 1D
+            array of shape ``(n_frames,)`` is treated as a single observable.
             ``n_frames`` must match the fitted ensemble.
 
         Returns
         -------
         numpy.ndarray
-            Weighted means, shape ``(n_observables,)``.
+            Weighted average over frames (axis 0); shape ``(n_observables,)``
+            for 2D input, ``(1,)`` for 1D input.
 
         Raises
         ------
         SSException
             If the number of frames does not match the fitted ensemble.
         """
-        calculated_values = np.asarray(calculated_values)
+        calculated_values = np.asarray(calculated_values, dtype=np.float64)
+        if calculated_values.ndim == 0:
+            raise SSException("calculated_values must have a leading frame axis")
+        if calculated_values.ndim == 1:
+            # A bare (n_frames,) vector previously broadcast against the
+            # weights column to an (n, n) array and came back unchanged.
+            calculated_values = calculated_values.reshape(-1, 1)
         if calculated_values.shape[0] != self.weights.shape[0]:
             raise SSException(
                 f"Number of frames in calculated_values "
                 f"({calculated_values.shape[0]}) must match the fitted "
                 f"ensemble ({self.weights.shape[0]})"
             )
-        return np.sum(self.weights[:, np.newaxis] * calculated_values, axis=0)
+        w = self.weights.reshape((-1,) + (1,) * (calculated_values.ndim - 1))
+        return np.sum(w * calculated_values, axis=0)
 
     def diagnostics(self, warn_threshold: float = 0.5) -> dict:
         """Diagnose the reweighting result and flag potential issues.
@@ -683,7 +696,10 @@ class COPER:
         ``(n_frames, n_observables)``.
     initial_weights : numpy.ndarray, optional
         Prior frame weights. If None, uniform weights are used. Internally
-        normalised to sum to 1.
+        normalised to sum to 1. Weights must be non-negative; frames whose
+        prior weight is exactly zero are excluded from the optimisation and
+        receive weight 0 in the result (the relative entropy is only finite
+        there), with the remaining frames renormalised.
 
     Raises
     ------
@@ -724,9 +740,19 @@ class COPER:
         if initial_weights is None:
             self.initial_weights = np.ones(self.n_frames) / self.n_frames
         else:
-            self.initial_weights = np.asarray(
-                initial_weights, dtype=np.float64
-            ) / float(np.sum(initial_weights))
+            initial_weights = np.asarray(initial_weights, dtype=np.float64)
+            if np.any(initial_weights < 0):
+                raise SSException("initial_weights must be non-negative")
+            if not np.sum(initial_weights) > 0:
+                raise SSException("initial_weights must not all be zero")
+            self.initial_weights = initial_weights / float(np.sum(initial_weights))
+
+        # Frames with exactly zero prior weight cannot take any weight under
+        # a finite relative entropy (w ln(w / 0) diverges), so they are
+        # excluded from the optimisation and pinned at weight 0 in the
+        # result. Everything below operates on the active subset when this
+        # mask is not all-True; see fit().
+        self._active = self.initial_weights > 0
 
         # Build {group_name: [observable indices]}; ungrouped observables
         # are pooled into the default group "all".
@@ -1029,6 +1055,14 @@ class COPER:
         self._chi2_limit = float(chi2_limit)
         n = self.n_frames
 
+        if not np.all(self._active):
+            return self._fit_with_zero_prior_frames(
+                chi2_limit=chi2_limit,
+                max_iterations=max_iterations,
+                optimizer=optimizer,
+                verbose=verbose,
+            )
+
         # Optimise over z with w = softmax(z); z0 = log(w0) gives softmax(z0) = w0.
         w0 = self.initial_weights.copy()
         z0 = np.log(np.maximum(w0, MIN_WEIGHT_THRESHOLD))
@@ -1145,6 +1179,77 @@ class COPER:
         return self._result
 
     # ------------------------------------------------------------------
+    def _fit_with_zero_prior_frames(
+        self,
+        chi2_limit: float,
+        max_iterations: int,
+        optimizer: str,
+        verbose: bool,
+    ) -> COPERResult:
+        """Fit when some prior weights are exactly zero.
+
+        The relative entropy ``sum_i w_i ln(w_i / w0_i)`` is only finite if
+        every frame with ``w0_i = 0`` also has ``w_i = 0``, so those frames
+        cannot participate in the fit. This runs the ordinary two-step COPER
+        on the sub-ensemble of frames with non-zero prior weight (with the
+        prior renormalised over that subset), then scatters the result back
+        to full length with zeros on the excluded frames. All chi-squared
+        values are unchanged by the excluded frames (they carry no weight),
+        and the entropy / phi are recomputed against the full prior.
+
+        Parameters
+        ----------
+        chi2_limit, max_iterations, optimizer, verbose
+            As for :meth:`fit`.
+
+        Returns
+        -------
+        COPERResult
+            Result with full-length ``weights`` (zero on excluded frames) and
+            ``metadata['n_zero_prior_frames']`` recording how many frames
+            were excluded.
+        """
+        active = self._active
+        n_excluded = int(np.sum(~active))
+        if verbose:
+            print(
+                f"COPER: {n_excluded} frame(s) with zero prior weight excluded "
+                "from the optimisation (they keep weight 0)."
+            )
+
+        sub = COPER(
+            self.observables,
+            self.calculated_values[active],
+            self.initial_weights[active],
+        )
+        sub_res = sub.fit(
+            chi2_limit=chi2_limit,
+            max_iterations=max_iterations,
+            optimizer=optimizer,
+            verbose=verbose,
+        )
+
+        weights = np.zeros(self.n_frames, dtype=np.float64)
+        weights[active] = sub_res.weights
+
+        metadata = dict(sub_res.metadata)
+        metadata["n_zero_prior_frames"] = n_excluded
+
+        self._result = self._make_result(
+            weights=weights,
+            chi_squared_initial=sub_res.chi_squared_initial,
+            chi_squared_min=sub_res.chi_squared_min,
+            chi_squared_final=sub_res.chi_squared_final,
+            chi2_limit=chi2_limit,
+            feasible=sub_res.feasible,
+            success=sub_res.success,
+            message=sub_res.message,
+            n_iterations=sub_res.n_iterations,
+            metadata=metadata,
+        )
+        return self._result
+
+    # ------------------------------------------------------------------
     def scan_chi2_limit(
         self,
         chi2_limits: Union[Tuple[float, float], np.ndarray] = (0.25, 4.0),
@@ -1218,7 +1323,9 @@ class iCOPER:
     calculated_values : numpy.ndarray
         Per-frame calculated values, shape ``(n_frames, n_observables)``.
     initial_weights : numpy.ndarray, optional
-        Prior frame weights. Uniform if None.
+        Prior frame weights. Uniform if None. Frames with exactly zero prior
+        weight are handled as in :class:`COPER` (excluded from each inner
+        fit and pinned at weight 0).
 
     Raises
     ------
@@ -1310,6 +1417,12 @@ class iCOPER:
         """
         if chi2_limit <= 0:
             raise SSException(f"chi2_limit must be positive, got {chi2_limit}")
+        if fit_offset and self.n_observables < 2:
+            raise SSException(
+                "iCOPER with fit_offset=True fits a scale and an offset, which "
+                f"needs at least two observables (got {self.n_observables}). "
+                "Use fit_offset=False for a scale-only fit, or use COPER."
+            )
         self._chi2_limit = float(chi2_limit)
 
         w0 = self.initial_weights.copy()

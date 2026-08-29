@@ -69,6 +69,8 @@ SOURSOP therefore computes SASA on these chains using the force field's own bead
 
 The same ``forcefield`` keyword is accepted by ``get_regional_SASA`` and ``get_site_accessibility``. On a one-bead chain only ``mode='residue'`` and ``mode='atom'`` are meaningful (and are equivalent) — a single bead represents the whole residue, so there is no backbone/sidechain decomposition to make and those modes raise.
 
+For the same reason ``get_secondary_structure_DSSP`` and ``get_sidechain_alignment_angle`` raise an ``SSException`` on a one-bead chain: there is no backbone for DSSP to classify (it would otherwise silently report 100% coil) and no sidechain atom to build an orientation vector from. Two-bead (CA/CB) models are handled separately via ``is_swan``.
+
 The underlying bead sizes are readable directly if you want them for something else::
 
   from soursop.ssdata import get_cg_bead_sigmas

@@ -117,6 +117,48 @@ _srel = relative_entropy
 _weighted_linear_regression = weighted_linear_regression
 _validate_inputs = validate_reweighting_inputs
 
+
+def _weighted_average(weights: np.ndarray, calculated_values) -> np.ndarray:
+    """Weighted average of per-frame values over the frame axis.
+
+    Shared by the ``predict`` methods of the reweighting result classes. A
+    1D input of shape ``(n_frames,)`` is treated as a single observable and
+    reshaped to ``(n_frames, 1)``; previously such input broadcast to an
+    ``(n_frames, n_frames)`` array and was returned essentially unchanged.
+
+    Parameters
+    ----------
+    weights : numpy.ndarray
+        Frame weights, shape ``(n_frames,)``.
+    calculated_values : array_like
+        Per-frame values, shape ``(n_frames, ...)`` or ``(n_frames,)``.
+
+    Returns
+    -------
+    numpy.ndarray
+        Weighted average over axis 0. Shape ``(1,)`` for 1D input, otherwise
+        the input shape with the frame axis removed.
+
+    Raises
+    ------
+    SSException
+        If the number of frames does not match ``weights``.
+    """
+    calculated_values = np.asarray(calculated_values, dtype=np.float64)
+    if calculated_values.ndim == 0:
+        raise SSException("calculated_values must have a leading frame axis")
+    if calculated_values.ndim == 1:
+        calculated_values = calculated_values.reshape(-1, 1)
+    if calculated_values.shape[0] != weights.shape[0]:
+        raise SSException(
+            f"Number of frames in calculated_values "
+            f"({calculated_values.shape[0]}) must match the fitted "
+            f"ensemble ({weights.shape[0]})"
+        )
+    w = weights.reshape((-1,) + (1,) * (calculated_values.ndim - 1))
+    return np.sum(w * calculated_values, axis=0)
+
+
 __all__ = [
     "BME",
     "iBME",
@@ -231,27 +273,22 @@ class BMEResult:
         Parameters
         ----------
         calculated_values : numpy.ndarray
-            Per-frame observable values, shape ``(n_frames, n_observables)``.
+            Per-frame observable values, shape ``(n_frames, ...)``. A 1D
+            array of shape ``(n_frames,)`` is treated as a single observable.
             ``n_frames`` must match the fitted ensemble.
 
         Returns
         -------
         numpy.ndarray
-            Weighted means, shape ``(n_observables,)``.
+            Weighted average over frames (axis 0); shape ``(n_observables,)``
+            for 2D input, ``(1,)`` for 1D input.
 
         Raises
         ------
         SSException
             If the number of frames does not match the fitted ensemble.
         """
-        calculated_values = np.asarray(calculated_values)
-        if calculated_values.shape[0] != self.weights.shape[0]:
-            raise SSException(
-                f"Number of frames in calculated_values "
-                f"({calculated_values.shape[0]}) must match the fitted "
-                f"ensemble ({self.weights.shape[0]})"
-            )
-        return np.sum(self.weights[:, np.newaxis] * calculated_values, axis=0)
+        return _weighted_average(self.weights, calculated_values)
 
     def diagnostics(self, warn_threshold: float = 0.5) -> dict:
         """Diagnose the reweighting result and flag potential issues.
@@ -657,9 +694,11 @@ class BME:
         tuple
             ``(objective/theta, gradient/theta)``.
         """
-        log_w = -np.sum(lambdas * self.calculated_values, axis=1) + np.log(
-            self.initial_weights
-        )
+        # log(0) = -inf is the intended result for frames with zero prior
+        # weight (they get weight exactly 0), so the divide warning is noise.
+        with np.errstate(divide="ignore"):
+            log_w0 = np.log(self.initial_weights)
+        log_w = -np.sum(lambdas * self.calculated_values, axis=1) + log_w0
         log_z = logsumexp(log_w)
         probs = np.exp(log_w - log_z)
         avg_calc = np.sum(probs[:, np.newaxis] * self.calculated_values, axis=0)
@@ -715,9 +754,11 @@ class BME:
         }
 
         if opt.success:
-            log_w = -np.sum(
-                opt.x[np.newaxis, :] * self.calculated_values, axis=1
-            ) + np.log(self.initial_weights)
+            with np.errstate(divide="ignore"):
+                log_w0 = np.log(self.initial_weights)
+            log_w = (
+                -np.sum(opt.x[np.newaxis, :] * self.calculated_values, axis=1) + log_w0
+            )
             weights = np.exp(log_w - logsumexp(log_w))
             chi2_final = self._compute_chi_squared(weights)
             rel = float(np.sum(rel_entr(weights, self.initial_weights)))
@@ -1025,6 +1066,12 @@ class iBME:
         """
         if theta <= 0:
             raise SSException(f"theta must be positive, got {theta}")
+        if fit_offset and self.n_observables < 2:
+            raise SSException(
+                "iBME with fit_offset=True fits a scale and an offset, which "
+                f"needs at least two observables (got {self.n_observables}). "
+                "Use fit_offset=False for a scale-only fit, or use BME."
+            )
         self._theta = float(theta)
 
         w0 = self.initial_weights.copy()
@@ -1336,28 +1383,21 @@ class BMECustomResult:
         Parameters
         ----------
         calculated_values : numpy.ndarray
-            Per-frame values, shape ``(n_frames, ...)``; ``n_frames`` must
-            match the fitted ensemble.
+            Per-frame values, shape ``(n_frames, ...)``; a 1D array of
+            shape ``(n_frames,)`` is treated as a single observable.
+            ``n_frames`` must match the fitted ensemble.
 
         Returns
         -------
         numpy.ndarray
-            Weighted average over frames (axis 0).
+            Weighted average over frames (axis 0); ``(1,)`` for 1D input.
 
         Raises
         ------
         SSException
             If the number of frames does not match the fitted ensemble.
         """
-        calculated_values = np.asarray(calculated_values)
-        if calculated_values.shape[0] != self.weights.shape[0]:
-            raise SSException(
-                f"Number of frames in calculated_values "
-                f"({calculated_values.shape[0]}) must match the fitted "
-                f"ensemble ({self.weights.shape[0]})"
-            )
-        weights = self.weights.reshape((-1,) + (1,) * (calculated_values.ndim - 1))
-        return np.sum(weights * calculated_values, axis=0)
+        return _weighted_average(self.weights, calculated_values)
 
     def diagnostics(self, warn_threshold: float = 0.5) -> dict:
         """Diagnose the reweighting result and flag potential issues.
@@ -1450,15 +1490,34 @@ class BMECustom:
         \\mathcal{L}(w) = \\text{cost}(w) + \\theta\\, D_{\\mathrm{KL}}(w\\,\\|\\,w^0)
 
     directly over the ``n`` frame weights (subject to the simplex
-    ``w_i \\ge 0``, ``\\sum_i w_i = 1``) using SciPy's ``trust-constr``. The
-    entropy penalty ``theta`` plays the same role as in :class:`BME`: large
-    ``theta`` keeps the ensemble close to the prior, small ``theta`` fits
-    the data harder.
+    ``w_i \\ge 0``, ``\\sum_i w_i = 1``). The entropy penalty ``theta``
+    plays the same qualitative role as in :class:`BME`: large ``theta``
+    keeps the ensemble close to the prior, small ``theta`` fits the data
+    harder.
 
     Unlike :class:`BME` (which exploits a closed-form exponential solution
     special to the Gaussian chi-squared), an arbitrary cost has no such
     closed form, so the weights are optimised directly. The default cost
-    reproduces :class:`BME`'s reduced chi-squared exactly.
+    is :class:`BME`'s reduced chi-squared
+    ``chi2_red = (1/m) sum_k ((<calc>_k - V_k) / sigma_k)^2``, so
+    ``cost_initial`` / ``cost_final`` are directly comparable with
+    ``BMEResult.chi_squared_initial`` / ``chi_squared_final``.
+
+    **Theta is not on the same scale as in BME.** :class:`BME` minimises
+    ``(1/2) sum_k ((<calc>_k - V_k) / sigma_k)^2 + theta * D_KL``, i.e.
+    ``(m/2) * chi2_red + theta * D_KL``, whereas :class:`BMECustom` (with
+    the default cost) minimises ``chi2_red + theta * D_KL``. The two are the
+    same problem up to a constant factor ``m/2`` on the cost, so
+
+    ``BMECustom(...).fit(theta=2 * theta_bme / m)``
+
+    gives the same weights as ``BME(...).fit(theta=theta_bme)``; equivalently
+    a BMECustom ``theta`` corresponds to a BME theta of ``m * theta / 2``.
+    The reduced form is kept here so that the penalty strength is
+    independent of the length of the experimental vector (a SAXS profile
+    with 500 points and one with 50 need not use wildly different
+    ``theta``), and so that a user-supplied cost on the same scale as the
+    reduced chi-squared behaves identically to the default.
 
     Parameters
     ----------
@@ -1601,6 +1660,11 @@ class BMECustom:
         verbose: bool = True,
     ) -> BMECustomResult:
         """Reweight by minimising ``cost(w) + theta * D_KL(w || w0)``.
+
+        Note that with the default (reduced chi-squared) cost this ``theta``
+        is on a different scale from :class:`BME`'s: ``theta_bme = m * theta
+        / 2`` where ``m`` is the experimental vector length (see the class
+        docstring).
 
         Internally the simplex ``w_i >= 0``, ``sum_i w_i = 1`` is enforced
         via a softmax reparameterisation (``w = softmax(z)``), reducing the

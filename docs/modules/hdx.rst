@@ -85,7 +85,7 @@ Pitfalls and conventions
 
 * **Units.** ``contact_cutoff`` is in **nanometres** (matches mdtraj). 6.5 Å = 0.65 nm.
 * **H-bond convention.** ``compute_Nh`` only counts *backbone-to-backbone* H-bonds with the amide H of residue :math:`i` as donor and a backbone carbonyl O at :math:`|i - j| >` ``exclude_neighbours`` as acceptor — sidechain contributions and short-range :math:`i \rightarrow i, i+1, i+2` interactions are dropped, in line with the Best-Vendruscolo definition.
-* **N-terminus.** The N-terminal amine of most force fields is named ``H1/H2/H3``; ``sshdx`` keeps the residue if it can find any of ``H``/``HN``/``H1`` on the backbone N. If your N-terminus is parameterised differently, mask out the first residue post hoc.
+* **Termini and caps.** A free N-terminal residue carries an NH3+ group rather than an amide N-H, so ``sshdx`` drops it (a residue whose N has no preceding backbone C). Capping groups (``ACE``, ``NME``, ``NMA``, ``NH2``) are likewise never reported. If the first residue follows an ``ACE`` cap it is a genuine amide and is retained. Proline is always excluded.
 * **Per-frame statistics.** The per-frame ln(P) array is what the reweighters consume; the function only collapses the frame axis when you supply ``weights``. Always inspect ``lnP.mean(axis=0)`` (or feed a uniform-weight vector) when comparing to experimental ln(P) directly.
 * **Parameterisation.** The default :math:`\beta_c = 0.35`, :math:`\beta_h = 2.0` come from Best & Vendruscolo's original fit on globular proteins. For IDRs / partially-folded states it is reasonable to keep them as a baseline, but a forward-model uncertainty in BME / COPER (or treating :math:`\beta_c`, :math:`\beta_h` as nuisance parameters) is recommended.
 

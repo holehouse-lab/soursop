@@ -36,9 +36,13 @@ COPER reweighters. The optional ``weights`` argument collapses the frame
 axis to a single per-residue ensemble mean (per the package-wide
 :func:`soursop.ssutils.validate_weights` contract).
 
-Proline (no backbone H) and any residue lacking a recognisable backbone
-amide H are dropped from the residue list; the function returns the
-residue indices it covered alongside the data array.
+Proline (no backbone H), capping groups (ACE, NME, NMA, NH2 - these are
+not amino acids and do not carry an exchangeable backbone amide), a free
+N-terminal residue (whose N carries an NH3+ group rather than an amide
+N-H) and any residue lacking a recognisable backbone amide H are dropped
+from the residue list; the function returns the residue indices it
+covered alongside the data array. Note that an N-terminal residue
+preceded by an ACE cap is a genuine amide and is retained.
 
 Public entry points
 -------------------
@@ -87,14 +91,29 @@ DEFAULT_EXCLUDE_NEIGHBOURS = 2
 #: parameterisations use ``H1``).
 _BACKBONE_H_NAMES = ("H", "HN", "H1")
 
+#: Residue names treated as capping groups. These carry no exchangeable
+#: backbone amide and are never reported (mirrors the cap names in
+#: :mod:`soursop.ssdata`).
+_CAP_RESIDUE_NAMES = ("ACE", "NME", "NMA", "NH2", "FOR")
+
 
 # ----------------------------------------------------------------------------------------------------------------------------------------------------------------
 def _backbone_nh_map(topology):
     """Resolve backbone amide N+H atom indices per residue.
 
-    Skips residues with no backbone N (rare hetero residues), no
-    recognisable backbone H name (e.g. proline), so the returned arrays
-    are aligned 1:1.
+    Only residues with a genuine exchangeable backbone amide N-H are
+    returned. Skipped are: proline (no amide H); capping groups
+    (``ACE``, ``NME``, ``NMA``, ``NH2``, ``FOR``); a free N-terminal
+    residue, whose N is an NH3+ group rather than an amide (identified
+    as an N with no preceding residue that carries a backbone C - so a
+    residue following an ACE cap is retained); residues with no backbone
+    N (rare hetero residues); and residues with no recognisable backbone
+    H name. The returned arrays are aligned 1:1.
+
+    Parameters
+    ----------
+    topology : mdtraj.Topology
+        Topology to scan.
 
     Returns
     -------
@@ -103,12 +122,23 @@ def _backbone_nh_map(topology):
     h_atom_indices  : numpy.ndarray (n_res,)
     """
     res_idx, n_idx, h_idx = [], [], []
-    for residue in topology.residues:
+    residues = list(topology.residues)
+    for pos, residue in enumerate(residues):
         if residue.name == "PRO":
+            continue
+        if residue.name.upper() in _CAP_RESIDUE_NAMES:
             continue
         try:
             n_atom = next(a for a in residue.atoms if a.name == "N")
         except StopIteration:
+            continue
+
+        # a free N-terminus: the amide N must be bonded to the carbonyl C
+        # of the preceding residue in the same chain, otherwise it is an
+        # NH3+ group and does not exchange like a backbone amide
+        if pos == 0 or residues[pos - 1].chain.index != residue.chain.index:
+            continue
+        if not any(a.name == "C" for a in residues[pos - 1].atoms):
             continue
         h_atom = None
         for cand in _BACKBONE_H_NAMES:
@@ -184,8 +214,9 @@ def compute_Nc(
     -------
     residue_indices : numpy.ndarray, shape (n_res,)
         Zero-based residue indices for which N_c is defined (the
-        backbone-amide residues; proline and any residue lacking a
-        recognisable backbone H are dropped).
+        backbone-amide residues; proline, capping groups, a free
+        N-terminal residue and any residue lacking a recognisable
+        backbone H are dropped - see :func:`_backbone_nh_map`).
     Nc : numpy.ndarray, shape (n_frames, n_res), int
         Per-frame, per-residue heavy-atom contact counts.
 
