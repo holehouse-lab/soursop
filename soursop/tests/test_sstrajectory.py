@@ -359,44 +359,31 @@ def test_intrachain_inter_residue_atomic_distance():
         assert len(distances) == len(a_residues)
 
 
-def test_intrachain_inter_residue_atomic_distance_by_name():
-    """
-    # TODO: Revise.
-    # A custom version of NTL9 is needed, since we want to have multiple protein chains
-    protein_groups_residues = [[0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
-                               [10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
-                               [20, 21, 22, 23, 24, 25, 26, 27, 28, 29],
-                               [30, 31, 32, 33, 34, 35, 36, 37, 38, 39],
-                               [40, 41, 42, 43, 44, 45, 46, 47, 48, 49]]
-    pdb_filename = os.path.join(soursop.get_data('test_data'), 'ntl9_AA.pdb')
-    traj_filename = os.path.join(soursop.get_data('test_data'), 'ntl9_AA.xtc')  # ntl9 has 56 residues
-    trajectory = sstrajectory.SSTrajectory(trajectory_filename=traj_filename,
-                                           pdb_filename=pdb_filename,
-                                           protein_grouping=protein_groups_residues)
+def test_interchain_distance_by_atom_name(GMX_2CHAINS):
+    """Named-atom inter-chain distances match mdtraj on the full topology."""
+    import mdtraj as md
 
-    atom_names = dict()
-    for residue in trajectory.traj.topology.residues:
-        atom_names[residue.index] = [atom for atom in residue.atoms]#[atom.name for atom in residue.atoms]
+    T = GMX_2CHAINS
+    full_top = T.traj.topology
+    chain_a, chain_b = full_top.chain(0), full_top.chain(1)
+    for R1, R2, A1, A2 in [(3, 7, "CA", "N"), (0, 10, "C", "CA"), (5, 5, "N", "O")]:
+        d = T.get_interchain_distance(0, 1, R1, R2, A1=A1, A2=A2)
+        i = next(a.index for a in chain_a.residue(R1).atoms if a.name == A1)
+        j = next(a.index for a in chain_b.residue(R2).atoms if a.name == A2)
+        expected = 10 * md.compute_distances(T.traj, [[i, j]], periodic=False)[:, 0]
+        assert d.shape == (T.n_frames,)
+        np.testing.assert_allclose(d, expected, rtol=1e-5)
 
-    for protein_group in itertools.combinations(range(len(protein_groups_residues)), r=2):
-        protein_a, protein_b = protein_group
-        a_residues = protein_groups_residues[protein_a]
-        b_residues = protein_groups_residues[protein_b]
-
-        residue_a = random.randint(0, len(a_residues) - 1)
-        residue_a_atoms = atom_names[protein_groups_residues[protein_a][residue_a]]
-        residue_a_atom = random.choice(residue_a_atoms)
-
-        residue_b = random.randint(0, len(b_residues) - 1)
-        residue_b_atoms = atom_names[protein_groups_residues[protein_b][residue_b]]
-        residue_b_atom = random.choice(residue_b_atoms)
-
-        distances = trajectory.get_intrachain_interResidue_atomic_distance(protein_a, protein_b,
-                                                                           residue_a, residue_b,
-                                                                           A1=residue_a_atom, A2=residue_a_atom)
-        assert len(distances) == len(a_residues)
-    """
-    pass
+    # the closest-heavy scheme against mdtraj's compute_contacts on the full system
+    d = T.get_interchain_distance(0, 1, 3, 7, mode="closest-heavy")
+    n_res_a = chain_a.n_residues
+    expected = (
+        10
+        * md.compute_contacts(
+            T.traj, [[3, n_res_a + 7]], scheme="closest-heavy", periodic=False
+        )[0][:, 0]
+    )
+    np.testing.assert_allclose(d, expected, rtol=1e-5)
 
 
 def test_get_interchain_distance():
@@ -642,30 +629,32 @@ def test_get_overal_rg(GMX_2CHAINS):
 
 
 def test_get_overal_asphericity(GMX_2CHAINS):
-    # compares rg of 2 chains vs. same values calculated by VMD
+    # asphericity of the two chains treated as one pseudo-chain, pinned with the
+    # gyration tensor taken about the geometric centre (2.0.6). The pre-2.0.6
+    # values, taken about the mass-weighted centre of mass, differed by < 2e-5.
 
     asph = np.array(
         [
-            0.36274249,
-            0.4079101,
-            0.5837932,
-            0.3413606,
-            0.30022731,
-            0.25667767,
-            0.24720234,
-            0.32076792,
-            0.26974903,
-            0.21184996,
-            0.62855842,
-            0.23021391,
-            0.16662495,
-            0.45061943,
-            0.54406795,
-            0.4482196,
-            0.53423135,
-            0.73352191,
-            0.75562579,
-            0.32473148,
+            0.36274186,
+            0.40790529,
+            0.58378980,
+            0.34135408,
+            0.30022431,
+            0.25667644,
+            0.24720295,
+            0.32076922,
+            0.26974452,
+            0.21185184,
+            0.62856019,
+            0.23021315,
+            0.16662445,
+            0.45061476,
+            0.54406465,
+            0.44821563,
+            0.53423530,
+            0.73352610,
+            0.75562624,
+            0.32473049,
         ]
     )
 
@@ -673,30 +662,32 @@ def test_get_overal_asphericity(GMX_2CHAINS):
 
 
 def test_get_overal_rh(GMX_2CHAINS):
-    # compares rg of 2 chains vs. same values calculated by VMD
+    # Nygaard Rh of the two chains treated as one pseudo-chain, pinned with the
+    # C-alpha Rg and N = CA-bearing residues (2.0.6); the pre-2.0.6 values used
+    # the all-atom Rg and were 0.1-0.3 A different.
 
     asph = np.array(
         [
-            26.99809304,
-            27.25590015,
-            27.29754026,
-            28.59875282,
-            28.22148641,
-            27.03576021,
-            27.12021072,
-            28.48253016,
-            27.31671616,
-            28.76251356,
-            36.57647347,
-            26.66061797,
-            26.96999394,
-            26.99493729,
-            27.43425109,
-            28.87969746,
-            36.31506845,
-            36.3423472,
-            36.90213999,
-            28.63399989,
+            27.03548438,
+            27.28263782,
+            27.29500117,
+            28.79159772,
+            28.32914277,
+            27.04679106,
+            27.25088727,
+            28.71373611,
+            27.37118513,
+            28.94960314,
+            36.53008467,
+            26.65052255,
+            26.97872701,
+            26.98799538,
+            27.53567111,
+            29.03053464,
+            36.24661026,
+            36.25525307,
+            36.80973559,
+            28.78566559,
         ]
     )
 

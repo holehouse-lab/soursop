@@ -11,6 +11,15 @@ Overview
 
 **Supported formats.** Any trajectory format supported by `mdtraj <https://mdtraj.org>`_ can be read in (XTC, DCD, TRR, NetCDF, etc.), paired with a compatible topology file (PDB, GRO, etc.).
 
+**Input contract: whole molecules.** SOURSOP computes every distance, size and contact directly from the coordinates it is handed. It never applies the minimum-image convention (the only exception is the opt-in ``periodic=True`` flag on the inter-chain methods below, and even that assumes a cubic box), and it never re-images or unwraps coordinates. This is deliberate - it keeps every observable a plain function of the conformation - but it means the trajectory you load must already contain **whole molecules**. A chain that the simulation engine has wrapped back into the primary cell, so that part of it sits on the far side of the box, gives wrong radii of gyration, distance maps, contact maps and everything derived from them, with no error. Make molecules whole before analysis, for example with ``gmx trjconv -pbc mol -center`` for GROMACS output, or in Python with ``traj.make_molecules_whole()`` / ``traj.image_molecules()`` on an mdtraj trajectory before passing it in via ``TRJ=``. CAMPARI's default output is already whole.
+
+Because a wrapped chain is easy to miss by eye, ``SSTrajectory`` checks for it on load: a whole chain has consecutive residues ~3.8 Å apart, whereas a wrapped one has two consecutive residues separated by roughly a box vector. If any consecutive-residue CA-CA distance exceeds half the shortest box vector in any frame, an ``SSWarning`` names the chain, the residue pair and the number of affected frames (pass ``check_whole_molecules='raise'`` to make this an ``SSException`` instead, or ``False`` to skip the check). A whole chain that is simply larger than the box is not flagged, and trajectories without a unit cell cannot be tested. The same test is available at any time as :meth:`~soursop.sstrajectory.SSTrajectory.check_molecules_whole`, which returns a per-chain report::
+
+    TrajOb = SSTrajectory('traj.xtc', 'start.pdb')
+    for entry in TrajOb.check_molecules_whole():
+        if entry['split']:
+            print(entry['protein'], entry['worst_pair'], entry['n_frames_split'])
+
 **Coarse-grained models.** In addition to all-atom trajectories, SOURSOP supports one-bead-per-residue coarse-grained trajectories (a single ``CA`` bead per residue), which are auto-detected on load. The bulk of the geometric API (dimensions, distance/contact maps, polymer scaling, etc.) works unchanged on coarse-grained ensembles, since every residue still carries a ``CA``.
 
 **Typical workflow**::
@@ -72,6 +81,7 @@ Functions enable operations to be performed on the entire system. Note if you wi
 Functions
 ................
 
+.. automethod:: soursop.sstrajectory.SSTrajectory.check_molecules_whole
 .. automethod:: soursop.sstrajectory.SSTrajectory.get_overall_radius_of_gyration
 .. automethod:: soursop.sstrajectory.SSTrajectory.get_overall_hydrodynamic_radius
 .. automethod:: soursop.sstrajectory.SSTrajectory.get_overall_asphericity

@@ -94,7 +94,7 @@ import numpy as np
 from scipy.optimize import minimize
 from scipy.special import logsumexp, rel_entr
 
-from .ssexceptions import SSException
+from .ssexceptions import SSException, SSWarning
 from .ssutils import (
     MIN_WEIGHT_THRESHOLD,
     VALID_CONSTRAINTS,
@@ -357,9 +357,13 @@ class BMEResult:
                 f"Large weight range ({diag['weight_range_orders']:.1f} "
                 "orders of magnitude): a few frames dominate the ensemble."
             )
-        if self.chi_squared_final > 2 * len(self.observables):
+        # chi_squared_final is the REDUCED chi-squared (mean over observables),
+        # so the threshold is a constant; the previous ``2 * n_observables``
+        # compared a per-observable mean against a total and so almost never
+        # fired for more than one observable.
+        if self.chi_squared_final > 2.0:
             warnings.append(
-                f"High final Chi-squared ({self.chi_squared_final:.2f}): "
+                f"High final reduced chi-squared ({self.chi_squared_final:.2f} > 2): "
                 "poor fit; observables may be incompatible with the ensemble."
             )
 
@@ -522,8 +526,10 @@ def theta_scan(
     Raises
     ------
     SSException
-        If ``reweighter`` is unknown, ``n_points`` < 1, or a log-scale grid
-        has non-positive endpoints.
+        If ``reweighter`` is unknown, ``n_points`` < 1, a log-scale grid
+        has non-positive endpoints, or every fit in the scan failed. Fits
+        that fail individually are excluded from the knee selection (with an
+        ``SSWarning``) but kept in ``results``.
     """
     if reweighter not in ("bme", "ibme"):
         raise SSException(f"Unknown reweighter: {reweighter}, must be 'bme' or 'ibme'")
@@ -578,7 +584,27 @@ def theta_scan(
     phi_arr = np.array(phi_vals)
     kl_arr = np.array(kl_vals)
 
-    optimal_idx, method_name = find_optimal_theta(chi2_arr, kl_arr, method=method)
+    # a failed fit carries chi2 = nan / KL = inf; left in, the knee finder
+    # silently returned index 0 (the smallest theta) whenever every fit failed
+    ok = np.array([r.success for r in results], dtype=bool)
+    if not np.any(ok):
+        messages = sorted({str(r.message) for r in results})
+        raise SSException(
+            "theta_scan: every fit failed, so no theta can be selected. Optimizer "
+            f"messages: {messages}. Try more max_iterations, a wider theta range or "
+            "rescaled observables."
+        )
+    if not np.all(ok):
+        SSWarning(
+            f"theta_scan: {int(np.sum(~ok))} of {len(ok)} fits failed and were "
+            "ignored when selecting theta (their results are kept in .results with "
+            "success=False)."
+        )
+    ok_idx = np.flatnonzero(ok)
+    local_idx, method_name = find_optimal_theta(
+        chi2_arr[ok_idx], kl_arr[ok_idx], method=method
+    )
+    optimal_idx = int(ok_idx[local_idx])
 
     return ThetaScanResult(
         theta_values=theta_values,
@@ -850,7 +876,14 @@ class BME:
         elif auto_theta:
             if verbose:
                 print("[BME] Auto theta: running L-curve scan...")
-            scan_kwargs = dict(theta_range=(0.01, 10.0), n_points=15)
+            # the per-theta fits use the same optimizer settings as a manual
+            # fit would (previously max_iterations / optimizer were silently
+            # dropped on the auto-theta path)
+            scan_kwargs = dict(
+                theta_range=(0.01, 10.0),
+                n_points=15,
+                fit_kwargs=dict(max_iterations=max_iterations, optimizer=optimizer),
+            )
             if theta_scan_kwargs:
                 scan_kwargs.update(theta_scan_kwargs)
             scan = self.scan_theta(**scan_kwargs)
@@ -891,6 +924,7 @@ class BME:
         log_scale: bool = True,
         method: str = "perpendicular",
         verbose: bool = False,
+        fit_kwargs: Optional[dict] = None,
     ) -> ThetaScanResult:
         """Run an L-curve theta scan using this instance's data.
 
@@ -898,6 +932,9 @@ class BME:
         ----------
         theta_range, n_points, log_scale, method, verbose
             See :func:`theta_scan`.
+        fit_kwargs : dict, optional
+            Extra keyword arguments forwarded to :meth:`fit` for each theta
+            (``max_iterations``, ``optimizer``).
 
         Returns
         -------
@@ -913,6 +950,7 @@ class BME:
             initial_weights=self.initial_weights,
             method=method,
             verbose=verbose,
+            fit_kwargs=fit_kwargs,
         )
         self._theta_scan_result = scan
         return scan
@@ -1071,6 +1109,13 @@ class iBME:
                 "iBME with fit_offset=True fits a scale and an offset, which "
                 f"needs at least two observables (got {self.n_observables}). "
                 "Use fit_offset=False for a scale-only fit, or use BME."
+            )
+        if fit_offset and self.n_observables == 2:
+            SSWarning(
+                "iBME with fit_offset=True and exactly two observables is exactly "
+                "determined: a scale and an offset map any two ensemble averages onto "
+                "the two targets, so chi-squared is zero for every weight vector and the "
+                "weights stay at the prior. Use more observables or fit_offset=False."
             )
         self._theta = float(theta)
 
@@ -1442,7 +1487,13 @@ class BMECustomResult:
         return diag
 
     def print_diagnostics(self, warn_threshold: float = 0.5):
-        """Print a formatted diagnostic report for this result."""
+        """Print a formatted diagnostic report for this result.
+
+        Parameters
+        ----------
+        warn_threshold : float, optional
+            Passed through to :meth:`diagnostics`. Default 0.5.
+        """
         diag = self.diagnostics(warn_threshold)
         n = len(self.weights)
         key_w, val_w = 32, 14
@@ -1628,6 +1679,12 @@ class BMECustom:
             initial_weights = np.asarray(initial_weights, dtype=np.float64)
             if len(initial_weights) != self.n_frames:
                 raise SSException("initial_weights length must match number of frames")
+            if not np.all(np.isfinite(initial_weights)):
+                raise SSException("initial_weights must be finite")
+            if np.any(initial_weights < 0):
+                raise SSException("initial_weights must be non-negative")
+            if not np.sum(initial_weights) > 0:
+                raise SSException("initial_weights must not all be zero")
             self.initial_weights = initial_weights / np.sum(initial_weights)
 
         self._result: Optional[BMECustomResult] = None
@@ -1859,7 +1916,21 @@ class BMECustom:
 
         cost_arr = np.array(costs)
         kl_arr = np.array(kls)
-        optimal_idx, method_name = find_optimal_theta(cost_arr, kl_arr, method=method)
+        ok = np.array([r.success for r in results], dtype=bool)
+        if not np.any(ok):
+            raise SSException(
+                "BMECustom.scan_theta: every fit failed, so no theta can be selected."
+            )
+        if not np.all(ok):
+            SSWarning(
+                f"BMECustom.scan_theta: {int(np.sum(~ok))} of {len(ok)} fits failed and "
+                "were ignored when selecting theta."
+            )
+        ok_idx = np.flatnonzero(ok)
+        local_idx, method_name = find_optimal_theta(
+            cost_arr[ok_idx], kl_arr[ok_idx], method=method
+        )
+        optimal_idx = int(ok_idx[local_idx])
         scan = ThetaScanResult(
             theta_values=thetas,
             chi_squared_values=cost_arr,
@@ -1875,6 +1946,17 @@ class BMECustom:
 
     def predict(self, calculated_values: np.ndarray) -> np.ndarray:
         """Weighted means of arbitrary observables using the fitted weights.
+
+        Parameters
+        ----------
+        calculated_values : numpy.ndarray
+            Per-frame values, shape ``(n_frames, ...)``; a 1D array of shape
+            ``(n_frames,)`` is treated as a single observable.
+
+        Returns
+        -------
+        numpy.ndarray
+            Weighted average over frames (axis 0).
 
         Raises
         ------

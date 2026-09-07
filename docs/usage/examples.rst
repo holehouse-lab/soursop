@@ -53,7 +53,7 @@ The most common IDP observables describe the overall size and shape of the chain
     print(f"Mean Rh  = {np.mean(rh):.2f} ± {np.std(rh):.2f} Å")
     print(f"Mean e2e = {np.mean(e2e):.2f} ± {np.std(e2e):.2f} Å")
 
-Both ``get_hydrodynamic_radius`` and ``get_t`` accept ``R1`` / ``R2`` to restrict the calculation to a sub-region; the chain length ``N`` that enters each formula is then the number of residues in that region (``R2 - R1 + 1``), while the default call uses every residue in the chain, caps included.
+Both ``get_hydrodynamic_radius`` and ``get_t`` accept ``R1`` / ``R2`` to restrict the calculation to a sub-region. For the hydrodynamic radius both estimators work on the CA-bearing residues of the region (caps never contribute): ``mode='nygaard'`` feeds the Nygaard equation the Rg of their CA atoms and ``N`` equal to their number, as in the paper, and ``mode='kr'`` sums the Kirkwood-Riseman ``1/r_ij`` over every pair of them. Note that Pesce et al. report an ensemble :math:`R_h` as the harmonic mean of the per-frame values, ``1 / np.mean(1 / rh)``. For ``get_t`` the chain length ``N`` is the number of residues in the region (``R2 - R1 + 1``), every residue including caps by default.
 
 **Asphericity** describes how far the chain deviates from a sphere (0 = perfectly spherical, 1 = rod-like)::
 
@@ -74,18 +74,20 @@ Both ``get_hydrodynamic_radius`` and ``get_t`` accept ``R1`` / ``R2`` to restric
 3. Polymer scaling and internal structure
 ---------------------------------------------------------
 
-IDR conformational behaviour is often interpreted through the lens of polymer physics. The **internal scaling profile** :math:`\langle r^2(i,j) \rangle` reports the mean-square inter-residue distance as a function of sequence separation :math:`|i - j|`.
+IDR conformational behaviour is often interpreted through the lens of polymer physics. The **internal scaling profile** reports how the inter-residue distance grows with sequence separation :math:`|i - j|`. ``get_internal_scaling`` gives the mean distance :math:`\langle r(i,j) \rangle` in Ångströms; ``get_internal_scaling_RMS`` gives the root-mean-square distance :math:`\sqrt{\langle r^2(i,j) \rangle}`, the order parameter the scaling-exponent fit below uses.
 
 **Internal scaling** (mean across the ensemble)::
 
     import matplotlib.pyplot as plt
 
-    separation, mean_r2 = protein.get_internal_scaling(mode='CA', mean_vals=True)
+    separation, mean_r = protein.get_internal_scaling(mode='CA', mean_vals=True)
+    separation, rms_r = protein.get_internal_scaling_RMS(mode='CA')
 
-    plt.loglog(separation, mean_r2)
+    plt.loglog(separation, mean_r, label=r"$\langle r \rangle$")
+    plt.loglog(separation, rms_r, label=r"$\sqrt{\langle r^2 \rangle}$")
     plt.xlabel("Sequence separation |i - j|")
-    plt.ylabel(r"$\langle r^2 \rangle$ (Å²)")
-    plt.title("Internal scaling profile")
+    plt.ylabel("Inter-residue distance (Å)")
+    plt.legend()
     plt.show()
 
 **Scaling exponent** :math:`\nu` — the Flory exponent extracted by fitting :math:`\sqrt{\langle r^2 \rangle} = A_0\,|i-j|^{\nu}`. ``get_scaling_exponent`` returns a 10-element tuple; the first two entries are the point estimates ``nu`` and ``A0``, entries 2–5 are the bootstrap confidence-interval bounds on each, and entries 6–7 are the reduced :math:`\chi^2` of the fit::

@@ -28,8 +28,8 @@ def get_overlap_concentration(rg):
     rg : float
        Radius of gyration in Angstroms
 
-    Return
-    ------
+    Returns
+    -------
     float
         The overlap concentration in molar units
 

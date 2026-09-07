@@ -154,10 +154,10 @@ def shan_entropy(c):
     -------
     >>> import numpy as np
     >>> from soursop.ssmutualinformation import shan_entropy
-    >>> shan_entropy(np.array([1, 1, 1, 1]))     # uniform 4-bin
+    >>> round(float(shan_entropy(np.array([1, 1, 1, 1]))), 3)   # uniform 4-bin
     1.386
-    >>> shan_entropy(np.array([1, 0, 0, 0]))     # peaked
-    0.0
+    >>> float(shan_entropy(np.array([1, 0, 0, 0])))             # peaked
+    -0.0
     """
     # normalize such that all elements sum up to 1
     c_normalized = c / float(np.sum(c))

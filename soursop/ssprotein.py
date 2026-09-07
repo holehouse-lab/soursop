@@ -24,6 +24,7 @@ from .ssdata import (
     ALL_VALID_RESIDUE_NAMES,
     CG_FORCEFIELDS,
     get_cg_bead_sigmas,
+    normalize_residue_name,
 )
 from .ssexceptions import SSException
 from . import ssmutualinformation, ssio, sstools, sspolymer, ssutils
@@ -53,6 +54,16 @@ _CG_SASA_PLACEHOLDER_ELEMENTS = (
     "Ho", "Er", "Tm", "Yb", "Lu", "Hf", "Ta", "Re", "Os", "Ir",
     "Pt", "Au", "Hg", "Tl", "Ac", "Th", "Pa", "Np", "Pu", "Am",
     "Cm", "Bk", "Cf", "Es", "Fm", "Md", "No", "Lr", "Rf", "Db",
+)  # fmt: skip
+
+
+# Atoms that mdtraj's 'backbone' selector (N, CA, C, O only) leaves in the
+# 'sidechain' bucket but that belong to the backbone for the purposes of the
+# SASA decomposition: the backbone hydrogens, the N-terminal amine hydrogens
+# and the C-terminal carboxylate oxygens under their common force-field names.
+_BACKBONE_EXTRA_ATOM_NAMES = (
+    "H", "HA", "HA2", "HA3", "H1", "H2", "H3", "HN",
+    "OXT", "1OXT", "2OXT", "OT1", "OT2", "OC1", "OC2",
 )  # fmt: skip
 
 
@@ -648,13 +659,10 @@ class SSProtein:
             When the stride is larger than the number of available frames in the
             trajectory, or less than 1.
         """
-        if stride > self.n_frames:
-            raise SSException(
-                f"stride ({stride}) is larger than the number of frames ({self.n_frames})"
-            )
-
-        if stride < 1:
-            raise SSException(f"stride ({stride}) is less than 1")
+        # shared validator: integer (numpy integers included, bools excluded),
+        # at least 1 and at most n_frames. A float stride used to be silently
+        # truncated on some paths and to raise a bare TypeError on others.
+        ssutils.validate_stride(stride, self.n_frames)
 
     # ........................................................................
     #
@@ -884,8 +892,8 @@ class SSProtein:
             `stride` step from the input trajectory, `traj`.
         """
 
-        stride = int(stride)
         self.__check_stride(stride)
+        stride = int(stride)
 
         if stride == 1:
             return traj
@@ -1014,8 +1022,11 @@ class SSProtein:
             -  If the atom name is not 'CA' and the chain is coarse grained (1 bead per residue).
         """
 
-        # if resid is not yet in table, create an empty dicitionary
+        # an out-of-range resid used to be looked up anyway: topology.select()
+        # returned an empty array, which was cached under the bogus resid and
+        # handed back as "no atoms" rather than raising
         if resid not in self.__residue_atom_table:
+            self.__check_single_residue(resid)
             self.__residue_atom_table[resid] = {}
 
         # if we haven't specified an atom look up ALL the atoms associated with this residue
@@ -1205,7 +1216,14 @@ class SSProtein:
         -------
         list of int
             Atom indices into the underlying mdtraj topology that satisfy the
-            ``resid`` / ``atom_name`` filter.
+            ``resid`` / ``atom_name`` filter. An atom name that does not occur
+            in the residue gives an empty list.
+
+        Raises
+        ------
+        SSException
+            If ``resid`` is negative or not smaller than ``n_residues``
+            (prior to 2.0.6 an out-of-range resid returned an empty list).
 
         Example
         -------
@@ -1265,6 +1283,12 @@ class SSProtein:
 
             if atom_name not in self.__residue_atom_COM[resid]:
                 atoms = self.__residue_atom_lookup(resid, atom_name)
+                # an empty selection used to slip through to
+                # compute_center_of_mass and come back as (0, 0, 0)
+                if len(atoms) == 0:
+                    raise SSException(
+                        f"Unable to find atom [{atom_name}] in residue {resid}"
+                    )
                 TRJ_1 = self.traj.atom_slice(atoms)
                 self.__residue_atom_COM[resid][atom_name] = (
                     10 * md.compute_center_of_mass(TRJ_1)
@@ -1312,14 +1336,30 @@ class SSProtein:
             if self.__amino_acids_1LTR is None:
                 res = []
                 for i in self.topology.residues:
-                    res.append(THREE_TO_ONE[str(i)[0:3].upper()])
+                    # fold force-field protonation/tautomer names (HIE, HID,
+                    # HIP, ASH, GLH, CYX, ...) onto the parent residue; these
+                    # used to raise a bare KeyError, which took out every
+                    # caller that needs the one-letter sequence (including
+                    # the PENGUIN excluded-volume path)
+                    resname = normalize_residue_name(i.name.upper())
+                    try:
+                        res.append(THREE_TO_ONE[resname])
+                    except KeyError:
+                        raise SSException(
+                            f"Residue {i.name} (residue index {i.index}) has no "
+                            "one-letter code. get_amino_acid_sequence(oneletter=True) "
+                            "supports the 20 standard amino acids, their common "
+                            "protonation/tautomer variants (HIE/HID/HIP, HSD/HSE/HSP, "
+                            "ASH, GLH, LYN, CYX, CYM) and the ACE/NME/NH2/FOR caps. "
+                            "Use oneletter=False for the three-letter sequence."
+                        ) from None
                 self.__amino_acids_1LTR = "".join(res)
 
         else:
             if self.__amino_acids_3LTR is None:
                 res = []
                 for i in self.topology.residues:
-                    res.append(str(i)[0:3] + "-" + str(i)[3:])
+                    res.append(f"{i.name}-{i.resSeq}")
                 self.__amino_acids_3LTR = res
 
         # if numbered requsted
@@ -1395,6 +1435,11 @@ class SSProtein:
         list of int
             Atom indices (into the underlying mdtraj topology) for every atom
             of residue ``resid``.
+
+        Raises
+        ------
+        SSException
+            If ``resid`` is negative or not smaller than ``n_residues``.
 
         Example
         -------
@@ -1491,7 +1536,10 @@ class SSProtein:
         -------
         np.ndarray or int
             * On success: array of shape ``(n_frames_after_stride, M)`` where
-              ``M`` is the number of other residues considered.
+              ``M`` is the number of CA-bearing residues considered - those
+              after ``residueIndex`` by default, or every CA-bearing residue
+              (the reference residue included, as a zero column) when
+              ``only_C_terminal_residues=False``.
             * If ``residueIndex`` has no CA: the integer ``-1``.
 
         Raises
@@ -1626,7 +1674,10 @@ class SSProtein:
               ``(n_frames, N, N)`` per-frame distances if
               ``return_instantaneous_maps=True``).
             * ``std_distance_map`` is ``(N, N)`` per-pair standard
-              deviations across frames; ``None`` if ``weights`` was given.
+              deviations of the distance across frames, in Angstroms
+              whether or not ``RMS`` is set (prior to 2.0.6 the ``RMS=True``
+              std map was the standard deviation of the *squared* distance,
+              in Angstroms^2); ``None`` if ``weights`` was given.
 
         Example
         -------
@@ -1701,7 +1752,11 @@ class SSProtein:
                 if RMS:
                     mean_data = np.sqrt(mean_data)
 
-                std_data = np.std(avg_input, 0)
+                # the std map is always the spread of the distance itself (in
+                # Angstroms). Prior to 2.0.6 it was taken on avg_input, so with
+                # RMS=True it was the std of r^2 in Angstroms^2 - a different
+                # quantity in different units from the map it accompanied
+                std_data = np.std(full_data, 0)
 
             # update the maps appropriately and increment the counter
             if return_instantaneous_maps is True:
@@ -1981,9 +2036,13 @@ class SSProtein:
             Size of the sliding window (residues). Must be ``>= 2`` and
             ``<= n_residues``. Default is 10.
         bins : np.ndarray or list, optional
-            Histogram bin edges. If None (default), uses
-            ``np.arange(0, 10, 0.01)``. Must contain at least two evenly-
-            spaced floats.
+            Histogram bin edges in Angstroms (at least two). If None
+            (default), ``np.arange(0, 100, 0.1)`` is used, i.e. 0.1 Angstrom
+            bins spanning 0-100 Angstroms; RMSD values outside the range are
+            dropped from the histogram (but not from the mean/std). Prior to
+            2.0.6 the default was ``np.arange(0, 10, 0.01)``, a hangover
+            from nanometre output, which silently dropped every intra-window
+            RMSD of 10 Angstroms or more.
         stride : int, optional
             Use every ``stride``-th frame in the inner RMSD pass. Default 20.
         verbose : bool, optional
@@ -2006,8 +2065,8 @@ class SSProtein:
         Raises
         ------
         SSException
-            If ``fragment_size`` is out of range, or ``bins`` is not a valid
-            evenly-spaced 1D vector.
+            If ``fragment_size`` is out of range, if ``bins`` is not a valid
+            1D vector of at least two edges, or if ``weights`` is supplied.
 
         Example
         -------
@@ -2019,18 +2078,18 @@ class SSProtein:
         conformational heterogeneity. J Chem Phys. 2013;139(12):121907.
         """
 
-        # validate bins
+        # validate bins (Angstroms - the RMSD is returned in Angstroms)
         if bins is None:
-            bins = np.arange(0, 10, 0.01)
+            bins = np.arange(0, 100, 0.1)
         else:
             try:
                 if len(bins) < 2:
                     raise SSException(
-                        "Bins should be a numpy defined vector of values - e.g. np.arange(0,1,0.01)"
+                        "Bins should be a numpy defined vector of values - e.g. np.arange(0,100,0.1)"
                     )
             except TypeError:
                 raise SSException(
-                    "Bins should be a list, vector, or numpy array of evenly spaced values"
+                    "Bins should be a list, vector, or numpy array of bin edges"
                 )
 
             try:
@@ -2293,6 +2352,21 @@ class SSProtein:
                 f"against all frames); received {frame2!r}"
             )
 
+        # out-of-range frames used to surface as mdtraj ValueErrors /
+        # IndexErrors, and a negative frame1 silently counted from the end
+        if not isinstance(frame1, (int, np.integer)) or not (
+            0 <= frame1 < self.n_frames
+        ):
+            raise SSException(
+                f"frame1 must be a frame index in [0, {self.n_frames - 1}]; "
+                f"received {frame1!r}"
+            )
+        if frame2 != -1 and not (0 <= frame2 < self.n_frames):
+            raise SSException(
+                f"frame2 must be -1 or a frame index in [0, {self.n_frames - 1}]; "
+                f"received {frame2!r}"
+            )
+
         if frame2 > -1 and isinstance(frame2, (int, np.integer)):
             # our target is now a single (i.e. doing RMSD of two structures)
             target = self.traj.slice(frame2)
@@ -2399,8 +2473,10 @@ class SSProtein:
             If ``weights`` is given with ``protein_average=True``
             (frame-averaged Q must be reweighted outside SOURSOP); if the
             weight vector fails validation (wrong length, out of ``[0, 1]``,
-            non-finite, or not summing to 1); or if any constant cannot be
-            coerced to float.
+            non-finite, or not summing to 1); if any constant cannot be
+            coerced to float; if ``native_state_reference_frame`` is not a
+            valid frame index; or if the reference frame has no native
+            contacts (so Q would be 0/0).
 
         Example
         -------
@@ -2432,6 +2508,14 @@ class SSProtein:
 
         # atom selection (optionally restricted to a sub-region)
         selectionatoms = self.__get_selection_atoms(region, backbone=False, heavy=True)
+
+        if not isinstance(native_state_reference_frame, (int, np.integer)) or not (
+            0 <= native_state_reference_frame < self.n_frames
+        ):
+            raise SSException(
+                "native_state_reference_frame must be a frame index in "
+                f"[0, {self.n_frames - 1}]; received {native_state_reference_frame!r}"
+            )
 
         # the reference structure (a single frame from the full trajectory)
         native = self.traj.slice(native_state_reference_frame)
@@ -2468,10 +2552,25 @@ class SSProtein:
 
         ## NB: This breaks soursop convention of converting nm->A at the site of
         ## where it's calculated.
+        if len(heavy_pairs) == 0:
+            raise SSException(
+                "get_Q(): no heavy-atom pairs more than three residues apart in "
+                "the selected region, so no native contacts can be defined."
+            )
         heavy_pairs_distances = md.compute_distances(
             native[0], heavy_pairs, periodic=False
         )[0]
         native_contacts = heavy_pairs[heavy_pairs_distances < NATIVE_CUTOFF]
+        # with no native contacts Q is 0/0; that used to come back as a
+        # NaN array with only a numpy RuntimeWarning
+        if len(native_contacts) == 0:
+            raise SSException(
+                "get_Q(): the reference frame "
+                f"{native_state_reference_frame} has no heavy-atom contacts closer "
+                f"than {native_contact_threshold} A between residues more than three "
+                "apart in the selected region, so Q is undefined. Pick a folded "
+                "reference frame, widen the region, or raise native_contact_threshold."
+            )
         r0 = md.compute_distances(native[0], native_contacts, periodic=False)
 
         # =================================================================
@@ -2614,7 +2713,10 @@ class SSProtein:
         which the chosen inter-residue distance is below
         ``distance_thresh``. The companion contact-order vector reduces the
         2D map to a per-residue summary by averaging over the appropriate
-        neighbours-excluded denominator.
+        neighbours-excluded denominator. Distances are plain Euclidean
+        distances with no minimum-image convention, like every other
+        distance in SOURSOP (prior to 2.0.6 this method alone used mdtraj's
+        default ``periodic=True``).
 
         ``i to i``, ``i to i+1``, and ``i to i+2`` pairs are always excluded.
         ACE / NME caps are excluded from the residue set.
@@ -2693,11 +2795,20 @@ class SSProtein:
         # build a substractectory based on the stride argument
         subtraj = self.__get_subtrajectory(self.traj, stride)
 
-        # ensure we only select main chain atoms (no termini) - NOTE, this
-        # is a REALLY useful design pattern - should consider re-writing the
-        # code to use this...
-        mainchain_atoms = self.topology.select(
-            '(not resname "NME") and (not resname "ACE")'
+        # a single bead has no sidechain to measure from
+        if self.__cg_onechain and mode in ("sidechain", "sidechain-heavy"):
+            raise SSException(
+                f"get_contact_map(mode='{mode}') is not defined for one-bead-per-residue "
+                "coarse-grained models: a single bead represents the whole residue. "
+                "Use mode='ca' or mode='closest-heavy'."
+            )
+
+        # the map is indexed by CA-bearing residue, so select exactly those
+        # residues' atoms. Excluding caps by name ('ACE'/'NME', as prior to
+        # 2.0.6) left a FOR or NH2 cap in the topology handed to mdtraj, which
+        # then allocated a row for it and shifted every other row by one.
+        mainchain_atoms = np.concatenate(
+            [self.__residue_atom_lookup(r) for r in self.resid_with_CA]
         )
 
         # compute the contactmap and square-form it (map per frame)
@@ -2715,8 +2826,14 @@ class SSProtein:
                 raise SSException(msg)
 
         try:
+            # periodic=False, as for every other distance in soursop: chains
+            # are expected to be whole. Prior to 2.0.6 this call took mdtraj's
+            # default (periodic=True), so on any trajectory carrying a box the
+            # contact map alone was built from minimum-image distances - on a
+            # chain that spans more than half its box that turned residue pairs
+            # 50-70 A apart into 5-30 A "contacts".
             CMAP_nonsquare = md.compute_contacts(
-                subtraj.atom_slice(mainchain_atoms), scheme=mode
+                subtraj.atom_slice(mainchain_atoms), scheme=mode, periodic=False
             )
         except ValueError as e:
             if (
@@ -2848,6 +2965,8 @@ class SSProtein:
         >>> members
         [120, 95, 80, 60, 45]
         """
+
+        self.__check_stride(stride)
 
         # build an empty distance matrix
         if self.n_frames % stride == 0:
@@ -3160,6 +3279,10 @@ class SSProtein:
             "mode",
         )
 
+        # out-of-range resids used to surface as mdtraj selection errors
+        self.__check_single_residue(R1)
+        self.__check_single_residue(R2)
+
         ## if mode is atom...
         ##
 
@@ -3177,7 +3300,7 @@ class SSProtein:
                 atom2 = self.__residue_atom_lookup(R2, A2)
                 if len(atom2) == 0:
                     raise SSException(
-                        f"Unable to find atom [{A2}] in residue R1 ({R2})"
+                        f"Unable to find atom [{A2}] in residue R2 ({R2})"
                     )
 
                 TRJ_2 = self.traj.atom_slice(atom2)
@@ -3239,6 +3362,8 @@ class SSProtein:
         >>> protein.get_residue_mass(5)   # e.g. leucine
         113.16
         """
+
+        self.__check_single_residue(R1)
 
         # get the atoms associated with the resite of interest
         res_atoms = self.topology.select(f"resid {R1}")
@@ -3474,11 +3599,17 @@ class SSProtein:
     ):
         """Per-frame ``3 x 3`` gyration tensor of the chain (or a sub-region).
 
-        The gyration tensor :math:`T_{ab} = (1/N) \\sum_i (r_{i,a} - R_a)(r_{i,b} - R_b)`
-        is the second moment of mass about the centre of mass. Its
-        eigenvalues are the principal moments of inertia divided by mass and
-        underlie derived quantities like :meth:`get_radius_of_gyration` and
-        :meth:`get_asphericity`. Units are Angstroms^2.
+        The gyration tensor :math:`T_{ab} = (1/N) \\sum_i (r_{i,a} - \\bar r_a)(r_{i,b} - \\bar r_b)`
+        is the second moment of the atomic positions about their geometric
+        centre :math:`\\bar r`, with every atom weighted equally - the same
+        convention as :meth:`get_radius_of_gyration`, so ``trace(T)`` equals
+        :math:`R_g^2` frame by frame. Its eigenvalues underlie the shape
+        descriptors :meth:`get_asphericity`, :meth:`get_acylindricity` and
+        :meth:`get_prolateness`. Units are Angstroms^2. Prior to 2.0.6 the
+        moments were taken about the mass-weighted centre of mass instead,
+        which made ``trace(T)`` exceed :math:`R_g^2` by the squared
+        centroid-COM offset (a relative difference below 1e-3 on all-atom
+        chains, and zero on one-bead chains).
 
         Parameters
         ----------
@@ -3521,18 +3652,14 @@ class SSProtein:
 
         ssio.status_message(f"Computing gyration tensor for {n_frames} frames", verbose)
 
-        # Vectorised gyration tensor (behaviour-preserving). The previous
-        # implementation looped over frames in Python, calling
-        # md.compute_center_of_mass once per frame and contracting one frame at
-        # a time. Here the mass-weighted centre of mass is obtained for every
-        # frame in a single vectorised mdtraj call, and the second moment of the
-        # atomic positions about the COM is contracted with a batched einsum.
-        # The numerics are identical: the same mass-weighted COM and the same
-        # unweighted 1/N second-moment convention. We convert nm -> Angstrom at
-        # the point the values enter soursop, as elsewhere in the package.
-        COM = 10.0 * md.compute_center_of_mass(
-            all_positions_all_frames
-        )  # (n_frames, 3)
+        # Unweighted second moment about the geometric centre of the selected
+        # atoms, so that trace(T) is exactly the (equal-weight) Rg^2 that
+        # get_radius_of_gyration / mdtraj.compute_rg report. Prior to 2.0.6
+        # the moments were taken about the mass-weighted COM, a mixed
+        # convention that left trace(T) slightly above Rg^2. Batched einsum
+        # keeps peak memory bounded; nm -> Angstrom at the point the values
+        # enter soursop, as elsewhere in the package.
+        COM = 10.0 * all_positions_all_frames.xyz.mean(axis=1)  # (n_frames, 3)
 
         gyration_tensor_vector = np.empty((n_frames, 3, 3), dtype=np.float64)
 
@@ -3654,10 +3781,14 @@ class SSProtein:
     def get_radius_of_gyration(self, R1=None, R2=None, weights=False, etol=0.0000001):
         """Per-frame radius of gyration of the chain (or a sub-region).
 
-        :math:`R_g = \\sqrt{(1/N) \\sum_i (r_i - R)^2}` is the canonical
+        :math:`R_g = \\sqrt{(1/N) \\sum_i (r_i - \\bar r)^2}` is the canonical
         polymer-physics measure of overall chain size. It is computed by
-        ``mdtraj.compute_rg`` on every heavy/light atom in the selection and
-        returned in Angstroms.
+        ``mdtraj.compute_rg`` over every atom in the selection (hydrogens
+        included), with every atom weighted equally about the geometric
+        centre :math:`\\bar r` (mdtraj's default; it is *not* mass-weighted),
+        and is returned in Angstroms. It is consistent with
+        :meth:`get_gyration_tensor`: ``trace(T)`` equals :math:`R_g^2` frame
+        by frame.
 
         Parameters
         ----------
@@ -3722,10 +3853,22 @@ class SSProtein:
         Two estimators are available:
 
         * ``mode='nygaard'`` - empirical Rg-to-Rh conversion of Nygaard et al.
-          (2017), using the three parameters ``alpha1``, ``alpha2``, ``alpha3``.
+          (2017), equation 7, using the three parameters ``alpha1``,
+          ``alpha2``, ``alpha3``. As in the paper, the Rg that enters the
+          equation is that of the C-alpha atoms and ``N`` is the number of
+          (CA-bearing) residues in the region; prior to 2.0.6 the all-atom
+          Rg and a cap-inclusive residue count were used, which biased Rh
+          high by a few percent on all-atom chains.
         * ``mode='kr'`` - Kirkwood-Riseman equation (Kirkwood & Riseman 1948),
+          :math:`R_h^{-1} = N^{-2} \\sum_{i \\neq j} r_{ij}^{-1}` evaluated per
+          frame over the :math:`N` CA-bearing residues of the region,
           recommended for comparison with PFG-NMR-derived :math:`R_h` values
-          (Pesce et al. 2022).
+          (Pesce et al. 2022). Prior to 2.0.6 the :math:`N/(N-1)` factor
+          implied by the :math:`N^{-2}` prefactor was missing, so ``'kr'``
+          values were a fraction :math:`1/N` too small. Note that Pesce et
+          al. report the ensemble value as the harmonic mean of the per-frame
+          radii, ``1 / np.mean(1 / rh)``, which is slightly below the plain
+          mean of the per-frame array returned here.
 
         Both approximations hold for fully flexible disordered proteins and
         become less accurate for larger / more folded domains.
@@ -3734,22 +3877,17 @@ class SSProtein:
         ----------
         R1 : int, optional
             First residue of the region (inclusive). ``None`` (default) means
-            the first residue - including caps for ``mode='nygaard'``, and the
-            first CA-bearing residue for ``mode='kr'``.
+            the first CA-bearing residue.
         R2 : int, optional
             Last residue of the region (inclusive). ``None`` (default) means
-            the last residue - including caps for ``mode='nygaard'``, and the
-            last CA-bearing residue for ``mode='kr'``.
+            the last CA-bearing residue.
         mode : {'nygaard', 'kr'}, optional
-            Which estimator to use. Default is ``'nygaard'``. In ``'nygaard'``
-            mode the chain length ``N`` that enters the Nygaard equation is the
-            number of residues in the selected region (``R2 - R1 + 1``), so
-            with the default region it is ``n_residues`` (caps included, as
-            before). Prior to 2.0.6 the whole-chain ``n_residues`` was used
-            even when a sub-region was requested. In ``'kr'`` mode
-            the sum runs over every pair of CA-bearing residues inside the
-            region (caps, which have no CA, never contribute), and the region
-            must contain at least two such residues.
+            Which estimator to use. Default is ``'nygaard'``. Both modes work
+            on the CA-bearing residues inside the region, so ACE/NME caps
+            never contribute. In ``'nygaard'`` mode ``N`` is the number of
+            those residues and the Rg is computed from their CA atoms. In
+            ``'kr'`` mode the sum runs over every pair of them, and the
+            region must contain at least two.
         alpha1, alpha2, alpha3 : float, optional
             Parameters of equation (7) of Nygaard et al. Defaults reproduce
             the published values (0.216, 4.06, 0.821). Ignored for ``mode='kr'``.
@@ -3807,13 +3945,20 @@ class SSProtein:
 
         # if we're using the nygaard mode
         if mode == "nygaard":
-            # first compute the rg
-            rg = self.get_radius_of_gyration(R1, R2)
-
-            # N is the number of residues in the selected region (with the
-            # default region this is n_residues, caps included)
-            (R1_real, R2_real, _) = self.__get_first_and_last(R1, R2, withCA=False)
-            n_res = R2_real - R1_real + 1
+            # Nygaard et al. calibrated equation 7 on the radius of gyration of
+            # the C-alpha atoms and on N, the number of residues. Prior to
+            # 2.0.6 this branch fed it the all-atom Rg (hydrogens and
+            # sidechains included, 5-7% larger than the CA Rg on the bundled
+            # fixtures) together with a cap-inclusive N, which biased Rh high.
+            (R1_real, R2_real, _) = self.__get_first_and_last(R1, R2, withCA=True)
+            region_resids = [r for r in self.resid_with_CA if R1_real <= r <= R2_real]
+            if len(region_resids) == 0:
+                raise SSException(
+                    f"The Nygaard hydrodynamic radius needs at least one CA-bearing residue in the selected region, but residues {R1_real}-{R2_real} contain none"
+                )
+            ca_atoms = [self.get_CA_index(r) for r in region_resids]
+            rg = 10 * md.compute_rg(self.traj.atom_slice(ca_atoms))
+            n_res = len(region_resids)
 
             # precompute
             N_033 = np.power(n_res, 0.33)
@@ -3863,9 +4008,17 @@ class SSProtein:
                 inverse_distance_sum += np.sum(1.0 / rij[:, keep], axis=1)
                 n_pairs += int(np.sum(keep))
 
-            # per-frame Rh is the inverse of the per-frame mean inverse distance,
-            # i.e. Rh = 1 / <1/r_ij>_{i != j}
-            Rh = n_pairs / inverse_distance_sum
+            # Kirkwood-Riseman: 1/Rh = (1/N^2) sum_{i != j} 1/r_ij over the N
+            # beads of the region, evaluated frame by frame. With every
+            # unordered pair summed once this is Rh = N^2 / (2 sum_{i<j} 1/r_ij),
+            # i.e. N/(N-1) times the inverse of the pair-mean inverse distance.
+            # Prior to 2.0.6 that N/(N-1) factor was missing (Rh = 1/<1/r_ij>),
+            # which underestimates Rh by a fraction 1/N - about 1% for a
+            # 100-residue chain - relative to Kirkwood (1954), Nygaard et al.
+            # (2017) and the Pesce et al. (2022) reference implementation this
+            # mode exists to reproduce.
+            n_beads = len(region_resids)
+            Rh = (n_beads**2) / (2.0 * inverse_distance_sum)
 
             if wv is False:
                 return Rh
@@ -4041,6 +4194,13 @@ class SSProtein:
                 "get_angles() is not defined for two-bead (CA/CB) coarse-grained models: backbone (phi/psi/omega) and sidechain (chi1-chi5) dihedrals require N/C/O backbone and sidechain heavy atoms that the CA/CB representation does not contain."
             )
 
+        # a single bead per residue has no dihedrals at all; mdtraj returns
+        # empty arrays for these, which used to propagate silently
+        if self.__cg_onechain:
+            raise SSException(
+                "get_angles() is not defined for one-bead-per-residue coarse-grained models: there are no backbone or sidechain atoms from which to build a dihedral."
+            )
+
         # check input ketword selector
         ssutils.validate_keyword_option(
             angle_name,
@@ -4208,7 +4368,7 @@ class SSProtein:
         if weights is not False:
             if int(stride) != 1:
                 raise SSException(
-                    "For get_scaling_exponent with weights stride MUST be set to 1. If this is a HUGE deal for you please contact alex and he'll try and update the code to accomodate this, but for now we suggest creating a sub-sampled trajectory and loading that"
+                    "get_internal_scaling(): with weights, stride must be 1. Create a sub-sampled trajectory (and matching weights) and load that instead."
                 )
 
         # check weights are correct
@@ -4458,13 +4618,16 @@ class SSProtein:
         Parameters
         ----------
         inter_residue_min : int, optional
-            Minimum sequence separation ``|i-j|`` used in the fit. Helps
-            avoid the short-distance regime where local steric effects
+            Number of short sequence separations dropped from the fit: pairs
+            with ``|i-j| <= inter_residue_min`` are excluded, so the smallest
+            separation that enters the fit is ``inter_residue_min + 1``. This
+            avoids the short-distance regime where local steric effects
             dominate. Default is 15.
         end_effect : int, optional
-            Exclude pairs in which one residue is within ``end_effect``
-            residues of either chain end. Default is 5. ``0`` disables the
-            end-effect trimming entirely.
+            Number of the largest sequence separations dropped from the fit
+            (the ``|i-j|`` values closest to the chain length, which are
+            carried by only a handful of pairs at the chain ends). Default is
+            5. ``0`` disables the trimming entirely.
         n_bootstrap : int, optional
             Number of frame-level bootstrap resamples used to estimate the
             ``nu`` / ``A0`` confidence interval and the per-separation
@@ -4826,11 +4989,13 @@ class SSProtein:
             * ``'residue'`` (default) - per-residue SASA, shape ``(n_frames_strided, n_residues)``.
             * ``'atom'`` - per-atom SASA, shape ``(n_frames_strided, n_atoms)``.
             * ``'sidechain'`` - per-residue SASA summed over sidechain atoms
-              (excluding backbone H, HA, HA2, HA3 which mdtraj's 'sidechain'
-              selector erroneously includes).
+              (excluding the backbone hydrogens H/HA/HA2/HA3, the N-terminal
+              amine hydrogens H1/H2/H3 and the C-terminal carboxylate oxygens
+              OXT/OT1/OT2/OC1/OC2, which mdtraj's 'sidechain' selector
+              includes; prior to 2.0.6 only H/HA/HA2/HA3 were excluded).
             * ``'backbone'`` - per-residue SASA summed over backbone atoms
-              (including the backbone hydrogens that mdtraj's 'backbone'
-              selector erroneously excludes).
+              (including those same hydrogens and terminal oxygens, which
+              mdtraj's 'backbone' selector excludes).
             * ``'all'`` - returns a 3-tuple of (residue, sidechain, backbone)
               arrays. All three are ``(n_frames_strided, n_CA_residues)``
               and are column-aligned, i.e. column ``k`` of each array refers
@@ -4847,8 +5012,9 @@ class SSProtein:
         stride : int, optional
             Use every ``stride``-th frame. Default is 20.
         weights : array_like or False, optional
-            Per-frame re-weighting vector (validated against the strided
-            frame axis). ``False`` (default) returns the per-frame array
+            Per-frame re-weighting vector, one entry per trajectory frame
+            (``len == n_frames``); it is subsampled with ``stride`` and
+            renormalised internally. ``False`` (default) returns the per-frame array
             (and uses the memo cache). If supplied, the strided frame axis
             is collapsed and the deterministic weighted-mean SASA is
             returned (not cached).
@@ -4896,19 +5062,25 @@ class SSProtein:
             # define initial SASA
             residue_SASA = []
 
+            # mdtraj's 'backbone' selector is N/CA/C/O only, so the backbone
+            # hydrogens, the N-terminal amine hydrogens (H1/H2/H3) and the
+            # C-terminal carboxylate oxygens (OXT and its variants) all fall
+            # into 'sidechain'. Prior to 2.0.6 only H/HA/HA2/HA3 were moved
+            # back, so on an uncapped chain the terminal residues' sidechain
+            # SASA carried ~25% of terminal-group area.
+            extra = " ".join(f'"{name}"' for name in _BACKBONE_EXTRA_ATOM_NAMES)
+
             # for each residue with a CA atom...
             for i in self.resid_with_CA:
                 # get the atomic indices
                 if passed_mode == "sidechain":
-                    # for some reason 'sidechain' selection includes the backbone hydrogen atoms??!?!
                     relevant_atom_idx = self.topology.select(
-                        f'resid {i} and {passed_mode} and (not name "H" "HA" "HA2" "HA3")'
+                        f"resid {i} and {passed_mode} and (not name {extra})"
                     )
 
                 if passed_mode == "backbone":
-                    # for some reason 'backbone' ignores the backbone hydrogen atoms ?!?!?
                     relevant_atom_idx = self.topology.select(
-                        f'(resid {i} and {passed_mode}) or (resid {i} and name "H" "HA" "HA2" "HA3")'
+                        f"(resid {i} and {passed_mode}) or (resid {i} and name {extra})"
                     )
 
                 # no atoms so create an empty list
@@ -5102,8 +5274,9 @@ class SSProtein:
         stride : int, optional
             Use every ``stride``-th frame. Default is 20.
         weights : array_like or False, optional
-            Per-frame re-weighting vector (validated against the strided
-            frame axis). ``False`` (default) gives the ordinary mean/std
+            Per-frame re-weighting vector, one entry per trajectory frame
+            (``len == n_frames``); it is subsampled with ``stride`` and
+            renormalised internally. ``False`` (default) gives the ordinary mean/std
             (byte-identical to before); if supplied the per-residue
             ``[mean, std]`` is the deterministic weighted mean and weighted
             (population) std.
@@ -5166,7 +5339,9 @@ class SSProtein:
 
         # if we're in resid mode
         elif mode == "resid":
-            resid_list = input_list
+            resid_list = list(input_list)
+            for r in resid_list:
+                self.__check_single_residue(r)
 
         # next compute ALL SASA for all residues (need the full protein based SASA
         ALL_SASA = np.transpose(
@@ -5226,8 +5401,9 @@ class SSProtein:
         stride : int, optional
             Use every ``stride``-th frame. Default is 20.
         weights : array_like or False, optional
-            Per-frame re-weighting vector (validated against the strided
-            frame axis). ``False`` (default) is byte-identical to before;
+            Per-frame re-weighting vector, one entry per trajectory frame
+            (``len == n_frames``); it is subsampled with ``stride`` and
+            renormalised internally. ``False`` (default) is byte-identical to before;
             if supplied each residue's time-average is the deterministic
             weighted mean before summing.
         etol : float, optional
@@ -5246,14 +5422,25 @@ class SSProtein:
         Raises
         ------
         SSException
-            If the force field is inconsistent with the resolution of the
-            chain (see :meth:`get_all_SASA`).
+            If ``0 <= R1 < R2 <= n_residues`` does not hold, or if the force
+            field is inconsistent with the resolution of the chain (see
+            :meth:`get_all_SASA`).
 
         Example
         -------
         >>> protein.get_regional_SASA(5, 25)
         2150.6
         """
+
+        # R2 is exclusive here (documented), so the valid range is
+        # 0 <= R1 < R2 <= n_residues; anything else used to give an
+        # IndexError or a silent 0
+        if not (0 <= R1 < R2 <= self.n_residues):
+            raise SSException(
+                f"get_regional_SASA() needs 0 <= R1 < R2 <= n_residues "
+                f"(R2 is exclusive); received R1={R1}, R2={R2} for a chain of "
+                f"{self.n_residues} residues"
+            )
 
         # NOTE - we HAVE to compute SASA over the full ensemble to take into acount
         # atoms OUTSIDE the region getting in the way of the regional SASA
@@ -5345,15 +5532,8 @@ class SSProtein:
         # The initial section is responsible for selecting/defining the sidechain atom and catching any
         # bad inputs. It's a litte drawn out but useful for code clarity reasons.
         # note need to do this with the un-corrected residue index values, hence why it comes first
-        if R1 not in self.__residue_atom_table:
-            raise SSException(
-                f"Residue index for R1: {R1:d} does not exist in the protein."
-            )
-
-        if R2 not in self.__residue_atom_table:
-            raise SSException(
-                f"Residue index for R2: {R2:d} does not exist in the protein."
-            )
+        self.__check_single_residue(R1)
+        self.__check_single_residue(R2)
 
         if sidechain_atom_1 == "default":
             resname_1 = self.get_amino_acid_sequence(numbered=False)[R1]
@@ -5436,8 +5616,9 @@ class SSProtein:
             V2 = R2_vector[i][0] / np.linalg.norm(R2_vector[i][0])
 
             # compute dot product and take arccos and do rad->deg to get angle
-            # between the unit vectors
-            alignment.append(np.rad2deg(np.arccos(np.dot(V1, V2))))
+            # between the unit vectors. Clip: rounding can push the dot product
+            # of (anti)parallel unit vectors a hair past +-1, where arccos is NaN
+            alignment.append(np.rad2deg(np.arccos(np.clip(np.dot(V1, V2), -1.0, 1.0))))
 
         return np.array(alignment)
 
@@ -5479,9 +5660,12 @@ class SSProtein:
             Default ``pi/5``.
         stride : int, optional
             Use every ``stride``-th frame. Default 1.
-        weights : array_like, optional
-            Per-frame weights for re-weighted MI estimation. Must satisfy
-            ``len(weights) == n_frames // stride``. Default ``False``.
+        weights : array_like or False, optional
+            Per-frame weights for re-weighted MI estimation, one entry per
+            trajectory frame (``len(weights) == n_frames``), validated by
+            :func:`soursop.ssutils.validate_weights`; when ``stride > 1`` the
+            vector is subsampled with the same stride and renormalised so it
+            lines up with the analysed frames. Default ``False``.
         normalize : bool, optional
             If True, divide each MI value by the joint entropy. Default False.
 
@@ -5513,6 +5697,10 @@ class SSProtein:
         if self.__swan:
             raise SSException(
                 "get_dihedral_mutual_information() is not defined for two-bead (CA/CB) coarse-grained models: the underlying phi/psi/omega/chi dihedrals require N/C/O backbone and sidechain heavy atoms that the CA/CB representation does not contain."
+            )
+        if self.__cg_onechain:
+            raise SSException(
+                "get_dihedral_mutual_information() is not defined for one-bead-per-residue coarse-grained models: a single bead per residue has no dihedrals (mdtraj returned an empty angle set, which used to come back as a 0 x 0 matrix)."
             )
 
         # verify binwidth input values
@@ -5633,9 +5821,12 @@ class SSProtein:
         Raises
         ------
         SSException
-            If ``mode`` is invalid, the strided Rg length disagrees with the
-            inter-residue distance length, or the installed numpy version
-            cannot accept ``aweights`` in ``numpy.cov``.
+            If ``mode`` is invalid, if fewer than two frames remain after
+            striding (a correlation is undefined for a single frame - note
+            the default ``stride=20`` needs at least 21 frames), if the
+            strided Rg length disagrees with the inter-residue distance
+            length, or if the installed numpy version cannot accept
+            ``aweights`` in ``numpy.cov``.
 
         Example
         -------
@@ -5644,13 +5835,19 @@ class SSProtein:
         >>> raw, ks, mean_c, std_c = protein.get_local_to_global_correlation()
         """
 
-        # a stride larger than the trajectory selects frame 0 only, exactly as
-        # stride == n_frames does, so clamp rather than fail. This keeps the
-        # default stride=20 usable on short trajectories now that
-        # get_inter_residue_COM_distance() rejects oversized strides (2.0.6);
-        # the numbers are identical either way.
-        if stride > self.n_frames:
-            stride = self.n_frames
+        # a correlation coefficient needs at least two frames. With the
+        # default stride of 20 on a short trajectory the strided ensemble is a
+        # single frame and every correlation is NaN; previously that came back
+        # silently (with only a numpy RuntimeWarning), so refuse it up front.
+        if stride < 1:
+            raise SSException(f"stride ({stride}) is less than 1")
+        n_strided = len(range(0, self.n_frames, int(stride)))
+        if n_strided < 2:
+            raise SSException(
+                f"get_local_to_global_correlation(): stride={stride} leaves "
+                f"{n_strided} of {self.n_frames} frames, but a correlation needs "
+                "at least two. Reduce stride (the default is 20)."
+            )
 
         weights = self.__check_weights(weights, stride)
 
@@ -5815,6 +6012,14 @@ class SSProtein:
         mode : {'COM', 'CA'}, optional
             Type of distance to use for the end-to-end distance.
             Default ``'COM'``.
+        weights : array_like or False, optional
+            Per-frame re-weighting vector (``len == n_frames``), validated by
+            :func:`soursop.ssutils.validate_weights`. ``False`` (default)
+            gives the ordinary Pearson correlation; if supplied the
+            correlation is computed from the frame-weighted covariance
+            (:func:`soursop.ssutils.weighted_corr`).
+        etol : float, optional
+            Tolerance on ``|sum(weights) - 1|``. Default ``1e-7``.
 
         Returns
         -------
@@ -5983,7 +6188,9 @@ class SSProtein:
         ----------
         R1 : int, optional
             First residue of the region. ``None`` (default) means the first
-            CA-bearing residue.
+            CA-bearing residue. Both endpoints must be CA-bearing residues:
+            a cap (ACE/NME) has no backbone for DSSP to classify, and an
+            explicit region that includes one raises an ``SSException``.
         R2 : int, optional
             Last residue of the region. ``None`` (default) means the last
             CA-bearing residue.
@@ -6046,8 +6253,32 @@ class SSProtein:
         R1_real = out[0]
         R2_real = out[1]
 
-        # select the relevant subtrajectory (out[2] is the 'resid %i to %i' where %i and %i are R1 and R2)
-        ats = self.traj.atom_slice(self.topology.select(f"{out[2]}"))
+        # DSSP needs a full N/CA/C/O backbone for every residue it is handed.
+        # A cap (ACE/NME) has none, and handing one to mdtraj's DSSP is not
+        # merely meaningless (it comes back 'NA') - on cap-inclusive
+        # trajectories mdtraj's C implementation reads uninitialised memory
+        # and intermittently segfaults the interpreter. The defaults already
+        # exclude the caps; an explicit region that includes one is rejected.
+        for endpoint, label in ((R1_real, "R1"), (R2_real, "R2")):
+            if endpoint not in self.resid_with_CA:
+                raise SSException(
+                    f"get_secondary_structure_DSSP(): {label}={endpoint} is a "
+                    "residue without a CA atom (a cap or non-standard residue), "
+                    "which DSSP cannot classify. Restrict the region to CA-bearing "
+                    f"residues ({self.resid_with_CA[0]} to {self.resid_with_CA[-1]} "
+                    "on this chain), or leave R1/R2 as None."
+                )
+
+        # DSSP (and the two-bead CA-trace detector) look at neighbours, so the
+        # assignment is made once over the whole CA-bearing chain and the
+        # requested residues are then selected. Prior to 2.0.6 the region was
+        # sliced out first, which dropped H-bond partners outside it and made
+        # a sub-region's assignment differ from the whole-chain one even at
+        # interior residues. Default calls are unchanged.
+        ca_first, ca_last = self.resid_with_CA[0], self.resid_with_CA[-1]
+        ats = self.traj.atom_slice(
+            self.topology.select(f"resid {ca_first} to {ca_last}")
+        )
 
         # validate optional per-frame re-weighting (only meaningful for the
         # collapsed per-residue fractions; a per-frame mask is not an
@@ -6066,16 +6297,18 @@ class SSProtein:
         # (n_frames, n_residues) array of single-character 'H' / 'E' / 'C' codes,
         # so the downstream collapsing logic is identical.
         if self.__swan:
-            dssp_data = self.__swan_secondary_structure(
-                R1_real,
-                R2_real,
+            dssp_full = self.__swan_secondary_structure(
+                ca_first,
+                ca_last,
                 helix_window,
                 helix_rmsd_thresh,
                 beta_window,
                 beta_rmsd_thresh,
             )
         else:
-            dssp_data = md.compute_dssp(ats)
+            dssp_full = md.compute_dssp(ats)
+        # column k of dssp_full is residue ca_first + k
+        dssp_data = dssp_full[:, (R1_real - ca_first) : (R2_real - ca_first + 1)]
         reslist = list(range(R1_real, R2_real + 1))
 
         C_vector = []
@@ -6138,7 +6371,11 @@ class SSProtein:
         On a capped chain (ACE/NME) that is every real residue; on an uncapped
         chain the terminal residues are excluded, because phi is undefined at
         the N-terminus and psi at the C-terminus. ``resid_list`` always matches
-        the classification arrays element-for-element.
+        the classification arrays element-for-element. The dihedrals are
+        computed on the whole chain and then restricted to ``[R1, R2]``, so
+        an explicit region returns exactly the residues in that range that
+        carry both angles (prior to 2.0.6 the topology was sliced first, which
+        lost phi at ``R1`` and psi at ``R2``).
 
         BBSEG2 classes:
 
@@ -6213,42 +6450,32 @@ class SSProtein:
         # build R1/R2 values - NOTE that for BBSEG because we compute from PHI/PSI angles
         # we don't need to specify withCA becayse phi/psi are oNLY between valid peptide
         # units, so this means we automatically select the right sets of residues
-        out = self.__get_first_and_last(R1, R2, withCA=False)
+        (R1_real, R2_real, _) = self.__get_first_and_last(R1, R2, withCA=False)
 
-        target = self.traj.atom_slice(self.topology.select(f"{out[2]}"))
-
-        # extract the phi/psi angles in degrees.
+        # phi/psi are taken from the FULL chain (memoised by get_angles) and
+        # only then restricted to the region. phi(i) needs the carbonyl C of
+        # residue i-1 and psi(i) the amide N of residue i+1, so slicing the
+        # topology down to the region first - as was done prior to 2.0.6 -
+        # silently lost phi(R1) and psi(R2) and returned a region two residues
+        # short of the one requested. Default (whole-chain) calls are unchanged.
         #
-        # NOTE these MUST be aligned explicitly rather than paired positionally.
-        # mdtraj returns one phi for every residue that has a preceding residue
-        # and one psi for every residue that has a following one. On a capped
-        # chain the caps supply both, so the two arrays already line up - but on
-        # an UNCAPPED chain phi is undefined at the N-terminus and psi at the
-        # C-terminus, so phi[k] and psi[k] belong to two *different* (adjacent)
-        # residues. Pairing them by position would classify a (phi, psi) drawn
-        # from two separate residues, and would additionally leave the returned
-        # resid list one element longer than the classification arrays.
-        phi_atoms, phi_raw = md.compute_phi(target)
-        psi_atoms, psi_raw = md.compute_psi(target)
+        # The two dihedral sets MUST be aligned by residue rather than paired
+        # positionally: on an uncapped chain phi is undefined at the N-terminus
+        # and psi at the C-terminus, so phi[k] and psi[k] belong to two
+        # different residues. phi dihedrals are [C(i-1), N(i), CA(i), C(i)] and
+        # psi dihedrals [N(i), CA(i), C(i), N(i+1)], so in both cases the atom
+        # at index 1 belongs to the central residue i.
+        phi_atoms, phi_all = self.get_angles("phi")
+        psi_atoms, psi_all = self.get_angles("psi")
+        phi_for_resid = {quad[1].residue.index: k for k, quad in enumerate(phi_atoms)}
+        psi_for_resid = {quad[1].residue.index: k for k, quad in enumerate(psi_atoms)}
 
-        phi_data = np.degrees(phi_raw)
-        psi_data = np.degrees(psi_raw)
-
-        # phi dihedrals are [C(i-1), N(i), CA(i), C(i)] and psi dihedrals are
-        # [N(i), CA(i), C(i), N(i+1)], so in both cases the atom at index 1
-        # belongs to the central residue i. Map each dihedral onto that residue
-        # so the two can be intersected.
-        phi_for_resid = {
-            target.topology.atom(atoms[1]).residue.index: idx
-            for idx, atoms in enumerate(phi_atoms)
-        }
-        psi_for_resid = {
-            target.topology.atom(atoms[1]).residue.index: idx
-            for idx, atoms in enumerate(psi_atoms)
-        }
-
-        # keep only residues where BOTH dihedrals are defined, in ascending order
-        shared_resids = sorted(set(phi_for_resid) & set(psi_for_resid))
+        # residues in the region where BOTH dihedrals are defined, ascending
+        shared_resids = sorted(
+            r
+            for r in set(phi_for_resid) & set(psi_for_resid)
+            if R1_real <= r <= R2_real
+        )
 
         if len(shared_resids) == 0:
             raise SSException(
@@ -6258,13 +6485,11 @@ class SSProtein:
                 "terminal cap)."
             )
 
-        phi_data = phi_data[:, [phi_for_resid[r] for r in shared_resids]]
-        psi_data = psi_data[:, [psi_for_resid[r] for r in shared_resids]]
-
-        # the selection string is always a contiguous "resid A to B" range, so a
-        # residue's index within the sliced topology maps back onto the full
-        # chain by adding the index of the first selected residue.
-        reslist = [r + out[0] for r in shared_resids]
+        # get_angles returns (n_dihedrals, n_frames) in degrees; the loop below
+        # wants (n_frames, n_residues)
+        phi_data = np.asarray(phi_all)[[phi_for_resid[r] for r in shared_resids]].T
+        psi_data = np.asarray(psi_all)[[psi_for_resid[r] for r in shared_resids]].T
+        reslist = shared_resids
 
         # extract the relevant information (note shape of phi_data and psi_data will be identical)
         # shape info here is (number_of_frames, number_of_residues) sized
@@ -6473,17 +6698,25 @@ class SSProtein:
         CN_lengths = []
 
         for i in self.resid_with_CA:
+            # both atoms must exist exactly once in every CA-bearing residue
+            # (two-bead CA/CB models have no backbone C or N, and used to fail
+            # here with a numpy squeeze error)
+            idx1 = self.__residue_atom_lookup(i, atom1)
+            idx2 = self.__residue_atom_lookup(i, atom2)
+            if len(idx1) != 1 or len(idx2) != 1:
+                raise SSException(
+                    f"get_angle_decay() needs exactly one atom named '{atom1}' and one "
+                    f"named '{atom2}' in every CA-bearing residue, but residue {i} has "
+                    f"{len(idx1)} and {len(idx2)} respectively."
+                )
+
             # this extracts the C->N vector for each frame for each residue.
             # xyz is (n_frames, 1, 3); squeeze ONLY the length-1 atom axis
             # (axis=1). A bare np.squeeze() also collapses the frame axis when
             # n_frames == 1, giving a (3,) array that then breaks the axis=1
             # norm below (single-frame trajectories crashed with an AxisError).
-            value = np.squeeze(
-                self.traj.atom_slice(self.__residue_atom_lookup(i, atom1)).xyz,
-                axis=1,
-            ) - np.squeeze(
-                self.traj.atom_slice(self.__residue_atom_lookup(i, atom2)).xyz,
-                axis=1,
+            value = np.squeeze(self.traj.atom_slice(idx1).xyz, axis=1) - np.squeeze(
+                self.traj.atom_slice(idx2).xyz, axis=1
             )
 
             # CN_vectors becomes a list where each element is [3 x nframes] array where 3 is the x/y/z

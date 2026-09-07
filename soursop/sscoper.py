@@ -117,7 +117,7 @@ from scipy.optimize import (
 )
 from scipy.sparse.linalg import LinearOperator
 
-from .ssexceptions import SSException
+from .ssexceptions import SSException, SSWarning
 from .ssutils import (
     MIN_WEIGHT_THRESHOLD,
     ExperimentalObservable,
@@ -199,9 +199,15 @@ class COPERResult:
         Reduced chi-squared at the prior (max over groups when per-data-type
         constraints are used).
     chi_squared_min : float
-        Reduced chi-squared at the end of the step-1 minimisation (max over
-        groups). Determines feasibility: ``feasible`` is True iff
+        Smallest max-over-groups reduced chi-squared found in step 1.
+        Determines feasibility: ``feasible`` is True iff
         ``chi_squared_min <= chi2_limit`` (up to ``FEASIBILITY_TOLERANCE``).
+        With a single group this is the true chi-squared minimum. With
+        several groups step 1 first minimises the summed chi-squared and, if
+        that point violates a group limit, additionally minimises the total
+        squared violation ``sum_a max(chi2_a - limit, 0)^2`` (whose zero set
+        is exactly the feasible region); ``metadata['feasibility_check']``
+        records which of the two settled the verdict.
     chi_squared_final : float
         Reduced chi-squared after the step-2 entropy maximisation (max over
         groups). Equal to ``chi_squared_min`` when ``feasible`` is False.
@@ -214,12 +220,16 @@ class COPERResult:
     entropy_initial : float
         Shannon entropy at the prior.
     delta_S : float
-        Entropy change ``S(w) - S(w0) <= 0`` (equal to ``-KL(w || w0)``).
-        Measures the information content of the experimental data
-        relative to the prior ensemble.
+        Shannon entropy change ``S(w) - S(w0)``. For the uniform prior of
+        the paper this equals ``-KL(w || w0) <= 0`` and measures the
+        information content of the experimental data relative to the prior
+        ensemble; for a non-uniform prior the two differ (``S`` is the plain
+        Shannon entropy, ``KL`` is relative to ``w0``) and ``delta_S`` can
+        take either sign - use ``mean_delta_G_kT`` / ``kl_divergence`` for
+        the information content in that case.
     mean_delta_G_kT : float
-        Mean free-energy change in ``kT`` units, ``<delta_G>/kT = -delta_S``
-        (Leung et al. eq 10).
+        Mean free-energy change in ``kT`` units, ``<delta_G>/kT = KL(w || w0)``
+        (Leung et al. eq 10; equal to ``-delta_S`` for a uniform prior).
     phi : float
         Fraction of effective frames, ``exp(-KL(w || w0)) in (0, 1]``.
     n_iterations : int
@@ -601,7 +611,9 @@ def chi2_limit_scan(
     ------
     SSException
         If ``reweighter`` is unknown, ``n_points`` < 1, or a log-scale grid
-        has non-positive endpoints.
+        has non-positive endpoints. Infeasible limits are excluded from the
+        knee selection (with an ``SSWarning``) as long as at least one limit
+        is feasible.
     """
     if reweighter not in ("coper", "icoper"):
         raise SSException(
@@ -654,7 +666,27 @@ def chi2_limit_scan(
     kl_arr = np.array(kl_vals)
     feas_arr = np.array(feas, dtype=bool)
 
-    optimal_idx, method_name = find_optimal_theta(chi2_arr, kl_arr, method=method)
+    # an infeasible limit has no maximum-entropy solution (its weights are the
+    # chi-squared minimiser), so it must not be selected as the knee while a
+    # feasible limit exists
+    candidates = np.flatnonzero(feas_arr)
+    if len(candidates) == 0:
+        SSWarning(
+            "chi2_limit_scan: no scanned chi-squared limit was feasible. The selected "
+            "limit is the knee of the infeasible curve and its weights are chi-squared "
+            "minimisers, not maximum-entropy solutions; widen the limits or check the "
+            "data."
+        )
+        candidates = np.arange(len(limits))
+    elif len(candidates) < len(limits):
+        SSWarning(
+            f"chi2_limit_scan: {len(limits) - len(candidates)} of {len(limits)} limits "
+            "were infeasible and were excluded from the knee selection."
+        )
+    local_idx, method_name = find_optimal_theta(
+        chi2_arr[candidates], kl_arr[candidates], method=method
+    )
+    optimal_idx = int(candidates[local_idx])
 
     return COPERScanResult(
         chi2_limits=limits,
@@ -678,11 +710,14 @@ class COPER:
     the N frame weights via SciPy's ``trust-constr`` interior-point
     method. The two-step procedure of Leung et al. (2016):
 
-    1. minimise the per-group chi-squared over the simplex to test
-       feasibility, then
+    1. minimise the summed per-group chi-squared over the simplex to test
+       feasibility (with several groups, a point that violates a limit is
+       followed by a minimisation of the total squared violation
+       ``sum_a max(chi^2_alpha - limit, 0)^2``, so the verdict does not depend
+       on how the sum happens to trade the groups off against each other), then
     2. maximise the (relative) entropy subject to
        ``chi^2_alpha <= chi2_limit`` for every observable group, starting
-       from the step-1 point.
+       from the prior.
 
     Parameters
     ----------
@@ -812,6 +847,23 @@ class COPER:
     def _chi2_sum_grad(self, weights: np.ndarray) -> np.ndarray:
         """Analytic gradient of :meth:`_chi2_sum_obj`."""
         return self._chi2_per_group_jac(weights).sum(axis=0)
+
+    def _violation_obj(self, weights: np.ndarray, chi2_limit: float) -> float:
+        """Total squared constraint violation ``sum_a max(chi2_a - limit, 0)^2``.
+
+        Its zero set is exactly the feasible region of the step-2 problem, so
+        driving it to zero is a direct feasibility test for several groups
+        (unlike the summed chi-squared, whose minimiser can over-fit one group
+        at the expense of another even when a feasible point exists).
+        """
+        v = np.maximum(self._chi2_per_group_vec(weights) - chi2_limit, 0.0)
+        return float(np.sum(v * v))
+
+    def _violation_grad(self, weights: np.ndarray, chi2_limit: float) -> np.ndarray:
+        """Analytic gradient of :meth:`_violation_obj` (continuous across the hinge)."""
+        v = np.maximum(self._chi2_per_group_vec(weights) - chi2_limit, 0.0)
+        jac = self._chi2_per_group_jac(weights)  # (G, N)
+        return 2.0 * (v[:, None] * jac).sum(axis=0)
 
     def _entropy_obj(self, weights: np.ndarray) -> float:
         """Relative entropy ``sum w * ln(w/w0)`` (minimise = maximise -KL)."""
@@ -1104,6 +1156,39 @@ class COPER:
         w_min = self._softmax(opt1.x)
         chi2_min = float(np.max(self._chi2_per_group_vec(w_min)))
         feasible = chi2_min <= chi2_limit + FEASIBILITY_TOLERANCE
+        feasibility_check = "summed chi-squared"
+
+        # With a single group the summed chi-squared IS the constrained
+        # quantity, so its minimiser settles feasibility exactly. With several
+        # groups it does not: the sum is happy to push one group far below the
+        # limit while another sits above it, even when a point satisfying every
+        # group exists (verified on small two-group examples, where this
+        # reported ~1% of feasible problems as infeasible). So if the summed
+        # minimiser fails, run a dedicated feasibility search that minimises the
+        # total squared violation, whose zero set is exactly the feasible region.
+        if not feasible and len(self._group_indices) > 1:
+            # aim a hair inside the limit: the squared hinge is flat at its
+            # zero, so an optimiser targeting the limit itself stops with the
+            # violated group a few 1e-5 above it and the check below still
+            # fails. Tight tolerances for the same reason.
+            target = chi2_limit - FEASIBILITY_TOLERANCE
+            opt1b = minimize(
+                fun=lambda z: self._violation_obj(self._softmax(z), target),
+                x0=opt1.x,
+                method="L-BFGS-B",
+                jac=lambda z: self._grad_w_to_z(
+                    self._softmax(z),
+                    self._violation_grad(self._softmax(z), target),
+                ),
+                options={"maxiter": max_iterations, "ftol": 1e-15, "gtol": 1e-12},
+            )
+            w_alt = self._softmax(opt1b.x)
+            chi2_alt = float(np.max(self._chi2_per_group_vec(w_alt)))
+            if chi2_alt < chi2_min:
+                w_min, chi2_min = w_alt, chi2_alt
+                feasibility_check = "per-group violation"
+            feasible = chi2_min <= chi2_limit + FEASIBILITY_TOLERANCE
+        metadata["feasibility_check"] = feasibility_check
 
         if verbose:
             print(f"  Step 1 chi^2 (max over groups): {chi2_min:.4f}")
@@ -1258,7 +1343,17 @@ class COPER:
         method: str = "perpendicular",
         verbose: bool = False,
     ) -> COPERScanResult:
-        """Run a chi-squared-limit scan using this instance's data."""
+        """Run a chi-squared-limit scan using this instance's data.
+
+        Parameters
+        ----------
+        chi2_limits, n_points, log_scale, method, verbose
+            See :func:`chi2_limit_scan`.
+
+        Returns
+        -------
+        COPERScanResult
+        """
         scan = chi2_limit_scan(
             observables=self.observables,
             calculated_values=self.calculated_values,
@@ -1275,6 +1370,17 @@ class COPER:
 
     def predict(self, calculated_values: np.ndarray) -> np.ndarray:
         """Weighted means of arbitrary observables using the fitted weights.
+
+        Parameters
+        ----------
+        calculated_values : numpy.ndarray
+            Per-frame values, shape ``(n_frames, ...)``; a 1D array of shape
+            ``(n_frames,)`` is treated as a single observable.
+
+        Returns
+        -------
+        numpy.ndarray
+            Weighted average over frames (axis 0).
 
         Raises
         ------
@@ -1423,6 +1529,13 @@ class iCOPER:
                 f"needs at least two observables (got {self.n_observables}). "
                 "Use fit_offset=False for a scale-only fit, or use COPER."
             )
+        if fit_offset and self.n_observables == 2:
+            SSWarning(
+                "iCOPER with fit_offset=True and exactly two observables is exactly "
+                "determined: a scale and an offset map any two ensemble averages onto "
+                "the two targets, so chi-squared is zero for every weight vector and the "
+                "weights stay at the prior. Use more observables or fit_offset=False."
+            )
         self._chi2_limit = float(chi2_limit)
 
         w0 = self.initial_weights.copy()
@@ -1505,6 +1618,13 @@ class iCOPER:
             "lr_weights": lr_weights,
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         }
+        # carry the inner COPER's bookkeeping through (zero-prior frames are
+        # pinned at weight 0 exactly as for plain COPER)
+        if "n_zero_prior_frames" in last_result.metadata:
+            metadata["n_zero_prior_frames"] = last_result.metadata[
+                "n_zero_prior_frames"
+            ]
+        metadata["feasibility_check"] = last_result.metadata.get("feasibility_check")
 
         # Recompute entropy / phi against the original prior w0.
         kl = _srel(w0, current_weights)
@@ -1548,7 +1668,20 @@ class iCOPER:
         verbose: bool = False,
         fit_kwargs: Optional[dict] = None,
     ) -> COPERScanResult:
-        """Run a chi-squared-limit scan using iCOPER."""
+        """Run a chi-squared-limit scan using iCOPER.
+
+        Parameters
+        ----------
+        chi2_limits, n_points, log_scale, method, verbose
+            See :func:`chi2_limit_scan`.
+        fit_kwargs : dict, optional
+            Extra keyword arguments forwarded to :meth:`fit` for each limit
+            (e.g. ``ftol``, ``max_icoper_iterations``, ``fit_offset``).
+
+        Returns
+        -------
+        COPERScanResult
+        """
         scan = chi2_limit_scan(
             observables=self.observables,
             calculated_values=self.calculated_values,
@@ -1566,6 +1699,17 @@ class iCOPER:
 
     def predict(self, calculated_values: np.ndarray) -> np.ndarray:
         """Weighted means of arbitrary observables using the fitted weights.
+
+        Parameters
+        ----------
+        calculated_values : numpy.ndarray
+            Per-frame values, shape ``(n_frames, ...)``; a 1D array of shape
+            ``(n_frames,)`` is treated as a single observable.
+
+        Returns
+        -------
+        numpy.ndarray
+            Weighted average over frames (axis 0).
 
         Raises
         ------

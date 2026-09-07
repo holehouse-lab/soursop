@@ -108,10 +108,13 @@ All six models share ``φ₀ = −60°`` (the convention is to phase-shift the K
     # Per-frame, per-residue J-couplings (shape: n_frames x n_phi).
     atoms, J = compute_J3_HN_HA(protein, model="Bax2007")
 
-    # Ensemble mean + the model's forward-model uncertainty in Hz.
+    # Uniform ensemble mean via the weights= contract (one weight per frame),
+    # plus the model's forward-model uncertainty in Hz.
+    import numpy as np
+    w = np.full(protein.n_frames, 1.0 / protein.n_frames)
     atoms, J_mean, sigma = compute_J3_HN_HA(
-        protein, model="Bax2007", weights=False, return_uncertainty=True)
-    J_mean = J.mean(axis=0)
+        protein, model="Bax2007", weights=w, return_uncertainty=True)
+    assert np.allclose(J_mean, J.mean(axis=0))
 
 The ``(n_frames, n_phi)`` matrix is the natural input for the reweighters - so a typical workflow against an experimental J vector is::
 

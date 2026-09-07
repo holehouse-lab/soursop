@@ -15,7 +15,7 @@ Analyses fall into several broad categories:
 * **Inter-residue distances** — pairwise CA or COM distance matrices, distance maps, and polymer-scaled distance maps.
 * **Global size and shape** — radius of gyration, hydrodynamic radius, end-to-end distance, asphericity, acylindricity, prolateness, gyration tensor, and the :math:`t`-parameter.
 * **Secondary structure** — per-frame DSSP assignments and BBSEG backbone-torsion-based classification.
-* **Polymer scaling** — internal scaling profiles (:math:`\langle r^2 \rangle` vs sequence separation), the scaling exponent :math:`\nu`, and local heterogeneity in scaling behaviour.
+* **Polymer scaling** — internal scaling profiles (:math:`\langle r \rangle` or :math:`\sqrt{\langle r^2 \rangle}` vs sequence separation), the scaling exponent :math:`\nu`, and local heterogeneity in scaling behaviour.
 * **Contact and RMSD analysis** — contact maps (with configurable threshold and mode), RMSD to a reference structure, and fraction of native contacts :math:`Q`.
 * **Solvent accessibility** — per-residue and region-level SASA via ``get_all_SASA``, ``get_regional_SASA``, and ``get_site_accessibility``. On one-bead-per-residue coarse-grained chains these use the force field's own per-residue bead sizes (see :ref:`cg-sasa` below) rather than atomic van der Waals radii.
 * **Local dynamics** — local collapse profiles, sidechain alignment angles, dihedral mutual information, local-to-global correlation, and angle decay.
@@ -97,7 +97,6 @@ SSProtein objects have a set of object variables associated with them.
         .. autoattribute:: n_residues
         .. autoattribute:: residue_index_list
         .. autoattribute:: unitcell
-        .. autoattribute:: length
 
 
 SSProtein Functions
@@ -106,6 +105,7 @@ SSProtein Functions
 .. autoclass:: soursop.ssprotein.SSProtein
         :no-index:
 
+        .. automethod:: length
         .. automethod:: reset_cache
         .. automethod:: print_residues
         .. automethod:: get_amino_acid_sequence

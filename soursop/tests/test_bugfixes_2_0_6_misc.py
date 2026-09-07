@@ -88,19 +88,28 @@ def test_extra_valid_residue_names_rejects_bad_input(bad):
 # --------------------------------------------------------------------------------
 def test_hdx_capped_excludes_nme(GS6_CP):
     # GS6 is ACE-GSGSGS-NME; residue 0 is ACE, residue 7 is NME
+    # the pinned values were recorded with the backbone-only Wernet-Nilsson
+    # H-bond definition, which is no longer the default
     res, lnP = sshdx.compute_protection_factors(
-        GS6_CP, weights=np.ones(GS6_CP.n_frames) / GS6_CP.n_frames
+        GS6_CP,
+        weights=np.ones(GS6_CP.n_frames) / GS6_CP.n_frames,
+        hbond_method="wernet-nilsson",
     )
     assert list(res) == [1, 2, 3, 4, 5, 6]
     assert 7 not in res
     # residue 1 follows an ACE cap so is a genuine amide and is retained;
     # values pinned from the pre-fix code for the retained residues
     np.testing.assert_allclose(lnP, [0.07, 0.0, 0.21, 0.42, 0.28, 0.07], atol=1e-6)
+    # the default (Best-Vendruscolo) definition reports the same residues
+    res_default, _ = sshdx.compute_protection_factors(GS6_CP)
+    assert list(res_default) == list(res)
 
 
 def test_hdx_uncapped_excludes_free_n_terminus(NTL9_CP):
     res, lnP = sshdx.compute_protection_factors(
-        NTL9_CP, weights=np.ones(NTL9_CP.n_frames) / NTL9_CP.n_frames
+        NTL9_CP,
+        weights=np.ones(NTL9_CP.n_frames) / NTL9_CP.n_frames,
+        hbond_method="wernet-nilsson",
     )
     assert 0 not in res
     assert res[0] == 1
@@ -108,9 +117,12 @@ def test_hdx_uncapped_excludes_free_n_terminus(NTL9_CP):
     assert 40 not in res
     assert len(res) == NTL9_CP.n_residues - 2
 
-    # values for the retained residues are unchanged (pinned pre-fix)
+    # values for the retained residues are unchanged (pinned pre-fix, with the
+    # Wernet-Nilsson H-bond definition those values were recorded with)
     np.testing.assert_allclose(lnP[:4], [0.07, 0.805, 1.82, 1.68], atol=1e-6)
     np.testing.assert_allclose(lnP[-3:], [0.595, 0.735, 0.07], atol=1e-6)
+    res_default, _ = sshdx.compute_protection_factors(NTL9_CP)
+    assert list(res_default) == list(res)
 
 
 def test_hdx_map_skips_cap_and_free_n_terminus(GS6_CP, NTL9_CP):

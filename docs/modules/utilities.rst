@@ -40,6 +40,7 @@ Note the six HPS-family models (``hps-urry``, ``hps-kr``, ``fb-hps``, ``kh``, ``
 **Other tables.** ``ssdata`` also exposes ``THREE_TO_ONE`` / ``ONE_TO_THREE`` residue-name maps, ``ALL_VALID_RESIDUE_NAMES`` (the residue names SOURSOP recognises as protein during chain detection), ``DEFAULT_SIDECHAIN_VECTOR_ATOMS`` (the per-residue sidechain-tip atom used for sidechain-vector analyses), and the precomputed excluded-volume φ/ψ tripeptide distributions used by :doc:`sssampling`.
 
 .. autofunction:: soursop.ssdata.get_cg_bead_sigmas
+.. autofunction:: soursop.ssdata.normalize_residue_name
 
 
 sstools — general helpers
@@ -123,6 +124,7 @@ The remaining helpers are listed here.
 :func:`~soursop.ssutils.kabsch_rmsd` gives the minimal RMSD between two point sets after optimal superposition, and :func:`~soursop.ssutils.ideal_helix_ca` / :func:`~soursop.ssutils.ideal_extended_ca` generate idealised CA geometries — these underpin the two-bead (CA/CB) secondary-structure assignment.
 
 .. autofunction:: soursop.ssutils.validate_keyword_option
+.. autofunction:: soursop.ssutils.validate_stride
 .. autofunction:: soursop.ssutils.set_numpy_threads
 .. autofunction:: soursop.ssutils.kabsch_rmsd
 .. autofunction:: soursop.ssutils.ideal_helix_ca

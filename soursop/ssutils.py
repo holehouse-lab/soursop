@@ -59,7 +59,11 @@ def _locate_libraries(library_name):
     elif os_name == "linux":
         libname = f"*{library_name}*.so*"  # fuzzy match for filtering with find
     else:
-        warnings.warn(f"Unsupported OS: {os_name}.")
+        # previously only warned and then crashed on the unbound `libname`
+        raise SSException(
+            f"set_numpy_threads() is not supported on this platform ({os_name}); "
+            "only Windows (via the mkl package), macOS and Linux are handled."
+        )
 
     # Checking existing environment variables and stop on the first match. The
     # basis for this approach is that only one should be active.
@@ -255,6 +259,52 @@ def validate_keyword_option(keyword, allowed_vals, keyword_name, error_message=N
                 )
             message = error_message[:]
         raise SSException(message)
+
+
+def validate_stride(stride, n_frames):
+    """Validate a frame stride the way :class:`~soursop.ssprotein.SSProtein` does.
+
+    ``traj[::stride]`` accepts anything Python slicing accepts, so a
+    ``stride`` of ``0`` raised a bare ``ValueError`` from deep inside numpy,
+    a negative stride silently reversed the trajectory, and a non-integer
+    stride raised a ``TypeError``. This is the single check used by the
+    stand-alone analysis functions (``sshdx``, ``ssnmr``) so they behave
+    like the ``SSProtein`` methods.
+
+    Parameters
+    ----------
+    stride : int
+        Frame stride. Must be an integer between 1 and ``n_frames``
+        inclusive.
+    n_frames : int
+        Number of frames in the trajectory being strided.
+
+    Returns
+    -------
+    int
+        ``stride`` as a Python ``int``.
+
+    Raises
+    ------
+    SSException
+        If ``stride`` is not an integer, is less than 1, or exceeds
+        ``n_frames``.
+
+    Example
+    -------
+    >>> validate_stride(5, 100)
+    5
+    """
+    if isinstance(stride, bool) or not isinstance(stride, (int, numpy.integer)):
+        raise SSException(f"stride must be an integer, got {stride!r}")
+    stride = int(stride)
+    if stride < 1:
+        raise SSException(f"stride ({stride}) is less than 1")
+    if stride > n_frames:
+        raise SSException(
+            f"stride ({stride}) is larger than the number of frames ({n_frames})"
+        )
+    return stride
 
 
 def validate_weights(weights, n_frames, stride=1, etol=1e-7):
@@ -804,6 +854,15 @@ def validate_reweighting_inputs(observables, calculated_values, initial_weights)
             raise SSException("initial_weights must be a numpy array")
         if len(initial_weights) != calculated_values.shape[0]:
             raise SSException("initial_weights length must match number of frames")
+        # a prior with negative or non-finite entries is not a distribution;
+        # BME used to accept one and report a failed (or, for BMECustom, a
+        # "successful") fit built on it
+        if not numpy.all(numpy.isfinite(initial_weights)):
+            raise SSException("initial_weights must be finite")
+        if numpy.any(initial_weights < 0):
+            raise SSException("initial_weights must be non-negative")
+        if not numpy.sum(initial_weights) > 0:
+            raise SSException("initial_weights must not all be zero")
 
 
 # ........................................................................

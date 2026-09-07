@@ -32,7 +32,11 @@ def test_l2g_includes_terminal_residue():
     # covers the (separate, pre-existing) undefined-correlation edge when a
     # sampled distance series has zero variance.
     P = _prot("ntl9_AA")
-    raw, n_pairs, mean_corr, std_corr = P.get_local_to_global_correlation(verbose=False)
+    # ntl9 has 10 frames; stride=2 leaves 5 (the default stride=20 would leave
+    # a single frame, which 2.0.6 rejects because a correlation is undefined)
+    raw, n_pairs, mean_corr, std_corr = P.get_local_to_global_correlation(
+        stride=2, verbose=False
+    )
     # the largest sequence separation must contribute at least one pair
     # (the end-to-end pair); previously it contributed zero because the
     # terminal residue was excluded from all pairs.

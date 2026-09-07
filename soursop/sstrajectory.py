@@ -17,7 +17,7 @@ import numpy as np
 from .ssdata import ALL_VALID_RESIDUE_NAMES
 
 from .ssprotein import SSProtein
-from .ssexceptions import SSException
+from .ssexceptions import SSException, SSWarning
 from . import ssutils
 from . import ssio
 from . import sstools
@@ -80,10 +80,29 @@ class SSTrajectory:
         explicit_residue_checking=False,
         print_warnings=False,
         swan_trajectory=None,
+        check_whole_molecules=True,
     ):
         """
         SSTrajectory is the class used to read in a work with simulation
         trajectories in SOURSOP.
+
+        **Input contract: whole molecules, no periodic-boundary corrections.**
+        SOURSOP computes every distance, size and contact directly from the
+        coordinates it is given. It never applies the minimum-image
+        convention (the only exception is the opt-in ``periodic=True``
+        flag on the inter-chain methods of this class) and it never
+        re-images or unwraps coordinates. A chain that has been wrapped
+        back into the primary cell by the simulation engine, so that part
+        of it sits on the far side of the box, will therefore give wrong
+        radii of gyration, distance maps, contact maps and so on with no
+        error. Make molecules whole before loading (e.g. ``gmx trjconv -pbc
+        mol -center``, or in Python ``traj.make_molecules_whole()`` /
+        ``traj.image_molecules()`` on the mdtraj trajectory). On load,
+        SOURSOP checks every protein chain for the tell-tale signature of a
+        wrapped molecule - two consecutive residues whose CA atoms are
+        further apart than half the shortest box vector - and warns (or
+        raises, see ``check_whole_molecules``) if it finds one; the same
+        check is available at any time as :meth:`check_molecules_whole`.
 
         There are two ways new SSTrajectory objects can be generated;
 
@@ -211,6 +230,16 @@ class SSTrajectory:
             ``.swan_trajectory`` attribute and propagated to every SSProtein.
             Default = None
 
+        check_whole_molecules : bool or str
+            Whether to test each protein chain for being split across the
+            periodic boundary once it has been loaded (see
+            :meth:`check_molecules_whole`). ``True`` (default) runs the
+            check and emits an ``SSWarning`` naming the chain, the residue
+            pair and the frame count if a chain is split; ``'raise'`` runs
+            the check and raises an ``SSException`` instead; ``False``
+            skips it. The check needs a unit cell; trajectories without one
+            (or with zero-length box vectors) are not tested.
+
         Example
         -----------
         Example of reading in an XTC trajectory file::
@@ -295,6 +324,20 @@ class SSTrajectory:
         # this is initialized to None and then gets defined using the lazy_loading_single_protein_trajectory()
         # decorator when it's first needed
         self.__single_protein_traj = None
+
+        # SOURSOP applies no periodic-boundary corrections anywhere, so a
+        # chain that the simulation engine wrapped back into the box gives
+        # silently wrong results. Look for the signature of that up front.
+        if check_whole_molecules is not False:
+            if check_whole_molecules not in (True, "raise"):
+                raise SSException(
+                    "check_whole_molecules must be True, False or 'raise'; "
+                    f"received {check_whole_molecules!r}"
+                )
+            self.__report_split_molecules(
+                self.check_molecules_whole(),
+                raise_on_split=(check_whole_molecules == "raise"),
+            )
 
     def __repr__(self):
         return "SSTrajectory (%s): %i proteins and %i frames" % (
@@ -866,6 +909,144 @@ class SSTrajectory:
     # oxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxo
     #
     #
+    def check_molecules_whole(self, chunk_size=5000):
+        """Test every protein chain for being split across the periodic boundary.
+
+        SOURSOP never applies periodic-boundary corrections, so it relies on
+        the molecules it is given being whole. A chain that a simulation
+        engine has wrapped back into the primary cell leaves a clear
+        signature: somewhere along the backbone two consecutive residues sit
+        on opposite sides of the box, so their CA atoms are separated by
+        roughly a box vector rather than the ~3.8 A of a peptide bond. This
+        method looks for exactly that - a consecutive-residue CA-CA distance
+        greater than half the shortest box vector of that frame - in every
+        chain and every frame. A whole chain that is simply larger than the
+        box is *not* flagged (its consecutive residues remain bonded
+        distances apart), and neither is a genuine chain break shorter than
+        half the box, which is not a periodic-boundary problem.
+
+        The check needs a unit cell. Trajectories without one, or whose box
+        vectors are zero or non-finite (old CAMPARI files), cannot be tested
+        and are reported as such rather than as whole.
+
+        Parameters
+        ----------
+        chunk_size : int, optional
+            Number of frames processed at a time, to bound memory on very
+            long trajectories. Default 5000.
+
+        Returns
+        -------
+        list of dict
+            One entry per protein in ``proteinTrajectoryList`` with the keys
+            ``'protein'`` (its index), ``'tested'`` (False when there is no
+            usable unit cell or fewer than two consecutive CA-bearing
+            residues), ``'split'`` (True if any consecutive pair exceeds
+            half the box in any frame), ``'n_frames_split'``,
+            ``'worst_frame'``, ``'worst_pair'`` (the two resids),
+            ``'max_ca_distance'`` (Angstroms) and ``'half_box'`` (the
+            smallest half box vector over the trajectory, Angstroms, or
+            ``None``).
+
+        Example
+        -------
+        >>> report = traj.check_molecules_whole()
+        >>> any(r["split"] for r in report)
+        False
+        """
+
+        lengths = self.traj.unitcell_lengths
+        usable_box = (
+            lengths is not None and np.all(np.isfinite(lengths)) and np.all(lengths > 0)
+        )
+        # half the shortest box vector in every frame, in Angstroms
+        half_box = 0.5 * 10.0 * lengths.min(axis=1) if usable_box else None
+
+        report = []
+        for k, protein in enumerate(self.proteinTrajectoryList):
+            entry = {
+                "protein": k,
+                "tested": False,
+                "split": False,
+                "n_frames_split": 0,
+                "worst_frame": None,
+                "worst_pair": None,
+                "max_ca_distance": None,
+                "half_box": None if half_box is None else float(np.min(half_box)),
+            }
+
+            # consecutive, sequence-adjacent CA-bearing residues
+            resids = protein.resid_with_CA
+            pairs = [(a, b) for a, b in zip(resids[:-1], resids[1:]) if b == a + 1]
+            if not usable_box or len(pairs) == 0:
+                report.append(entry)
+                continue
+
+            atom_pairs = np.array(
+                [[protein.get_CA_index(a), protein.get_CA_index(b)] for a, b in pairs]
+            )
+
+            entry["tested"] = True
+            n_frames = protein.n_frames
+            frames_split = np.zeros(n_frames, dtype=bool)
+            max_d, worst = -1.0, (None, None)
+            for start in range(0, n_frames, int(chunk_size)):
+                stop = min(start + int(chunk_size), n_frames)
+                d = 10.0 * md.compute_distances(
+                    protein.traj[start:stop], atom_pairs, periodic=False
+                )
+                over = d > half_box[start:stop, None]
+                frames_split[start:stop] = over.any(axis=1)
+                local_max = d.max()
+                if local_max > max_d:
+                    max_d = float(local_max)
+                    f, p = np.unravel_index(np.argmax(d), d.shape)
+                    worst = (start + int(f), int(p))
+
+            entry["split"] = bool(frames_split.any())
+            entry["n_frames_split"] = int(frames_split.sum())
+            entry["max_ca_distance"] = max_d
+            entry["worst_frame"] = worst[0]
+            entry["worst_pair"] = pairs[worst[1]]
+            report.append(entry)
+
+        return report
+
+    # oxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxo
+    #
+    #
+    def __report_split_molecules(self, report, raise_on_split=False):
+        """Warn (or raise) for every chain that check_molecules_whole flagged."""
+        split = [r for r in report if r["split"]]
+        if len(split) == 0:
+            return
+
+        lines = []
+        for r in split:
+            a, b = r["worst_pair"]
+            lines.append(
+                f"protein {r['protein']}: residues {a}-{b} are {r['max_ca_distance']:.1f} A "
+                f"apart in frame {r['worst_frame']} (half the shortest box vector is "
+                f"{r['half_box']:.1f} A); {r['n_frames_split']} of "
+                f"{self.n_frames} frames affected"
+            )
+        message = (
+            "Protein chain(s) appear to be split across the periodic boundary - "
+            + "; ".join(lines)
+            + ". SOURSOP applies no periodic-boundary corrections and expects whole "
+            "molecules, so sizes, distances and contacts computed from this trajectory "
+            "will be wrong. Make the molecules whole before loading (e.g. "
+            "'gmx trjconv -pbc mol -center', or traj.make_molecules_whole() / "
+            "traj.image_molecules() in mdtraj), or pass check_whole_molecules=False "
+            "to skip this check."
+        )
+        if raise_on_split:
+            raise SSException(message)
+        SSWarning(message)
+
+    # oxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxo
+    #
+    #
     @lazy_loading_single_protein_trajectory
     def get_overall_radius_of_gyration(self, weights=False, etol=0.0000001):
         """Per-frame radius of gyration computed across every protein chain.
@@ -1071,9 +1252,13 @@ class SSTrajectory:
             com1 = [P1.get_residue_COM(r1, atom_name="CA") for r1 in p1_residues]
             com2 = [P2.get_residue_COM(r2, atom_name="CA") for r2 in p2_residues]
 
-        # the (unchanged) ncap-shifted output indices
-        p1_indices = [(r1 - 1) if P1.ncap else r1 for r1 in p1_residues]
-        p2_indices = [(r2 - 1) if P2.ncap else r2 for r2 in p2_residues]
+        # row/column k of the map is the k-th CA-bearing residue of each
+        # chain (the same convention as SSProtein.get_distance_map). This
+        # used to be derived as ``resid - 1 if ncap else resid``, which is
+        # only equivalent when every residue after the cap has a CA; a chain
+        # with any other CA-less residue indexed past the end of the map.
+        p1_indices = list(range(len(p1_residues)))
+        p2_indices = list(range(len(p2_residues)))
 
         if periodic:
             # preserve the exact original per-pair minimum-image call

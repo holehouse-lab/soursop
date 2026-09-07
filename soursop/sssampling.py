@@ -725,22 +725,39 @@ class SamplingQuality:
         ref_psi_angles, ref_phi_angles = [], []
 
         self.residue_indices = None
-        for trj in self.trajs:
+        for k, trj in enumerate(self.trajs):
             phi, psi, resids = self.__aligned_dihedrals(
                 trj.proteinTrajectoryList[proteinID]
             )
             if self.residue_indices is None:
                 self.residue_indices = resids
+            elif resids != self.residue_indices:
+                raise SSException(
+                    f"Trajectory {k} ({self.traj_list[k]}) has {len(resids)} residues "
+                    f"with both phi and psi, but trajectory 0 has "
+                    f"{len(self.residue_indices)}. Every trajectory must be of the same "
+                    "chain so that column k of the dihedral arrays is the same residue."
+                )
             phi_angles.append(phi)
             psi_angles.append(psi)
 
         if precomputed:
             return np.array((psi_angles, phi_angles))
 
-        for ref_trj in self.ref_trajs:
-            phi, psi, _ = self.__aligned_dihedrals(
+        for k, ref_trj in enumerate(self.ref_trajs):
+            phi, psi, resids = self.__aligned_dihedrals(
                 ref_trj.proteinTrajectoryList[proteinID]
             )
+            # the reference is compared residue by residue, so it must carry
+            # the same residues; previously a length mismatch surfaced as an
+            # inhomogeneous-shape ValueError from numpy
+            if resids != self.residue_indices:
+                raise SSException(
+                    f"Reference trajectory {k} ({self.reference_list[k]}) has "
+                    f"{len(resids)} residues with both phi and psi, but the "
+                    f"trajectories have {len(self.residue_indices)}. References must "
+                    "be of the same chain as the trajectories they are paired with."
+                )
             ref_phi_angles.append(phi)
             ref_psi_angles.append(psi)
 
@@ -1366,7 +1383,13 @@ class SamplingQuality:
           supplied the mean reference helicity is drawn as a dashed line.
 
         Layout is mosaic ``"AABB;CCDD"``. The chosen ``dihedral`` selector
-        controls which of phi / psi / joint 2D is shown.
+        controls which of phi / psi / joint 2D is shown. All four panels
+        share one x-axis: the 1-based position of each residue among the
+        CA-bearing residues of the chain (caps are not counted). The
+        dihedral panels cover only the residues that carry both a phi and a
+        psi (``self.residue_indices``), so on an uncapped chain they run
+        from position 2 to ``n - 1`` while the helicity panel runs from 1 to
+        ``n``; on a capped chain all four cover positions 1 to ``n``.
 
         Parameters
         ----------
@@ -1458,16 +1481,21 @@ class SamplingQuality:
         trj_helicity = np.asarray(trj_helicity)
         ref_helicity = np.asarray(ref_helicity)
 
-        n_res = metric.shape[-1]
-        idx = np.arange(1, n_res + 1)
-        xticks = np.arange(increment, idx[-1] + 1, increment)
-        xticklabels = np.arange(increment, idx[-1] + 1, increment)
-
-        # Helicity is reported per residue while the dihedral panels are per
-        # dihedral; for an uncapped chain these differ by one (phi is
-        # undefined at the N-terminus, psi at the C-terminus), so panel D
-        # needs its own x-axis rather than borrowing idx.
+        # Every panel shares one residue axis: the 1-based position of a
+        # residue among the CA-bearing residues of the chain (caps are not
+        # counted). The dihedral panels only cover residues that carry both a
+        # phi and a psi (self.residue_indices), so on an uncapped chain they
+        # start at position 2 and stop at n-1, while the helicity panel covers
+        # every CA-bearing residue. Previously both were plotted at 1..len(),
+        # which put residue k of the dihedral panels one position to the left
+        # of residue k in the helicity panel on uncapped chains.
+        protein = self.trajs[0].proteinTrajectoryList[self.proteinID]
+        ca_resids = list(protein.resid_with_CA)
+        n_pos = len(ca_resids)
+        idx = np.array([ca_resids.index(r) + 1 for r in self.residue_indices])
         helix_idx = np.arange(1, trj_helicity.shape[-1] + 1)
+        xticks = np.arange(increment, n_pos + 1, increment)
+        xticklabels = np.arange(increment, n_pos + 1, increment)
 
         if self.reference_list:
             panel_a_title = "Comparison to reference ensemble"
@@ -1488,7 +1516,7 @@ class SamplingQuality:
                     xticks,
                 )
                 axd[ax].set_xticklabels(xticklabels, fontsize=fontsize)
-                axd[ax].set_xlim([0, idx[-1] + 1])
+                axd[ax].set_xlim([0, n_pos + 1])
 
                 # plot all red marks
                 axd[ax].plot(idx, metric.transpose(), ".r", ms=4, alpha=0.3, mew=0)
@@ -1514,7 +1542,7 @@ class SamplingQuality:
 
                 axd[ax].set_xticks(xticks)
                 axd[ax].set_xticklabels(xticklabels, fontsize=fontsize)
-                axd[ax].set_xlim([0, idx[-1] + 1])
+                axd[ax].set_xlim([0, n_pos + 1])
 
                 axd[ax].plot(idx, all_to_all.transpose(), ".r", ms=4, alpha=0.3, mew=0)
 
@@ -1552,7 +1580,7 @@ class SamplingQuality:
                     xticks,
                 )
                 axd[ax].set_xticklabels(xticklabels, fontsize=fontsize)
-                axd[ax].set_xlim([0, idx[-1] + 1])
+                axd[ax].set_xlim([0, n_pos + 1])
 
                 # plot red
                 axd[ax].plot(
@@ -1830,6 +1858,14 @@ class PrecomputedDihedralInterface:
     array of the same shape as the simulated trajectories' dihedral
     arrays — so the downstream Hellinger and relative-entropy code
     treats it identically.
+
+    Note that the tables hold the phi and psi *marginals* and the two are
+    resampled independently, so the synthetic reference has no phi/psi
+    correlation: its joint distribution is the product of its marginals.
+    Under the 2D method any phi/psi correlation present in the simulated
+    ensemble therefore adds to the distance from this reference. Supply
+    excluded-volume trajectories via ``reference_list`` if the joint
+    reference distribution matters.
 
     Parameters
     ----------

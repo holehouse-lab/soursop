@@ -49,9 +49,10 @@ import re
 
 import numpy as np
 
-from .ssexceptions import SSException
+from .ssexceptions import SSException, SSWarning
 from .ssutils import (
     validate_keyword_option,
+    validate_stride,
     validate_weights,
     weighted_mean,
 )
@@ -147,14 +148,14 @@ def compute_random_coil_chemical_shifts(
     # sanity check temperature
     if temperature > 100 or temperature < 0:
         raise SSException(
-            "Temperature provided (%i) was non-physiological. Remember temperature should be in *celcius*."
+            "Temperature provided (%s) was non-physiological. Remember temperature should be in *celsius*."
             % (temperature)
         )
 
     # pH sanity check
     if pH < 0 or pH > 14:
         raise SSException(
-            "pH provided (%i) was non-physiological. Remember pH should be in between 0 and 14."
+            "pH provided (%s) was non-physiological. Remember pH should be in between 0 and 14."
             % (pH)
         )
 
@@ -1842,7 +1843,8 @@ def __set_sequence(sequence, key1, key3):
     encoding used by the chemical-shift tables. The numeric list is padded
     with two sentinel residues (code ``23``) at each end so that the
     nearest-neighbour correction can be applied uniformly at the chain
-    termini. Unrecognised characters are skipped. Unbalanced parentheses
+    termini. Unrecognised characters are skipped with an ``SSWarning``
+    naming them (whitespace is skipped silently). Unbalanced parentheses
     are rejected rather than parsed letter by letter.
 
     Parameters
@@ -1911,6 +1913,7 @@ def __set_sequence(sequence, key1, key3):
         )
 
     regex = re.findall(r"\(([^)]+)\)|(.)", inp)
+    skipped = []
     for i in range(len(regex)):
         set = regex[i]
         if set[0] == "":
@@ -1925,6 +1928,8 @@ def __set_sequence(sequence, key1, key3):
             # which let codes 26-35 (chars '[ \ ] ^ _ ` a b c d') through to
             # `key_aa1[code]` and raised IndexError.
             if (code < 0 or code > 25) or (key_aa1[code] == -1):
+                if not aa1.isspace():
+                    skipped.append(set[1])
                 continue
             # Only record the residue in `aminos` once it is known-valid and
             # appended to `sequence`. Appending before the validity check let
@@ -1939,7 +1944,18 @@ def __set_sequence(sequence, key1, key3):
                 aminos.append(aa3)
                 sequence.append(key_aa3[aa3])
             else:
+                skipped.append("(%s)" % set[0])
                 continue
+
+    # a dropped character silently shortens the output and shifts the
+    # nearest-neighbour context of every residue around it, so say so
+    if len(skipped) > 0:
+        SSWarning(
+            "compute_random_coil_chemical_shifts: skipped %d unrecognised token(s) in "
+            "the sequence (%s). These residues are absent from the output and do not "
+            "contribute to the neighbour corrections of the residues around them."
+            % (len(skipped), ", ".join(repr(s) for s in skipped))
+        )
 
     sequence.append(23)
     sequence.append(23)
@@ -2099,8 +2115,12 @@ def compute_J3_HN_HA(
     literature parameterisation. The result is a ``(n_frames, n_phi)``
     matrix (per frame, per residue with a defined φ) ready to be passed
     as ``calculated_values`` to :class:`soursop.ssbme.BME` or
-    :class:`soursop.sscoper.COPER`. The first residue has no φ, so
-    ``n_phi == n_residues - 1`` for a single-chain protein.
+    :class:`soursop.sscoper.COPER`. φ is only defined for residues with a
+    preceding backbone carbonyl, so on an uncapped chain
+    ``n_phi == n_residues - 1`` (the N-terminal residue has no φ) and on an
+    ACE/NME-capped chain ``n_phi == n_residues - 2`` (every real residue
+    has a φ; the two caps do not). The atom lists in the first return value
+    identify the residue of each column.
 
     Parameters
     ----------
@@ -2175,6 +2195,7 @@ def compute_J3_HN_HA(
     # convention (see docs/usage/weights.rst): validate_weights handles
     # both the stride-subsample-and-renormalise and the simple cases.
     n_frames_total = phi.shape[0]
+    stride = validate_stride(stride, n_frames_total)
     phi_strided = phi[::stride] if stride != 1 else phi
     validated_weights = validate_weights(
         weights, n_frames_total, stride=stride, etol=etol
@@ -2211,7 +2232,11 @@ def compute_NOE_distances(protein, atom_pairs, stride=1):
 
     Thin wrapper around :func:`mdtraj.compute_distances` that returns
     distances in **Angstroms** (the soursop convention) and the shape
-    that ``BME`` / ``COPER`` / ``BMECustom`` consume directly. The
+    that ``BME`` / ``COPER`` / ``BMECustom`` consume directly. Distances
+    are plain Euclidean distances (no minimum-image convention), like every
+    other distance in soursop; prior to 2.0.6 this function used mdtraj's
+    default ``periodic=True`` and so returned minimum-image distances for
+    pairs further apart than half the box. The
     raw r-values are returned per frame; collapse to a single NOE
     ensemble distance with :func:`noe_ensemble_average` (or take ``r**-p``
     yourself if you want the linear-additive observable to feed to BME
@@ -2254,9 +2279,13 @@ def compute_NOE_distances(protein, atom_pairs, stride=1):
     if pairs.ndim != 2 or pairs.shape[1] != 2:
         raise SSException(f"atom_pairs must have shape (n_pairs, 2), got {pairs.shape}")
 
+    stride = validate_stride(stride, protein.traj.n_frames)
     traj = protein.traj[::stride] if stride != 1 else protein.traj
-    # mdtraj returns nm; soursop convention is Angstroms.
-    return md.compute_distances(traj, pairs) * 10.0
+    # mdtraj returns nm; soursop convention is Angstroms. periodic=False, as
+    # everywhere else in soursop: chains are assumed whole, and mdtraj's
+    # default minimum-image convention returned spurious short distances for
+    # any pair separated by more than half the box.
+    return md.compute_distances(traj, pairs, periodic=False) * 10.0
 
 
 def noe_ensemble_average(

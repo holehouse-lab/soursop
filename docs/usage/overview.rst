@@ -88,6 +88,19 @@ methods for cross-chain observables.
 and one-bead-per-residue coarse-grained trajectories (a single ``CA``
 bead per residue); the coarse-grained case is auto-detected on load.
 
+**What SOURSOP expects of the input: whole molecules.** Every distance,
+size and contact is computed directly from the coordinates as given.
+SOURSOP applies no periodic-boundary corrections - it never uses the
+minimum-image convention (outside the opt-in ``periodic=True`` flag of
+the inter-chain methods) and never re-images or unwraps anything. So the
+trajectory you load must already contain whole molecules: re-image
+wrapped output before analysis (``gmx trjconv -pbc mol -center``, or
+``traj.make_molecules_whole()`` in mdtraj). ``SSTrajectory`` checks for
+the tell-tale signature of a wrapped chain on load (two consecutive
+residues further apart than half the box) and warns if it finds one; see
+:doc:`../modules/sstrajectory` for the details and for
+``check_molecules_whole``.
+
 
 The SOURSOP modules
 ----------------------

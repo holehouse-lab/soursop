@@ -50,20 +50,27 @@ def _manual_kr(protein, R1, R2, frame):
         10
         * md.compute_distances(protein.traj[frame], np.array(pairs), periodic=False)[0]
     )
-    return 1.0 / np.mean(1.0 / d)
+    # 1/Rh = (1/N^2) sum_{i != j} 1/r_ij, with each unordered pair counted twice
+    n = len(resids)
+    return n**2 / (2.0 * np.sum(1.0 / d))
 
 
 # ........................................................................
 #
-def test_full_chain_kr_unchanged(GS6):
-    """The whole-chain values pinned in test_ssproteins.py must not move."""
+def test_full_chain_kr_pinned(GS6):
+    """Whole-chain Kirkwood-Riseman values, pinned with the N^-2 prefactor.
+
+    GS6 has six CA-bearing residues, so these are exactly 6/5 times the
+    pre-2.0.6 values (5.9223 / 5.884 and 5.8634 / 5.8536), which lacked the
+    N/(N-1) factor.
+    """
     rh = GS6.get_hydrodynamic_radius(mode="kr")
-    assert abs(rh[0] - 5.9223) < 0.001
-    assert abs(np.mean(rh) - 5.884) < 0.001
+    assert abs(rh[0] - 7.1068) < 0.001
+    assert abs(np.mean(rh) - 7.0608) < 0.001
 
     rh = GS6.get_hydrodynamic_radius(mode="kr", distance_mode="COM")
-    assert abs(rh[0] - 5.8634) < 0.001
-    assert abs(np.mean(rh) - 5.8536) < 0.001
+    assert abs(rh[0] - 7.0361) < 0.001
+    assert abs(np.mean(rh) - 7.0243) < 0.001
 
 
 def test_default_region_equals_explicit_full_range(NTL9, GS6):
@@ -111,7 +118,9 @@ def test_com_mode_region(NTL9):
     for i, a in enumerate(resids):
         for b in resids[i + 1 :]:
             inv.append(1.0 / NTL9.get_inter_residue_COM_distance(a, b))
-    expected = 1.0 / np.mean(np.array(inv), axis=0)
+    # 1/Rh = (1/N^2) sum_{i != j} 1/r_ij, each unordered pair counted twice
+    n = len(resids)
+    expected = n**2 / (2.0 * np.sum(np.array(inv), axis=0))
     assert np.allclose(sub, expected, rtol=1e-6)
 
 
@@ -266,15 +275,19 @@ def _t(rg, n):
     return 2.5 * ((1.75 * (rg / (3.6 * n))) ** (4.0 / n**0.3333))
 
 
-def test_nygaard_whole_chain_unchanged(NTL9, CTL9):
-    """Values recorded with the 2.0.5 code (which used n_residues, caps included)."""
+def test_nygaard_whole_chain_pinned(NTL9, CTL9):
+    """Whole-chain Nygaard values with the C-alpha Rg and N = CA-bearing residues.
+
+    The 2.0.5 code fed the equation the all-atom Rg and a cap-inclusive N and
+    gave 19.5754 / 20.2826 (NTL9) and 27.4041 / 29.4924 (CTL9).
+    """
     rh = NTL9.get_hydrodynamic_radius(mode="nygaard")
-    assert rh[0] == pytest.approx(19.5753883803, abs=1e-6)
-    assert np.mean(rh) == pytest.approx(20.2825976567, abs=1e-6)
+    assert rh[0] == pytest.approx(19.0330240096, abs=1e-6)
+    assert np.mean(rh) == pytest.approx(19.8372458550, abs=1e-6)
 
     rh = CTL9.get_hydrodynamic_radius(mode="nygaard")
-    assert rh[0] == pytest.approx(27.4041476007, abs=1e-6)
-    assert np.mean(rh) == pytest.approx(29.4924092037, abs=1e-6)
+    assert rh[0] == pytest.approx(27.0368449377, abs=1e-6)
+    assert np.mean(rh) == pytest.approx(29.1422324741, abs=1e-6)
 
 
 def test_t_whole_chain_unchanged(NTL9, CTL9):
@@ -287,17 +300,25 @@ def test_t_whole_chain_unchanged(NTL9, CTL9):
     assert np.mean(t) == pytest.approx(0.5328514740, abs=1e-8)
 
 
+def _ca_rg(protein, resids):
+    ca = [protein.get_CA_index(r) for r in resids]
+    return 10 * md.compute_rg(protein.traj.atom_slice(ca))
+
+
 def test_nygaard_region_uses_regional_N(NTL9, CTL9):
+    """The Nygaard equation sees the C-alpha Rg and N of the region's CA-bearing residues."""
     for protein in (NTL9, CTL9):
         R1, R2 = 10, 30
-        rg = protein.get_radius_of_gyration(R1, R2)
+        resids = [r for r in protein.resid_with_CA if R1 <= r <= R2]
         rh = protein.get_hydrodynamic_radius(R1=R1, R2=R2, mode="nygaard")
-        assert np.allclose(rh, _nygaard(rg, R2 - R1 + 1), rtol=1e-6)
-        # whole chain: N == n_residues (caps included)
-        rg = protein.get_radius_of_gyration()
+        assert np.allclose(
+            rh, _nygaard(_ca_rg(protein, resids), len(resids)), rtol=1e-6
+        )
+        # whole chain: N == number of CA-bearing residues (caps excluded)
+        resids = list(protein.resid_with_CA)
         assert np.allclose(
             protein.get_hydrodynamic_radius(),
-            _nygaard(rg, protein.n_residues),
+            _nygaard(_ca_rg(protein, resids), len(resids)),
             rtol=1e-6,
         )
 

@@ -242,7 +242,7 @@ class SSPRE:
         self.t_delay = float(t_delay)  # in ms - INDEPT delay
         self.R_2D = float(R_2D)  # in Hz - backbone amide transverse relaxation rate
         self.tau_c = tau_c  # in ns - effecive correlation time
-        self.W_H = W_H  # in Hz - Proton Larmor frequency in the magnet
+        self.W_H = W_H  # in rad/s - angular proton Larmor frequency in the magnet
 
         # ------------------------------------------
         # sanity checks to warn if any of the input values seem dratsically wrong. NOTE that these won't block the analysis but will
@@ -261,7 +261,7 @@ class SSPRE:
 
         if tau_c < 0.01 or tau_c > 100:
             SSWarning(
-                "WARNING: The value of tau_c (effective correlation time) is far from the normal expected value of ~5 (t_delay = %4.4e) - recal this is in units of ns"
+                "WARNING: The value of tau_c (effective correlation time) is far from the normal expected value of ~5 (tau_c = %4.4e) - recall this is in units of ns"
                 % (self.tau_c)
             )
 
@@ -306,7 +306,7 @@ class SSPRE:
         return (
             "["
             + hex(id(self))
-            + "]: SSPRE OBJ - (R_2D = %3.2f Hz, t_delay = %3.2f ms, tau_c = %3.2f ns, H1 Larmor = %3.3e Hz)"
+            + "]: SSPRE OBJ - (R_2D = %3.2f Hz, t_delay = %3.2f ms, tau_c = %3.2f ns, omega_H = %3.3e rad/s)"
             % (self.R_2D, self.t_delay, self.tau_c, self.W_H)
         )
 
@@ -394,10 +394,15 @@ class SSPRE:
             every frame the relaxation is averaged over the whole cloud (and,
             as always, over frames), so the r^-6 non-linearity is respected
             across both the conformer cloud and the ensemble. This works on
-            both all-atom and coarse-grained (CA-only) trajectories, and the
-            default ``label_*`` parameters below are calibrated against
-            DEER-PREdict. Set ``use_label=False`` to recover the classic
-            point-at-``spin_label_atom`` behaviour used by SOURSOP <= 2.0.1.
+            both all-atom and one-bead-per-residue coarse-grained
+            trajectories: on the latter every residue is a single ``CA``
+            bead, so the default ``spin_label_atom='CB'`` and
+            ``target_relaxation_atom='N'`` are automatically replaced by
+            ``'CA'`` and the cloud becomes an isotropic sphere about the
+            bead. The default ``label_*`` parameters below are calibrated
+            against DEER-PREdict. Set ``use_label=False`` to recover the
+            classic point-at-``spin_label_atom`` behaviour used by SOURSOP
+            <= 2.0.1.
 
         label_distance : float, optional
             Distance, in Angstroms, from ``spin_label_atom`` to the cloud
@@ -462,7 +467,18 @@ class SSPRE:
             A 2-tuple ``(profile, gamma)`` where ``profile`` is the PRE
             intensity ratio and ``gamma`` is the spin-label-induced amide
             proton relaxation rate (per second), each with one entry per
-            CA-containing residue (in ascending residue order).
+            CA-containing residue (in ascending residue order). In the
+            label-cloud model a residue that lacks the target atom is
+            reported as ``nan`` in both.
+
+        Raises
+        ------
+        soursop.ssexceptions.SSException
+            If ``label_steric`` is invalid, if ``label_position`` is not a
+            residue of the chain, if the anchor or target atom cannot be
+            found (the target in any residue, for the label-cloud model),
+            if ``n_label_conformers`` is less than 1, or if every label
+            conformer is sterically excluded in every frame.
 
         Example
         -------
@@ -636,10 +652,28 @@ class SSPRE:
         Raises
         ------
         soursop.ssexceptions.SSException
-            If the anchor atom cannot be found on the labelled residue.
+            If the anchor atom cannot be found on the labelled residue, if
+            the target atom exists in no residue, if ``n_label_conformers``
+            is less than 1, or if every conformer is sterically excluded in
+            every frame.
         """
 
         label_distance_nm = label_distance / 10.0
+
+        if int(n_label_conformers) < 1:
+            raise SSException(
+                f"n_label_conformers must be at least 1, got {n_label_conformers}"
+            )
+
+        # A one-bead-per-residue chain has a single 'CA' bead per residue, so
+        # the all-atom defaults (CB anchor, backbone N target) cannot be
+        # selected. Fall back to the bead for both; the cloud is then an
+        # isotropic sphere about the bead, as documented.
+        if self.SSPO.is_coarse_grained:
+            if spin_label_atom == "CB":
+                spin_label_atom = "CA"
+            if target_relaxation_atom == "N":
+                target_relaxation_atom = "CA"
 
         # anchor atom the label cloud hangs off (CB for AA, CA for CG)
         anchor_xyz = self.__get_atom_xyz_nm(label_position, spin_label_atom)
@@ -668,6 +702,14 @@ class SSPRE:
         target_xyz = {}
         for idx in residue_list:
             target_xyz[idx] = self.__get_atom_xyz_nm(idx, target_relaxation_atom)
+
+        # a target atom that exists in no residue is a mistyped name, not a
+        # profile of NaNs (the point model raises for the same input)
+        if all(t is None for t in target_xyz.values()):
+            raise SSException(
+                f"Unable to find the target relaxation atom [{target_relaxation_atom}] "
+                "in any residue for the label-cloud model."
+            )
 
         # Steric exclusion is always applied: gather CA coordinates of all
         # residues except the labelled one (stacked into (n_frames, n_ca, 3))
@@ -747,9 +789,21 @@ class SSPRE:
                     np.sum(weights * (self.PREFACTOR / np.power(d, 6))) / frame_weight
                 )
 
+        # every conformer sterically excluded in every frame: the label has
+        # nowhere to sit, so there is no profile to report rather than a
+        # silent row of NaNs
+        if frame_count == 0:
+            raise SSException(
+                "Every label-cloud conformer was sterically excluded in every frame "
+                f"(label_bead_radius={label_bead_radius} A, label_steric='{label_steric}'). "
+                "Reduce label_bead_radius or check the label position."
+            )
+
+        # residues that lack the target atom (e.g. a proline asked for 'H')
+        # are reported as NaN, as documented
         gamma = []
         for idx in residue_list:
-            if frame_count == 0 or target_xyz[idx] is None:
+            if target_xyz[idx] is None:
                 gamma.append(np.nan)
             else:
                 gamma.append(relax_sum[idx] / frame_count)

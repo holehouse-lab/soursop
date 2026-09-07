@@ -4,6 +4,7 @@ Unit and regression test for the soursop package.
 
 # Import package, test suite, and other packages as needed
 import hashlib
+import numpy as np
 import sys
 
 
@@ -23,13 +24,17 @@ def test_validate_tests(GS6_CO, NTL9_CO):
 
     """
 
+    # hash the raw coordinate bytes: str(xyz) is numpy's abbreviated repr
+    # ("..." in the middle) so it only covered the edge elements
+    assert GS6_CO.traj.xyz.dtype == np.float32
     assert (
-        hashlib.sha1(str(GS6_CO.traj.xyz).encode("utf-8")).hexdigest()
-        == "4d72177296bad848aa52a8fdc31f6ac4c6f0161d"
+        hashlib.sha1(GS6_CO.traj.xyz.tobytes()).hexdigest()
+        == "e61f53437321e9a91cf10ed60e0abcc378188c2d"
     )
+    assert NTL9_CO.traj.xyz.dtype == np.float32
     assert (
-        hashlib.sha1(str(NTL9_CO.traj.xyz).encode("utf-8")).hexdigest()
-        == "fa3214bfa20c767c7463b4f787057a2ab7f44361"
+        hashlib.sha1(NTL9_CO.traj.xyz.tobytes()).hexdigest()
+        == "a4b40d7ed6ecfd2243d728a71c026f04463765ab"
     )
 
 
