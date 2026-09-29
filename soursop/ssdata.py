@@ -80,6 +80,64 @@ ONE_TO_THREE = {
     ")": "FOR",
 }
 
+# Force-field specific residue names that denote a protonation state, tautomer
+# or disulfide state of one of the standard residues (AMBER HIE/HID/HIP, ASH,
+# GLH, LYN, CYX, CYM; CHARMM HSD/HSE/HSP; the NMA/NAC spellings of the NME cap).
+# These are folded onto the canonical three-letter name wherever SOURSOP needs
+# a residue *type* rather than the force-field label - notably when building the
+# one-letter sequence, which previously raised a bare KeyError on any of them.
+RESIDUE_NAME_ALIASES = {
+    "HIE": "HIS",
+    "HID": "HIS",
+    "HIP": "HIS",
+    "HSD": "HIS",
+    "HSE": "HIS",
+    "HSP": "HIS",
+    "ASH": "ASP",
+    "GLH": "GLU",
+    "LYD": "LYS",
+    "LYN": "LYS",
+    "CYX": "CYS",
+    "CYM": "CYS",
+    "NAC": "NME",
+    "NMA": "NME",
+}
+
+
+def normalize_residue_name(name):
+    """Fold a force-field specific residue name onto its canonical name.
+
+    Molecular dynamics force fields encode protonation, tautomer and
+    disulfide states in the residue name (``HIE``/``HID``/``HIP`` for
+    histidine, ``ASH`` for protonated aspartate, ``CYX`` for a disulfide
+    cysteine, and so on). For anything that cares about the residue *type*
+    - the one-letter sequence, the excluded-volume reference tables, the
+    default sidechain vectors - these should all be treated as the parent
+    residue. This function maps every name in :data:`RESIDUE_NAME_ALIASES`
+    onto its canonical three-letter code and returns any other name
+    unchanged, so it is safe to call on every residue.
+
+    Parameters
+    ----------
+    name : str
+        A residue name as it appears in the topology.
+
+    Returns
+    -------
+    str
+        The canonical three-letter name if ``name`` is a known alias,
+        otherwise ``name`` itself.
+
+    Example
+    -------
+    >>> normalize_residue_name('HIE')
+    'HIS'
+    >>> normalize_residue_name('ALA')
+    'ALA'
+    """
+    return RESIDUE_NAME_ALIASES.get(name, name)
+
+
 DEFAULT_SIDECHAIN_VECTOR_ATOMS = {
     "ALA": "CB",
     "CYS": "SG",
@@ -93,9 +151,15 @@ DEFAULT_SIDECHAIN_VECTOR_ATOMS = {
     "HID": "NE2",
     "HIE": "NE2",
     "HIP": "NE2",
+    "HSD": "NE2",
+    "HSE": "NE2",
+    "HSP": "NE2",
     "ILE": "CD1",
     "LYS": "NZ",
     "LYD": "NZ",
+    "LYN": "NZ",
+    "CYX": "SG",
+    "CYM": "SG",
     "KAC": "NZ",
     "KM1": "NZ",
     "KM2": "NZ",
@@ -134,10 +198,16 @@ ALL_VALID_RESIDUE_NAMES = [
     "HIS",
     "HID",
     "HIP",
+    "HSD",
+    "HSE",
+    "HSP",
+    "CYX",
+    "CYM",
     "ILE",
     "LEU",
     "LYS",
     "LYD",
+    "LYN",
     "MET",
     "ASN",
     "PRO",

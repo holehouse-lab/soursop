@@ -11,9 +11,10 @@ reweighting, maximum-entropy / experimentally-restrained reweighting,
 or simple importance reweighting — each frame should instead contribute
 according to a **statistical weight**.
 
-Every SOURSOP function that returns an *ensemble-average value* therefore
-accepts an optional ``weights`` keyword: a per-frame vector that defines
-how much each frame contributes to the average. The default,
+SOURSOP functions that return an *ensemble-average value* therefore
+accept an optional ``weights`` keyword: a per-frame vector that defines
+how much each frame contributes to the average (the few exceptions are
+listed under `What can be reweighted`_ below). The default,
 ``weights=False``, is an exact no-op and reproduces the original
 unweighted behaviour bit-for-bit.
 
@@ -54,17 +55,19 @@ These conditions are enforced centrally by
 ``SSException`` is raised with a descriptive message, rather than
 silently producing a meaningless number.
 
-Most reweighting-capable methods also expose an ``etol`` keyword so the
+Every reweighting-capable method also exposes an ``etol`` keyword so the
 sum-to-one tolerance can be tightened or relaxed.
 
 Interaction with ``stride``
 ----------------------------
 
 When a method is called with both a frame ``stride`` and ``weights``,
-the weight vector is first subsampled (``weights[::stride]``) and then
-**renormalised** so it still sums to ``1`` over the retained frames. A
-warning is emitted because per-stride reweighting is rarely what you
-want unless the weights were computed for exactly those frames.
+the full weight vector is first validated (including the sum-to-one
+check), then subsampled (``weights[::stride]``) and **renormalised** so
+it still sums to ``1`` over the retained frames. A
+:class:`~soursop.ssexceptions.SoursopWarning` is emitted because
+per-stride reweighting is rarely what you want unless the weights were
+computed for exactly those frames.
 
 The deterministic helpers
 ----------------------------
@@ -128,7 +131,13 @@ Behaviour at the extremes
   value.
 * **Invalid weights** (wrong length, an element outside ``[0, 1]``, a
   non-finite element, or a sum that differs from ``1`` by more than
-  ``etol``) raise an ``SSException``.
+  ``etol``, checked before any stride is applied) raise an
+  ``SSException``.
+* **Degenerate weights** for correlations: a weighted correlation needs
+  at least two frames with non-zero weight, so a one-hot weight vector
+  passed to ``get_end_to_end_vs_rg_correlation`` or
+  ``get_local_to_global_correlation`` raises rather than returning
+  ``nan``.
 
 What can be reweighted
 ----------------------------
@@ -138,21 +147,34 @@ Any method that collapses the trajectory to an ensemble value accepts
 (``get_radius_of_gyration``, ``get_hydrodynamic_radius``,
 ``get_asphericity``, ``get_end_to_end_distance``,
 ``get_gyration_tensor``), the per-frame getters' ensemble means, the
-distance/contact maps, ``get_Q``, the polymer-scaling observables
-(``get_internal_scaling``, ``get_internal_scaling_RMS``,
+distance/contact maps, ``get_Q`` (with ``protein_average=False``; the
+per-frame protein average is not collapsed), the polymer-scaling observables
+(``get_internal_scaling`` with ``mean_vals=True``, ``get_internal_scaling_RMS``,
 ``get_scaling_exponent``, ``get_local_to_global_correlation``), the
 SASA summaries (``get_all_SASA``, ``get_site_accessibility``,
-``get_regional_SASA``), ``get_angle_decay``, ``get_local_collapse``,
-``get_end_to_end_vs_rg_correlation``, the dihedral mutual information,
-and the ``SSTrajectory`` overall/inter-chain observables.
+``get_regional_SASA``), ``get_angle_decay``, ``get_local_collapse`` (whose
+weighted histograms are reported in effective frame counts, so uniform
+weights reproduce the unweighted counts), ``get_end_to_end_vs_rg_correlation``,
+``get_secondary_structure_DSSP`` (per-residue fractions), the dihedral mutual
+information, and the ``SSTrajectory`` overall observables
+(``get_overall_radius_of_gyration`` etc.) and
+``get_interchain_distance_map``. ``get_interchain_contact_map`` and
+``get_interchain_distance`` do not take weights.
 
-A small number of routines describe a *distribution* or a *pairwise
-frame-vs-frame* quantity rather than a single ensemble average — for
-example ``get_internal_scaling(mean_vals=False)`` and
-``get_local_heterogeneity``. A single per-frame probability vector is
-not well-defined for those, so they raise an ``SSException`` if
-``weights`` is supplied (instead of silently returning a questionable
-number).
+A small number of routines describe a *distribution*, a *per-frame*
+quantity or a *pairwise frame-vs-frame* quantity rather than a single
+ensemble average: ``get_internal_scaling(mean_vals=False)``,
+``get_local_heterogeneity``, ``get_Q(protein_average=True)`` and
+``get_secondary_structure_DSSP(return_per_frame=True)``. A single
+per-frame probability vector is not well-defined for those, so they raise
+an ``SSException`` if ``weights`` is supplied (instead of silently
+returning a questionable number).
+
+Wherever a standard deviation accompanies a weighted average
+(``get_distance_map``, ``get_interchain_distance_map``,
+``get_local_collapse``, ``get_site_accessibility``) it is the weighted
+population standard deviation (:func:`~soursop.ssutils.weighted_std`).
+Every method that takes ``weights`` also takes ``etol``.
 
 API reference
 ----------------------------
@@ -177,5 +199,6 @@ that both expose an identical interface.
 .. autofunction:: soursop.ssutils.relative_entropy
 .. autofunction:: soursop.ssutils.weighted_linear_regression
 .. autofunction:: soursop.ssutils.find_optimal_theta
+.. autofunction:: soursop.ssutils.build_scan_grid
 .. autofunction:: soursop.ssutils.validate_reweighting_inputs
 .. autofunction:: soursop.ssutils.constraint_chi_squared

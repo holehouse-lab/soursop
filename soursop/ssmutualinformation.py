@@ -19,11 +19,12 @@ including this function in any one other class.
 
 import numpy as np
 from .ssexceptions import SSException
+from .ssutils import validate_weights
 
 
 # ........................................................................
 #
-def calc_MI(X, Y, bins, weights=False, normalize=False):
+def calc_MI(X, Y, bins, weights=False, normalize=False, etol=0.0000001):
     """Mutual information :math:`I(X; Y)` between two observables.
 
     Computed from histogram-based estimates of :math:`p(X)`, :math:`p(Y)`,
@@ -49,13 +50,17 @@ def calc_MI(X, Y, bins, weights=False, normalize=False):
         Bin edges, monotonically increasing, that cover both ``X`` and
         ``Y``. The same edges are reused for the 1D and 2D histograms.
     weights : array_like or False, optional
-        Per-sample weights. If provided, ``len(weights) == len(X)`` is
-        required and the weights are forwarded to the underlying
-        ``np.histogram*`` calls. Default ``False`` (uniform).
+        Per-sample weights following the package-wide weights contract
+        (one per sample, each in ``[0, 1]``, finite, summing to 1 within
+        ``etol``), validated by :func:`soursop.ssutils.validate_weights`
+        and forwarded to the underlying ``np.histogram*`` calls. Default
+        ``False`` (uniform).
     normalize : bool, optional
         If True, divide ``I`` by the joint entropy ``H(X, Y)`` to return
-        NMI in ``[0, 1]``. NaN values (e.g. from ``H(X,Y) == 0``) are
-        coerced to 0. Default False.
+        NMI in ``[0, 1]``. When ``H(X, Y) == 0`` (both variables constant)
+        NMI is defined as 0. Default False.
+    etol : float, optional
+        Tolerance on ``|sum(weights) - 1|``. Default ``1e-7``.
 
     Returns
     -------
@@ -66,8 +71,11 @@ def calc_MI(X, Y, bins, weights=False, normalize=False):
     Raises
     ------
     SSException
-        If ``X`` and ``Y`` differ in length, or ``bins`` does not cover
-        the full data range of both.
+        If ``X`` and ``Y`` differ in length or contain non-finite values,
+        if ``bins`` does not cover the full data range of both, or if
+        ``weights`` fails validation (see above). Previously NaN data slipped
+        past the range check and gave a spurious MI, and invalid weights
+        gave ``nan`` (silently turned into 0 by ``normalize=True``).
 
     Example
     -------
@@ -76,15 +84,30 @@ def calc_MI(X, Y, bins, weights=False, normalize=False):
     >>> rng = np.random.default_rng(0)
     >>> X = rng.uniform(-1, 1, 1000)
     >>> Y = X + 0.05 * rng.standard_normal(1000)
-    >>> bins = np.arange(-1.01, 1.02, 0.1)
-    >>> calc_MI(X, Y, bins)              # strong dependence
-    2.18
-    >>> calc_MI(X, rng.uniform(-1, 1, 1000), bins)  # ~independent
-    0.05
+    >>> # bins must span both X and Y (the noise pushes Y just past +-1)
+    >>> bins = np.linspace(-1.5, 1.5, 31)
+    >>> round(calc_MI(X, Y, bins), 2)              # strong dependence
+    2.1
+    >>> round(calc_MI(X, rng.uniform(-1, 1, 1000), bins), 2)  # ~independent
+    0.18
     """
+
+    X = np.asarray(X, dtype=np.float64).ravel()
+    Y = np.asarray(Y, dtype=np.float64).ravel()
+    bins = np.asarray(bins, dtype=np.float64)
 
     if len(X) != len(Y):
         raise SSException("Error: X and Y vectors must be the same length")
+
+    # np.min/np.max of NaN data are NaN, which made both range checks below
+    # False; np.histogram then dropped the NaN samples from some histograms
+    # but not others, so the marginals no longer matched the joint
+    if not (np.all(np.isfinite(X)) and np.all(np.isfinite(Y))):
+        raise SSException("Error: X and Y must contain only finite values")
+
+    # the same weights contract as everywhere else in SOURSOP (previously
+    # invalid weights gave nan, which normalize=True silently turned into 0)
+    weights = validate_weights(weights, len(X), stride=1, etol=etol)
 
     if np.min(bins) > np.min(X) or np.min(bins) > np.min(Y):
         raise SSException(
@@ -96,12 +119,14 @@ def calc_MI(X, Y, bins, weights=False, normalize=False):
             f"Error: Bins passed to calc_MI in ssmutualinformation() do not straddle the full data range. Bin max {np.max(bins)} is smaller than one/both of data maxima: X={np.max(X)}, Y={np.max(Y)}"
         )
 
+    # the edges are given once per axis to histogram2d: a bare length-2 edge
+    # array would otherwise be read as [nx, ny] bin counts
     if weights is not False and weights is not None:
-        c_XY = np.histogram2d(X, Y, bins, weights=weights)[0]
+        c_XY = np.histogram2d(X, Y, [bins, bins], weights=weights)[0]
         c_X = np.histogram(X, bins, weights=weights)[0]
         c_Y = np.histogram(Y, bins, weights=weights)[0]
     else:
-        c_XY = np.histogram2d(X, Y, bins)[0]
+        c_XY = np.histogram2d(X, Y, [bins, bins])[0]
         c_X = np.histogram(X, bins)[0]
         c_Y = np.histogram(Y, bins)[0]
 
@@ -112,15 +137,11 @@ def calc_MI(X, Y, bins, weights=False, normalize=False):
     MI = H_X + H_Y - H_XY
 
     if normalize:
-        # Uncomment to *locally* suppress numpy divide by zero runtime warning.
-        # This will be cleaned up before returning nmi.
-        # with np.errstate(invalid='ignore'):
-        nmi = MI / H_XY
-        # aforementioned cleanup
-        if np.isnan(nmi):
-            # print(f"Normalization led to {np.nan} - replacing with 0.")
-            nmi = 0
-        return nmi
+        # NMI is defined as 0 when the joint entropy is zero (both variables
+        # constant); only that case is coerced, so any other NaN still shows
+        if H_XY == 0:
+            return 0.0
+        return MI / H_XY
     else:
         return MI
 
@@ -153,12 +174,14 @@ def shan_entropy(c):
     -------
     >>> import numpy as np
     >>> from soursop.ssmutualinformation import shan_entropy
-    >>> shan_entropy(np.array([1, 1, 1, 1]))     # uniform 4-bin
+    >>> round(float(shan_entropy(np.array([1, 1, 1, 1]))), 3)   # uniform 4-bin
     1.386
-    >>> shan_entropy(np.array([1, 0, 0, 0]))     # peaked
-    0.0
+    >>> float(shan_entropy(np.array([1, 0, 0, 0])))             # peaked
+    -0.0
     """
-    # normalize such that all elements sum up to 1
+    # normalize such that all elements sum up to 1 (accepting any array_like,
+    # e.g. a plain list, as documented)
+    c = np.asarray(c, dtype=np.float64)
     c_normalized = c / float(np.sum(c))
 
     # now convert into a single vector of non-zero elements
@@ -166,5 +189,5 @@ def shan_entropy(c):
 
     # compute the entropy associated with this vector. The more
     # evenly distributed the greater the entropy
-    H = -sum(c_normalized * np.log(c_normalized))
+    H = -np.sum(c_normalized * np.log(c_normalized))
     return H

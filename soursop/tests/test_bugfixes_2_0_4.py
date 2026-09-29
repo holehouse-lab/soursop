@@ -202,13 +202,15 @@ def test_bbseg_capped_matches_positional_pairing(CTL9):
 
 
 def test_bbseg_subregion(NTL9):
-    """R1/R2 selection still trims to the residues with both dihedrals."""
+    """R1/R2 selection returns exactly the residues of the region with both dihedrals."""
     resids, per_class = NTL9.get_secondary_structure_BBSEG(R1=10, R2=20)
 
     assert len(resids) == len(per_class[1])
-    # the sub-selection is itself uncapped, so it loses its own two termini
-    assert resids[0] == 11
-    assert resids[-1] == 19
+    # the dihedrals come from the whole chain, so the interior residues 10 and
+    # 20 keep their phi / psi (up to 2.0.5 the region was sliced first and lost
+    # both boundary residues)
+    assert resids[0] == 10
+    assert resids[-1] == 20
 
 
 def test_bbseg_weights_uniform_matches_unweighted(NTL9):
@@ -245,8 +247,13 @@ def test_bbseg_weights_rejected_with_per_frame(NTL9):
 
 def test_bbseg_too_short_region_raises(NTL9):
     """A region with no residue carrying both dihedrals raises clearly."""
+    # the N-terminal residue of an uncapped chain has no phi
     with pytest.raises(SSException):
-        NTL9.get_secondary_structure_BBSEG(R1=10, R2=11)
+        NTL9.get_secondary_structure_BBSEG(R1=0, R2=0)
+    # two interior residues are fine (they used to raise, because slicing the
+    # topology to the region removed the dihedrals' neighbouring atoms)
+    resids, _ = NTL9.get_secondary_structure_BBSEG(R1=10, R2=11)
+    assert resids == [10, 11]
 
 
 def test_local_heterogeneity_uses_every_exact_size_window(NTL9, monkeypatch):

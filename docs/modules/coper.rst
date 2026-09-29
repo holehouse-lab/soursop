@@ -7,7 +7,7 @@ Overview
 
 ``sscoper`` provides **COPER** (Convex Optimization for Ensemble Reweighting; Leung *et al.*, 2016) and its iterative variant **iCOPER** for reweighting conformational ensembles against experimental observables. Like :doc:`bme`, it computes a new set of frame *weights* that brings the ensemble averages into agreement with experiment while perturbing the prior ensemble as little as possible, and the resulting weight vector plugs straight into the consistent SOURSOP reweighting system — every ensemble-average observable accepts a ``weights=`` argument (see :doc:`../usage/weights`).
 
-COPER and BME answer the same question but pose it differently. BME minimises a *penalty* (``½χ² + θ·D_KL``) with a tunable regularisation :math:`\theta`; COPER instead solves a *hard-constrained* problem — maximise the ensemble entropy **subject to** :math:`\chi^2 \le 1` — with no free parameter beyond the χ² limit itself. See `COPER vs BME`_ below.
+COPER and BME answer the same question but pose it differently. BME minimises a *penalty* (``½·Σ_k((⟨F_k⟩ − F_k^exp)/σ_k)² + θ·D_KL``, i.e. ``(M/2)·χ² + θ·D_KL`` with the reduced χ² defined below) with a tunable regularisation :math:`\theta`; COPER instead solves a *hard-constrained* problem — maximise the ensemble entropy **subject to** :math:`\chi^2 \le 1` — with no free parameter beyond the χ² limit itself. See `COPER vs BME`_ below.
 
 The module is self-contained (NumPy + SciPy only). Its user-facing API is deliberately analogous to :doc:`bme`, so the same code patterns work for both:
 
@@ -36,10 +36,10 @@ COPER seeks the weights that **maximise the entropy** (stay as close as possible
    \qquad\text{subject to}\qquad
    \chi^2(w) \le 1,\;\; w_i \ge 0,\;\; \textstyle\sum_i w_i = 1 .
 
-(SOURSOP generalises :math:`S` to the relative entropy :math:`-D_{\mathrm{KL}}(w\|w^0)` so a non-uniform prior is supported; for the usual uniform prior the two differ only by the constant :math:`\ln N`.) Because the entropy is concave and the χ² and simplex constraints are convex, this is a **convex optimisation problem with a unique global solution**, solved here as a *primal* problem over the :math:`N` weights with SciPy's ``trust-constr`` interior-point method, following the two-step recipe of the paper:
+(SOURSOP generalises :math:`S` to the relative entropy :math:`-D_{\mathrm{KL}}(w\|w^0)` so a non-uniform prior is supported; for the usual uniform prior the two differ only by the constant :math:`\ln N`. Frames with a prior weight of exactly zero cannot take any weight under a finite relative entropy, so they are excluded from the optimisation and pinned at weight 0 in the result, with the remaining frames renormalised; ``result.metadata['n_zero_prior_frames']`` records how many were excluded.) Because the entropy is concave and the χ² and simplex constraints are convex, this is a **convex optimisation problem with a unique global solution**, solved here as a *primal* problem over the :math:`N` weights with SciPy's ``trust-constr`` interior-point method, following the two-step recipe of the paper:
 
-#. **χ² minimisation / feasibility.** Minimise :math:`\chi^2(w)` over the simplex. If the minimum satisfies :math:`\chi^2 \le 1`, that point is a feasible interior point for step 2; **if not, the problem has no solution** — no reweighting of the prior ensemble can reproduce the data, a diagnostic in its own right.
-#. **Entropy maximisation.** Maximise the entropy subject to :math:`\chi^2 \le 1`. SOURSOP starts this step from the uniform prior — the unconstrained entropy maximum — and tightens toward the constraint, which is better conditioned than starting from the (low-entropy) step-1 point; the problem is convex, so the optimum is the same either way.
+#. **χ² minimisation / feasibility.** Minimise :math:`\chi^2(w)` over the simplex. If the minimum satisfies :math:`\chi^2 \le 1`, the problem is feasible; **if not, the problem has no solution** — no reweighting of the prior ensemble can reproduce the data, a diagnostic in its own right. Because SOURSOP solves this step through a softmax reparameterisation (which can stall on a face of the simplex for large or multi-group problems), infeasibility is only declared outright when a Frank–Wolfe lower bound on the convex objective certifies it (``result.metadata['infeasibility_certified']``); otherwise step 2 is run anyway and the problem is feasible if it finds a point inside the limit. With several observable groups (see below) the summed :math:`\sum_\alpha \chi^2_\alpha` is minimised first; because that sum can prefer to over-fit one group while another still sits above the limit even when a point satisfying every group exists, a point that fails the per-group check is followed by a second minimisation of the total squared violation :math:`\sum_\alpha \max(\chi^2_\alpha - \text{limit}, 0)^2`, whose zero set is exactly the feasible region. ``result.metadata['feasibility_check']`` records which of the two settled the verdict.
+#. **Entropy maximisation.** Maximise the entropy subject to :math:`\chi^2 \le 1`. SOURSOP starts this step from the prior (uniform unless you supplied one) — the unconstrained entropy maximum — and tightens toward the constraint, which is better conditioned than starting from the (low-entropy) step-1 point; the problem is convex, so the optimum is the same either way. If the prior already satisfies every limit it *is* the solution and is returned unchanged.
 
 The χ² limit need not be exactly 1: scaling it is equivalent to scaling the experimental uncertainties (the paper varies it over ~0.25–4). Tightening it fits the data harder at the cost of ensemble diversity.
 
@@ -47,9 +47,9 @@ Two derived quantities are central to interpreting a COPER fit. The **entropy re
 
 .. math::
 
-   \Delta S = S(w) - S(w^0) = -D_{\mathrm{KL}}(w\|w^0) \le 0
+   \Delta S = S(w) - S(w^0) = -D_{\mathrm{KL}}(w\|w^0) \le 0 \qquad\text{(uniform prior)}
 
-measures the *information content* of the experimental data relative to the prior: a large :math:`|\Delta S|` means the data force a big change. It equals (in magnitude) the mean free-energy change :math:`\langle\Delta G\rangle / kT` needed to reconcile model and experiment. The per-frame **reweighting factor** :math:`r_i = w_i / w_i^{0}` (with :math:`\Delta G_i = -kT\ln r_i`) shows which conformations are up- or down-weighted. As in BME, the fraction of effective frames :math:`\phi = \exp(-D_{\mathrm{KL}}) \in (0,1]` summarises how much diversity survived.
+measures the *information content* of the experimental data relative to the prior: a large :math:`|\Delta S|` means the data force a big change. It equals (in magnitude) the mean free-energy change :math:`\langle\Delta G\rangle / kT` needed to reconcile model and experiment, which SOURSOP reports as the non-negative ``mean_delta_G_kT`` :math:`= D_{\mathrm{KL}}(w\|w^0)`. For a non-uniform prior ``delta_S`` is still the plain Shannon-entropy change and can take either sign, so use ``mean_delta_G_kT`` (or ``kl_divergence``) as the information content. The per-frame **reweighting factor** :math:`r_i = w_i / w_i^{0}` shows which conformations are up- (:math:`r_i > 1`) or down-weighted (:math:`r_i < 1`); the corresponding per-frame free-energy change is :math:`\Delta G_i = -kT\ln r_i`, whose average over the *prior* ensemble is :math:`+D_{\mathrm{KL}}(w^0\|w)` and over the reweighted ensemble is :math:`-D_{\mathrm{KL}}(w\|w^0)` (``mean_delta_G_kT`` reports the magnitude of the latter). As in BME, the fraction of effective frames :math:`\phi = \exp(-D_{\mathrm{KL}}) \in (0,1]` summarises how much diversity survived.
 
 
 How COPER solves this (and why it scales)
@@ -163,27 +163,30 @@ COPER
 
 Constraints (``"equality"`` / ``"upper"`` / ``"lower"``) behave exactly as in :doc:`bme`: an ``upper`` / ``lower`` bound only penalises the disallowed side, so an already-satisfied bound leaves the ensemble essentially untouched.
 
-**Feasibility.** Unlike BME, COPER can report that the data are *infeasible*: if the smallest achievable χ² already exceeds the limit, ``result.feasible`` is ``False``, ``result.success`` is ``False``, and ``result.weights`` hold the closest the prior ensemble can come (the χ²-minimiser). This is a genuine result — it says the data cannot be reproduced by reweighting alone (a sampling or force-field problem) — so always check ``result.feasible`` before using the weights.
+**Feasibility.** Unlike BME, COPER can report that the data are *infeasible*: if the smallest achievable χ² already exceeds the limit, ``result.feasible`` is ``False``, ``result.success`` is ``False``, and ``result.weights`` hold the closest the prior ensemble can come (the point with the smallest max-over-groups χ² found). This is a genuine result — it says the data cannot be reproduced by reweighting alone (a sampling or force-field problem) — so always check ``result.feasible`` before using the weights.
 
 **Per-data-type χ².** When you fit several kinds of data at once (e.g. RDCs and J-couplings, as in the paper), a single pooled χ² can let one data type dominate. Assign each observable a ``group`` label and COPER imposes a *separate* :math:`\chi^2_\alpha \le \text{limit}` for every group::
 
+    # calc_rdc_j has one column per observable: (n_frames, 3)
     obs = [
         ExperimentalObservable(-5.1, 0.4, name="RDC1", group="RDC"),
         ExperimentalObservable( 2.3, 0.4, name="RDC2", group="RDC"),
         ExperimentalObservable( 6.0, 0.5, name="J1",   group="Jcoupling"),
     ]
-    result = COPER(obs, calc).fit(chi2_limit=1.0)
+    result = COPER(obs, calc_rdc_j).fit(chi2_limit=1.0)
 
-Observables without a ``group`` are pooled into one default group.
+Observables without a ``group`` are pooled into one default group (labelled ``"all"``, so that name cannot also be used for a user group).
 
 
 iCOPER — iterative COPER
 ----------------------------
 
-For data with an **unknown global scale and/or offset** (the canonical case being SAXS, where the calculated intensity curve has an arbitrary scale and a flat background), :class:`~soursop.sscoper.iCOPER` alternates two steps until χ² stabilises, exactly as :class:`soursop.ssbme.iBME` does for BME:
+For data with an **unknown global scale and/or offset** (the canonical case being SAXS, where the calculated intensity curve has an arbitrary scale and a flat background), :class:`~soursop.sscoper.iCOPER` alternates two steps, as :class:`soursop.ssbme.iBME` does for BME:
 
 #. a (by default :math:`1/\sigma^2`-weighted) linear regression of the ensemble-averaged calculated values against the experimental values, giving a scale :math:`\alpha` and offset :math:`\beta`, after which ``calc → α·calc + β``; then
 #. a standard COPER step on the rescaled data.
+
+Unlike iBME, convergence cannot be judged on χ², because COPER pins χ² at the limit whenever the constraint binds. iCOPER instead stops when the scale/offset update itself becomes negligible (:math:`|\alpha - 1|` < ``ftol`` and :math:`|\beta|` < ``ftol`` times the spread of the experimental values), i.e. when the weights and the scale/offset are self-consistent. A run that reaches ``max_icoper_iterations`` without converging is marked ``success=False`` with a warning.
 
 The returned :class:`~soursop.sscoper.COPERResult` reports the **net** ``scale`` and ``offset`` relative to the original input plus a per-iteration log (``icoper_iterations``)::
 
@@ -236,7 +239,7 @@ Both methods produce the least-biased (maximum-entropy) reweighting consistent w
      - **BME** (:doc:`bme`)
      - **COPER** (this page)
    * - Formulation
-     - Penalty: minimise :math:`\tfrac12\chi^2 + \theta\,D_{\mathrm{KL}}`
+     - Penalty: minimise :math:`\tfrac{M}{2}\chi^2 + \theta\,D_{\mathrm{KL}}` (reduced :math:`\chi^2`)
      - Hard constraint: maximise :math:`S` s.t. :math:`\chi^2 \le 1`
    * - Free parameter
      - :math:`\theta` (regularisation)
@@ -254,7 +257,7 @@ Both methods produce the least-biased (maximum-entropy) reweighting consistent w
 
 For most ensembles either method gives similar weights. The difference is computational: BME optimises the :math:`M`-dimensional *dual* problem (one Lagrange multiplier per experimental observable) and recovers the weights afterwards, which is cheaper when there are many frames but few observables (:math:`M \ll N`); COPER optimises the :math:`N` weights directly, but its explicit χ² constraint and feasibility test make the "can these data be fit at all?" question direct.
 
-**Scaling note.** The faithful primal optimisation here uses ``trust-constr`` over the :math:`N` weights; it is convex and fast for ensembles up to ~10\ :sup:`3`–10\ :sup:`4` frames. The original paper used IPOPT and reached ~10\ :sup:`5`; for very large ensembles, cluster or subsample the trajectory before reweighting.
+**Scaling note.** The primal optimisation here uses ``trust-constr`` over the :math:`N` weights with matrix-free Hessians, so memory stays :math:`O(N)`; binding fits of ~10\ :sup:`5` frames take seconds to tens of seconds. When the feasibility step cannot certify infeasibility on a large ensemble, the entropy step is also run, which roughly doubles the cost of that fit.
 
 
 Key references

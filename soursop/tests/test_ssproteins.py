@@ -103,7 +103,12 @@ def test_code_coverage(NTL9_CP):
     a = NTL9_CP.get_Q()
     a = NTL9_CP.get_Q(stride=2)
     a = NTL9_CP.get_Q(stride=2, protein_average=False)
-    a = NTL9_CP.get_Q(stride=2, protein_average=False, region=[10, 20])
+    a = NTL9_CP.get_Q(stride=2, protein_average=False, region=[0, 40])
+    # residues 10-20 of frame 0 make no contacts more than three residues
+    # apart, so Q is undefined there and (since 2.0.6) raises rather than
+    # returning NaN
+    with pytest.raises(SSException):
+        NTL9_CP.get_Q(stride=2, protein_average=False, region=[10, 20])
 
     a = NTL9_CP.get_contact_map()
     a = NTL9_CP.get_contact_map(distance_thresh=2)
@@ -175,7 +180,8 @@ def test_get_t(GS6_CP):
 
     assert len(GS6_CP.get_t()) == 5
     assert abs(GS6_CP.get_t()[0] - 0.30286034750848245) < 0.0001
-    assert abs(GS6_CP.get_t(R1=1, R2=3)[0] - 0.0766270900235029) < 0.0001
+    # sub-region t uses the regional residue count (R2 - R1 + 1) since 2.0.6
+    assert abs(GS6_CP.get_t(R1=1, R2=3)[0] - 0.30239056) < 0.0001
 
 
 def test_get_internal_scaling(GS6_CP):
@@ -302,29 +308,32 @@ def test_get_hydrodynamic_radius(GS6_CO):
 
     CP = GS6_CO.proteinTrajectoryList[0]
 
-    # check nygaard mode implicit
+    # check nygaard mode implicit. Since 2.0.6 the Nygaard equation is fed
+    # the C-alpha Rg and N = number of CA-bearing residues (6 for GS6, the
+    # caps no longer count); the pre-2.0.6 values were 11.8406 / 11.3777
     rh = CP.get_hydrodynamic_radius()
-    assert abs(11.840569781179006 - rh[0]) < 0.001
-    assert abs(np.mean(rh) - 11.3777) < 0.001
+    assert abs(13.7213 - rh[0]) < 0.001
+    assert abs(np.mean(rh) - 13.8392) < 0.001
 
     # check nygaard mode explicit
     rh = CP.get_hydrodynamic_radius(mode="nygaard")
-    assert abs(11.840569781179006 - rh[0]) < 0.001
+    assert abs(13.7213 - rh[0]) < 0.001
 
-    # check kirkwood-riseman mode explicit (implicit CA)
+    # check kirkwood-riseman mode explicit (implicit CA). Since 2.0.6 the
+    # N^-2 prefactor is included (6/5 times the pre-2.0.6 5.9223 / 5.884)
     rh = CP.get_hydrodynamic_radius(mode="kr")
-    assert abs((5.9223 - rh[0])) < 0.001
-    assert abs(np.mean(rh) - 5.884) < 0.001
+    assert abs((7.1068 - rh[0])) < 0.001
+    assert abs(np.mean(rh) - 7.0608) < 0.001
 
     # check kirkwood-riseman mode explicit (explicit CA)
     rh = CP.get_hydrodynamic_radius(mode="kr", distance_mode="CA")
-    assert abs((5.9223 - rh[0])) < 0.001
-    assert abs(np.mean(rh) - 5.884) < 0.001
+    assert abs((7.1068 - rh[0])) < 0.001
+    assert abs(np.mean(rh) - 7.0608) < 0.001
 
     # check kirkwood-riseman mode explicit with COM mode
     rh = CP.get_hydrodynamic_radius(mode="kr", distance_mode="COM")
-    assert abs((5.8634 - rh[0])) < 0.001
-    assert abs(np.mean(rh) - 5.8536) < 0.001
+    assert abs((7.0361 - rh[0])) < 0.001
+    assert abs(np.mean(rh) - 7.0243) < 0.001
 
     # check it correctly raises an SSException if an invalid mode is passed
     with pytest.raises(SSException):
@@ -338,8 +347,8 @@ def test_get_molecular_volume(NTL9_CO):
     CP = NTL9_CO.proteinTrajectoryList[0]
     mol_vol = CP.get_molecular_volume()
     assert len(mol_vol) == 10
-    assert mol_vol[0] - 20839.78797511 < 0.0000001
-    assert np.mean(mol_vol) - 24064.633461433674 < 0.0000001
+    assert abs(mol_vol[0] - 20839.78797511) < 0.0000001
+    assert abs(np.mean(mol_vol) - 24064.633461433674) < 0.0000001
 
 
 # ====
@@ -435,7 +444,7 @@ def test_check_weights_valid_uniform_weights_length(GS6_CP, NTL9_CP):
 
 def test_check_weights_valid_uniform_weights_length_low_etol(GS6_CP, NTL9_CP):
     default_weight = 1.0
-    tolerance = np.finfo(np.longdouble).precision
+    tolerance = 1e-12
     proteins = [GS6_CP, NTL9_CP]
     for protein in proteins:
         weights = [default_weight for frame in range(protein.n_frames)]
@@ -457,7 +466,7 @@ def test_check_weights_valid_uniform_weights_length_large_etol(GS6_CP, NTL9_CP):
 
 
 def test_check_weights_valid_nonuniform_weights_length_low_etol(GS6_CP, NTL9_CP):
-    tolerance = np.finfo(np.longdouble).precision
+    tolerance = 1e-12
     proteins = [GS6_CP, NTL9_CP]
     for protein in proteins:
         weights = [w for w in range(1, protein.n_frames + 1)]
@@ -631,10 +640,15 @@ def test_get_multiple_CA_index_invalid_residue_number_list(GS6_CP, NTL9_CP):
     for protein in proteins:
         max_residue = protein.n_residues
         residue_list = list(range(max_residue + 1, max_residue + protein.n_residues))
-        atoms_with_CA = protein.get_multiple_CA_index(resID_list=residue_list)
-
-        assert isinstance(atoms_with_CA, list)
-        assert len(atoms_with_CA) == 0
+        # indices outside the chain raise (they used to be skipped silently,
+        # with the error printed to stdout); a cap without a CA is still
+        # skipped quietly
+        with pytest.raises(SSException):
+            protein.get_multiple_CA_index(resID_list=residue_list)
+        with pytest.raises(SSException):
+            protein.get_multiple_CA_index(resID_list=[-1])
+        CA = protein.get_multiple_CA_index(resID_list=list(range(protein.n_residues)))
+        assert len(CA) == len(protein.resid_with_CA)
 
 
 def test_calculate_all_CA_distances_invalid_residue_number(GS6_CP, NTL9_CP):
@@ -642,33 +656,44 @@ def test_calculate_all_CA_distances_invalid_residue_number(GS6_CP, NTL9_CP):
     for protein in proteins:
         max_residue = protein.n_residues
         for residue_index in range(max_residue + 1, max_residue + protein.n_residues):
-            index = protein.calculate_all_CA_distances(residue_index)
-
-            # Invalid indices return -1
-            assert index == -1
+            # indices outside the chain raise (they used to return -1)
+            with pytest.raises(SSException):
+                protein.calculate_all_CA_distances(residue_index)
+        # a real residue without a CA (a cap) still returns -1
+        for r in range(protein.n_residues):
+            if r not in protein.resid_with_CA:
+                assert protein.calculate_all_CA_distances(r) == -1
 
 
 # == SSProtein._SSProtein__residue_atom_index
 def test_residue_atom_index_resid_atom_name_None(GS6_CO, NTL9_CO):
     trajs = [GS6_CO, NTL9_CO]
     for traj in trajs:
-        # instantiate a new protein object since the previous reference is modified
-        # elsewhere - hence our residue count will be off.
+        # a fresh protein so the lookup table starts from the constructor state
         protein = ssprotein.SSProtein(traj)
         unavailable_residue_index = protein.n_residues + 1
-        protein.get_residue_atom_indices(unavailable_residue_index, atom_name=None)
-        assert len(protein._SSProtein__residue_atom_table) == protein.n_residues + 1
+        # an out-of-range resid raises rather than returning an empty list
+        # (and no longer leaves a bogus entry behind in the lookup table)
+        with pytest.raises(SSException):
+            protein.get_residue_atom_indices(unavailable_residue_index, atom_name=None)
+        assert len(protein._SSProtein__residue_atom_table) == protein.n_residues
+        # valid resids still resolve to every atom of the residue
+        atoms = protein.get_residue_atom_indices(1, atom_name=None)
+        assert len(atoms) == protein.topology.residue(1).n_atoms
 
 
 def test_residue_atom_index_new_resid_atom_name_CA(GS6_CO, NTL9_CO):
     trajs = [GS6_CO, NTL9_CO]
     for traj in trajs:
-        # instantiate a new protein object since the previous reference is modified
-        # elsewhere - hence our residue count will be off.
         protein = ssprotein.SSProtein(traj)
         unavailable_residue_index = protein.n_residues + 1
-        protein.get_residue_atom_indices(unavailable_residue_index, atom_name="CA")
-        assert len(protein._SSProtein__residue_atom_table) == protein.n_residues + 1
+        with pytest.raises(SSException):
+            protein.get_residue_atom_indices(unavailable_residue_index, atom_name="CA")
+        with pytest.raises(SSException):
+            protein.get_all_atomic_indices(-1)
+        assert len(protein._SSProtein__residue_atom_table) == protein.n_residues
+        # an atom name absent from a valid residue is an empty selection, not an error
+        assert len(protein.get_residue_atom_indices(1, atom_name="XX")) == 0
 
 
 def test_get_distance_map_weights(GS6_CP, NTL9_CP):
@@ -690,13 +715,23 @@ def test_get_distance_map_weights(GS6_CP, NTL9_CP):
                 expected_shape = (protein_residues, protein_residues)
 
                 assert distance_map.shape == expected_shape
-                # when weights are supplied there is no per-pair standard
-                # deviation defined, so the std map is returned as None (the
-                # documented contract); previously it was a NaN-filled array.
-                assert std_dev is None
+                # with weights the std map is the weighted population standard
+                # deviation (since 2.0.6; it used to be None), so it is a
+                # finite, upper-triangular array of the same shape
+                assert std_dev.shape == expected_shape
+                assert np.all(np.isfinite(std_dev))
 
                 # the mean map is upper-triangular either way
                 assert np.count_nonzero(np.tril(distance_map, -1)) == 0
+
+                # uniform weights must reproduce the unweighted mean and std maps
+                unweighted, unweighted_std = protein.get_distance_map(
+                    mode=mode, RMS=rms_option, verbose=False
+                )
+                np.testing.assert_allclose(distance_map, unweighted, rtol=1e-6)
+                np.testing.assert_allclose(
+                    std_dev, unweighted_std, rtol=1e-6, atol=1e-10
+                )
 
 
 def test_get_local_collapse_invalid_bins(GS6_CP, NTL9_CP):
@@ -773,23 +808,19 @@ def test_get_angle_decay_consistent_value(GS6_CP, NTL9_CP):
     """
     proteins = [GS6_CP, NTL9_CP]
     for protein in proteins:
-        # do this because we only caculate vector
-        # between res with CA, the indices here are position within the n-to-c
-        # vector that always starts at 1
-        # separation not index position, so we are always separation of 1-x
-        min_res = 1
-        max_res = protein.n_residues - (protein.n_residues - len(protein.resid_with_CA))
+        # pair keys are the actual residue ids of the CA-bearing residues
+        # (since 2.0.6); a window is a separation in that CA-bearing list
+        ca_res = protein.resid_with_CA
 
         (return_matrix, pair_dict) = protein.get_angle_decay(return_all_pairs=True)
 
         for window in range(1, 8):
-            if window + min_res >= max_res + 1:
+            if window >= len(ca_res):
                 continue
 
             all_pairs = []
-            for i in range(min_res, (max_res + 1) - window):
-                j = i + window
-                n = f"{i}-{j}"
+            for k in range(len(ca_res) - window):
+                n = f"{ca_res[k]}-{ca_res[k + window]}"
                 all_pairs.append(pair_dict[n])
 
             assert (np.mean(all_pairs) - return_matrix[window][1]) == 0
@@ -824,6 +855,11 @@ def test_get_contact_map_weights(GS6_CP, NTL9_CP):
             assert contact_map.shape == expected_shape
             assert len(contact_map_order.shape) == 1
             assert contact_map_order.shape[0] == protein_residues
+
+            # uniform weights must reproduce the unweighted contact map
+            unweighted_map, unweighted_order = protein.get_contact_map(mode=mode)
+            np.testing.assert_allclose(contact_map, unweighted_map, rtol=1e-6)
+            np.testing.assert_allclose(contact_map_order, unweighted_order, rtol=1e-6)
 
 
 def test_get_contact_map_weights_invalid_mode(GS6_CP, NTL9_CP):
@@ -1025,15 +1061,17 @@ def test_get_regional_SASA(GS6_CP, NTL9_CP, cta_protein_helper):
         lower = residue_indices[1:mid_point]
         upper = residue_indices[mid_point + 1 : -1]
 
-        # Shuffle to ensure that the indices chosen, whilst random
-        # are always where R1 > R2.
         random.shuffle(lower)
         random.shuffle(upper)
-        r1 = random.choice(upper)
-        r2 = random.choice(lower)
+        r_low = random.choice(lower)
+        r_high = random.choice(upper)
 
-        rsasa = protein.get_regional_SASA(r1, r2)
-        assert rsasa is not None
+        # a valid region (R1 < R2, R2 exclusive) gives a positive total
+        rsasa = protein.get_regional_SASA(r_low, r_high)
+        assert rsasa > 0
+        # swapped endpoints used to return 0 silently; since 2.0.6 they raise
+        with pytest.raises(SSException):
+            protein.get_regional_SASA(r_high, r_low)
 
 
 def test_get_all_SASA(GS6_CP, NTL9_CP):
@@ -1070,22 +1108,22 @@ def test_get_all_SASA(GS6_CP, NTL9_CP):
     assert np.isclose(np.min(GS6_CP.get_all_SASA(stride=1, mode="backbone")), 27.768456)
     assert np.isclose(np.min(GS6_CP.get_all_SASA(stride=1, mode="sidechain")), 0.0)
 
-    # check dimesions
-    GS6_CP.get_all_SASA(stride=1, mode="backbone").shape == (5, 6)
-    GS6_CP.get_all_SASA(stride=1, mode="sidechain").shape == (5, 6)
-    GS6_CP.get_all_SASA(stride=1, mode="backbone").shape == (5, 6)
-    GS6_CP.get_all_SASA(stride=1, mode="sidechain").shape == (5, 6)
+    # check dimensions
+    assert GS6_CP.get_all_SASA(stride=1, mode="backbone").shape == (5, 6)
+    assert GS6_CP.get_all_SASA(stride=1, mode="sidechain").shape == (5, 6)
 
     # check that 'all' works
     assert len(GS6_CP.get_all_SASA(stride=1, mode="all")) == 3
 
-    # assert all works as expected
+    # assert all works as expected; in mode='all' the residue array is
+    # restricted to the CA-bearing residues so it lines up with the
+    # sidechain/backbone arrays (caps dropped), hence the column slice here
     assert (
         np.sum(
             GS6_CP.get_all_SASA(stride=1, mode="all")[0]
-            == GS6_CP.get_all_SASA(stride=1)
+            == GS6_CP.get_all_SASA(stride=1)[:, GS6_CP.resid_with_CA]
         )
-        == 40
+        == 30
     )
     assert (
         np.sum(

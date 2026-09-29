@@ -133,15 +133,14 @@ def test_read_in_protein_grouping_invalid_residues():
     traj_filename = os.path.join(
         soursop.get_data("test_data"), "ntl9_AA.xtc"
     )  # ntl9 has 56 residues
-    trajectory = sstrajectory.SSTrajectory(
-        trajectory_filename=traj_filename,
-        pdb_filename=pdb_filename,
-        protein_grouping=protein_groups,
-    )
-
-    # Since this is a failing but non-disruptive test (i.e. no Exceptions), we
-    # check the number of proteins which should be 0.
-    assert trajectory.n_proteins == 0
+    # out-of-range residue indices used to be dropped silently (here leaving
+    # zero proteins); since 2.0.6 they raise
+    with pytest.raises(SSException, match="valid indices"):
+        sstrajectory.SSTrajectory(
+            trajectory_filename=traj_filename,
+            pdb_filename=pdb_filename,
+            protein_grouping=protein_groups,
+        )
 
 
 def test_read_in_protein_grouping_multiple_mixed_order():
@@ -359,44 +358,31 @@ def test_intrachain_inter_residue_atomic_distance():
         assert len(distances) == len(a_residues)
 
 
-def test_intrachain_inter_residue_atomic_distance_by_name():
-    """
-    # TODO: Revise.
-    # A custom version of NTL9 is needed, since we want to have multiple protein chains
-    protein_groups_residues = [[0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
-                               [10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
-                               [20, 21, 22, 23, 24, 25, 26, 27, 28, 29],
-                               [30, 31, 32, 33, 34, 35, 36, 37, 38, 39],
-                               [40, 41, 42, 43, 44, 45, 46, 47, 48, 49]]
-    pdb_filename = os.path.join(soursop.get_data('test_data'), 'ntl9_AA.pdb')
-    traj_filename = os.path.join(soursop.get_data('test_data'), 'ntl9_AA.xtc')  # ntl9 has 56 residues
-    trajectory = sstrajectory.SSTrajectory(trajectory_filename=traj_filename,
-                                           pdb_filename=pdb_filename,
-                                           protein_grouping=protein_groups_residues)
+def test_interchain_distance_by_atom_name(GMX_2CHAINS):
+    """Named-atom inter-chain distances match mdtraj on the full topology."""
+    import mdtraj as md
 
-    atom_names = dict()
-    for residue in trajectory.traj.topology.residues:
-        atom_names[residue.index] = [atom for atom in residue.atoms]#[atom.name for atom in residue.atoms]
+    T = GMX_2CHAINS
+    full_top = T.traj.topology
+    chain_a, chain_b = full_top.chain(0), full_top.chain(1)
+    for R1, R2, A1, A2 in [(3, 7, "CA", "N"), (0, 10, "C", "CA"), (5, 5, "N", "O")]:
+        d = T.get_interchain_distance(0, 1, R1, R2, A1=A1, A2=A2)
+        i = next(a.index for a in chain_a.residue(R1).atoms if a.name == A1)
+        j = next(a.index for a in chain_b.residue(R2).atoms if a.name == A2)
+        expected = 10 * md.compute_distances(T.traj, [[i, j]], periodic=False)[:, 0]
+        assert d.shape == (T.n_frames,)
+        np.testing.assert_allclose(d, expected, rtol=1e-5)
 
-    for protein_group in itertools.combinations(range(len(protein_groups_residues)), r=2):
-        protein_a, protein_b = protein_group
-        a_residues = protein_groups_residues[protein_a]
-        b_residues = protein_groups_residues[protein_b]
-
-        residue_a = random.randint(0, len(a_residues) - 1)
-        residue_a_atoms = atom_names[protein_groups_residues[protein_a][residue_a]]
-        residue_a_atom = random.choice(residue_a_atoms)
-
-        residue_b = random.randint(0, len(b_residues) - 1)
-        residue_b_atoms = atom_names[protein_groups_residues[protein_b][residue_b]]
-        residue_b_atom = random.choice(residue_b_atoms)
-
-        distances = trajectory.get_intrachain_interResidue_atomic_distance(protein_a, protein_b,
-                                                                           residue_a, residue_b,
-                                                                           A1=residue_a_atom, A2=residue_a_atom)
-        assert len(distances) == len(a_residues)
-    """
-    pass
+    # the closest-heavy scheme against mdtraj's compute_contacts on the full system
+    d = T.get_interchain_distance(0, 1, 3, 7, mode="closest-heavy")
+    n_res_a = chain_a.n_residues
+    expected = (
+        10
+        * md.compute_contacts(
+            T.traj, [[3, n_res_a + 7]], scheme="closest-heavy", periodic=False
+        )[0][:, 0]
+    )
+    np.testing.assert_allclose(d, expected, rtol=1e-5)
 
 
 def test_get_interchain_distance():
@@ -642,30 +628,32 @@ def test_get_overal_rg(GMX_2CHAINS):
 
 
 def test_get_overal_asphericity(GMX_2CHAINS):
-    # compares rg of 2 chains vs. same values calculated by VMD
+    # asphericity of the two chains treated as one pseudo-chain, pinned with the
+    # gyration tensor taken about the geometric centre (2.0.6). The pre-2.0.6
+    # values, taken about the mass-weighted centre of mass, differed by < 2e-5.
 
     asph = np.array(
         [
-            0.36274249,
-            0.4079101,
-            0.5837932,
-            0.3413606,
-            0.30022731,
-            0.25667767,
-            0.24720234,
-            0.32076792,
-            0.26974903,
-            0.21184996,
-            0.62855842,
-            0.23021391,
-            0.16662495,
-            0.45061943,
-            0.54406795,
-            0.4482196,
-            0.53423135,
-            0.73352191,
-            0.75562579,
-            0.32473148,
+            0.36274186,
+            0.40790529,
+            0.58378980,
+            0.34135408,
+            0.30022431,
+            0.25667644,
+            0.24720295,
+            0.32076922,
+            0.26974452,
+            0.21185184,
+            0.62856019,
+            0.23021315,
+            0.16662445,
+            0.45061476,
+            0.54406465,
+            0.44821563,
+            0.53423530,
+            0.73352610,
+            0.75562624,
+            0.32473049,
         ]
     )
 
@@ -673,30 +661,32 @@ def test_get_overal_asphericity(GMX_2CHAINS):
 
 
 def test_get_overal_rh(GMX_2CHAINS):
-    # compares rg of 2 chains vs. same values calculated by VMD
+    # Nygaard Rh of the two chains treated as one pseudo-chain, pinned with the
+    # C-alpha Rg and N = CA-bearing residues (2.0.6); the pre-2.0.6 values used
+    # the all-atom Rg and were 0.1-0.3 A different.
 
     asph = np.array(
         [
-            26.99809304,
-            27.25590015,
-            27.29754026,
-            28.59875282,
-            28.22148641,
-            27.03576021,
-            27.12021072,
-            28.48253016,
-            27.31671616,
-            28.76251356,
-            36.57647347,
-            26.66061797,
-            26.96999394,
-            26.99493729,
-            27.43425109,
-            28.87969746,
-            36.31506845,
-            36.3423472,
-            36.90213999,
-            28.63399989,
+            27.03548438,
+            27.28263782,
+            27.29500117,
+            28.79159772,
+            28.32914277,
+            27.04679106,
+            27.25088727,
+            28.71373611,
+            27.37118513,
+            28.94960314,
+            36.53008467,
+            26.65052255,
+            26.97872701,
+            26.98799538,
+            27.53567111,
+            29.03053464,
+            36.24661026,
+            36.25525307,
+            36.80973559,
+            28.78566559,
         ]
     )
 
@@ -850,43 +840,73 @@ def _cmap_stride(traj):
     return max(1, traj.n_frames // 100)
 
 
+def _n_ca(traj, pid):
+    return len(traj.proteinTrajectoryList[pid].resid_with_CA)
+
+
 @pytest.mark.parametrize("traj_fixture", ["GS6_CO", "NTL9_CO", "CTL9_CO"])
 def test_interchain_contact_map_self_shape(traj_fixture, request):
-    """Contact map of a protein with itself must be (n_res, n_res) and finite.
+    """Contact map of a protein with itself is (n_CA, n_CA) and finite.
 
-    GS6 and CTL9 have ACE/NME caps; the fixed implementation skips cap
-    residues silently (leaving 0 in those rows/cols) so the full shape is
-    preserved.
+    Since 2.0.6 rows/columns are the CA-bearing residues only (caps are
+    excluded), matching get_interchain_distance_map and
+    SSProtein.get_contact_map. GS6 and CTL9 have ACE/NME caps, so this is
+    smaller than n_residues there.
     """
     traj = request.getfixturevalue(traj_fixture)
-    n_res = traj.proteinTrajectoryList[0].n_residues
+    n_ca = _n_ca(traj, 0)
     cmap = traj.get_interchain_contact_map(0, 0, stride=_cmap_stride(traj))
-    assert cmap.shape == (n_res, n_res)
+    assert cmap.shape == (n_ca, n_ca)
     assert np.all(np.isfinite(cmap))
     # Each entry is a fraction of frames in contact — must be in [0, 1].
     assert np.all(cmap >= 0.0) and np.all(cmap <= 1.0)
 
 
 @pytest.mark.parametrize("traj_fixture", ["GS6_CO", "CTL9_CO"])
-def test_interchain_contact_map_self_cap_rows_zero(traj_fixture, request):
-    """For trajectories with ACE/NME caps, the cap rows and columns of the
-    contact map must be exactly zero (the fixed implementation can't compute
-    a CA-based contact for a residue with no CA)."""
+def test_interchain_contact_map_self_excludes_caps(traj_fixture, request):
+    """On capped chains the caps are excluded and row k is resid_with_CA[k].
+
+    Before 2.0.6 the map was indexed by resid with the caps included (as
+    all-zero rows/columns), so it was one row larger at each capped end and
+    offset by one from the other per-residue maps.
+    """
     traj = request.getfixturevalue(traj_fixture)
     protein = traj.proteinTrajectoryList[0]
-    cmap = traj.get_interchain_contact_map(0, 0, stride=_cmap_stride(traj))
+    assert protein.ncap and protein.ccap, "fixture is supposed to have caps"
+    stride = _cmap_stride(traj)
+    cmap = traj.get_interchain_contact_map(
+        0, 0, mode="ca", threshold=8.0, stride=stride
+    )
 
-    cap_resids = set(range(protein.n_residues)) - set(protein.resid_with_CA)
-    assert len(cap_resids) > 0, "fixture is supposed to have caps"
-    for cap in cap_resids:
-        assert np.all(cmap[cap, :] == 0.0), f"cap row {cap} should be zero"
-        assert np.all(cmap[:, cap] == 0.0), f"cap col {cap} should be zero"
+    # same shape as the distance map, and n_residues - 2 for ACE/NME caps
+    dmap, _ = traj.get_interchain_distance_map(0, 0)
+    assert cmap.shape == dmap.shape == (protein.n_residues - 2,) * 2
+
+    # row/column k is the k-th CA-bearing residue
+    resids = protein.resid_with_CA
+    for i, j in [(0, 3), (1, len(resids) - 1)]:
+        d = traj.get_interchain_distance(
+            0, 0, resids[i], resids[j], mode="ca", stride=stride
+        )
+        assert np.isclose(cmap[i, j], np.sum(d < 8.0) / len(d))
+
+
+def test_interchain_contact_map_self_matches_ssprotein_contact_map(GS6_CO):
+    """The intra-chain interchain map equals SSProtein.get_contact_map for
+    every pair the latter evaluates (|i - j| >= 3)."""
+    protein = GS6_CO.proteinTrajectoryList[0]
+    cmap, _ = protein.get_contact_map(distance_thresh=6.0, mode="closest-heavy")
+    imap = GS6_CO.get_interchain_contact_map(0, 0, mode="closest-heavy", threshold=6.0)
+    n = cmap.shape[0]
+    far = np.abs(np.subtract.outer(np.arange(n), np.arange(n))) >= 3
+    assert imap.shape == cmap.shape
+    np.testing.assert_allclose(imap[far], cmap[far])
 
 
 def test_interchain_contact_map_gmx_2chains_shape(GMX_2CHAINS):
-    """Contact map between the two real chains has shape (n_res_0, n_res_1)."""
-    n_res_0 = GMX_2CHAINS.proteinTrajectoryList[0].n_residues
-    n_res_1 = GMX_2CHAINS.proteinTrajectoryList[1].n_residues
+    """Contact map between the two real chains has shape (n_CA_0, n_CA_1)."""
+    n_res_0 = _n_ca(GMX_2CHAINS, 0)
+    n_res_1 = _n_ca(GMX_2CHAINS, 1)
     cmap = GMX_2CHAINS.get_interchain_contact_map(
         0, 1, stride=_cmap_stride(GMX_2CHAINS)
     )
@@ -897,15 +917,15 @@ def test_interchain_contact_map_gmx_2chains_shape(GMX_2CHAINS):
 
 @pytest.mark.parametrize("mode", INTERCHAIN_DISTANCE_MODES)
 def test_interchain_contact_map_gmx_2chains_all_modes(GMX_2CHAINS, mode):
-    """Every documented mode must produce a finite (n_res_0, n_res_1) contact map.
+    """Every documented mode must produce a finite (n_CA_0, n_CA_1) contact map.
 
     sidechain / sidechain-heavy used to fail on glycine-containing chains
     because mdtraj's sidechain selector returns an empty set for glycine;
     get_interchain_contact_map now catches that per-residue failure and
     leaves the affected entries at 0.
     """
-    n_res_0 = GMX_2CHAINS.proteinTrajectoryList[0].n_residues
-    n_res_1 = GMX_2CHAINS.proteinTrajectoryList[1].n_residues
+    n_res_0 = _n_ca(GMX_2CHAINS, 0)
+    n_res_1 = _n_ca(GMX_2CHAINS, 1)
     cmap = GMX_2CHAINS.get_interchain_contact_map(
         0,
         1,
@@ -922,16 +942,14 @@ def test_interchain_contact_map_sidechain_zeros_glycine_rows(GMX_2CHAINS):
     (glycine has no sidechain atom, so the contact is undefined)."""
     p1 = GMX_2CHAINS.proteinTrajectoryList[0]
     p2 = GMX_2CHAINS.proteinTrajectoryList[1]
-    p1_gly = [
-        i
-        for i, name in enumerate(p1.get_amino_acid_sequence(numbered=False))
-        if name.split("-")[0] == "GLY"
-    ]
-    p2_gly = [
-        i
-        for i, name in enumerate(p2.get_amino_acid_sequence(numbered=False))
-        if name.split("-")[0] == "GLY"
-    ]
+
+    # rows/columns are positions among the CA-bearing residues
+    def _gly_positions(p):
+        names = p.get_amino_acid_sequence(numbered=False)
+        return [k for k, r in enumerate(p.resid_with_CA) if names[r] == "GLY"]
+
+    p1_gly = _gly_positions(p1)
+    p2_gly = _gly_positions(p2)
     assert len(p1_gly) > 0 or len(p2_gly) > 0, "fixture is supposed to contain glycine"
 
     cmap = GMX_2CHAINS.get_interchain_contact_map(
@@ -961,8 +979,8 @@ def test_interchain_contact_map_stride_subsamples(GMX_2CHAINS):
         mode="ca",
         stride=GMX_2CHAINS.n_frames,
     )
-    n_res_0 = GMX_2CHAINS.proteinTrajectoryList[0].n_residues
-    n_res_1 = GMX_2CHAINS.proteinTrajectoryList[1].n_residues
+    n_res_0 = _n_ca(GMX_2CHAINS, 0)
+    n_res_1 = _n_ca(GMX_2CHAINS, 1)
     assert cmap.shape == (n_res_0, n_res_1)
     assert np.all(np.isfinite(cmap))
     # With stride==n_frames only frame 0 is used, so every entry is 0 or 1.
@@ -1076,11 +1094,16 @@ def test_same_pdb_file_predicate(tmp_path):
 
     # the fast path fires only for the same on-disk PDB
     assert _same_pdb_file(pdb, pdb) is True
-    assert _same_pdb_file(os.path.join(os.path.dirname(pdb), ".", os.path.basename(pdb)), pdb) is True
+    assert (
+        _same_pdb_file(
+            os.path.join(os.path.dirname(pdb), ".", os.path.basename(pdb)), pdb
+        )
+        is True
+    )
 
     # ...and must NOT fire for anything else
-    assert _same_pdb_file(xtc, pdb) is False           # the normal xtc + pdb case
-    assert _same_pdb_file(xtc, xtc) is False           # same file, but not a PDB
+    assert _same_pdb_file(xtc, pdb) is False  # the normal xtc + pdb case
+    assert _same_pdb_file(xtc, xtc) is False  # same file, but not a PDB
     assert _same_pdb_file(None, pdb) is False
     assert _same_pdb_file(pdb, None) is False
 
@@ -1102,7 +1125,7 @@ def test_multimodel_pdb_load_is_equivalent(tmp_path):
     md.load(xtc, top=pdb)[0:4].save_pdb(multi)
 
     reference = sstrajectory.SSTrajectory(TRJ=md.load(multi, top=multi))  # old path
-    fast = sstrajectory.SSTrajectory(multi, multi)                        # new fast path
+    fast = sstrajectory.SSTrajectory(multi, multi)  # new fast path
 
     assert fast.n_frames == reference.n_frames == 4
     assert fast.traj.topology == reference.traj.topology
@@ -1116,7 +1139,11 @@ def test_multimodel_pdb_load_is_equivalent(tmp_path):
 
 
 def test_multimodel_pdb_pdblead_still_prepends(tmp_path):
-    """pdblead=True keeps prepending the PDB even on the fast path."""
+    """pdblead=True prepends the PDB's first model, even on the fast path.
+
+    Prior to 2.0.6 every model of a multi-model PDB was prepended, which
+    duplicated the whole trajectory when the PDB was also the trajectory file.
+    """
     import mdtraj as md
 
     pdb = os.path.join(soursop.get_data("test_data"), "ctl9_AA.pdb")
@@ -1125,8 +1152,8 @@ def test_multimodel_pdb_pdblead_still_prepends(tmp_path):
     multi = str(tmp_path / "multi.pdb")
     md.load(xtc, top=pdb)[0:3].save_pdb(multi)
 
-    expected = md.load(multi) + md.load(multi, top=multi)  # old behaviour
+    expected = md.load(multi)[0] + md.load(multi, top=multi)
     got = sstrajectory.SSTrajectory(multi, multi, pdblead=True)
 
-    assert got.n_frames == expected.n_frames == 6
+    assert got.n_frames == expected.n_frames == 4
     assert np.array_equal(got.traj.xyz, expected.xyz)

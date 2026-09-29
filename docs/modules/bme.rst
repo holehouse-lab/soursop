@@ -37,7 +37,7 @@ BME answers this by minimising the functional
 
    \mathcal{L}(w) = \tfrac{1}{2}\chi^2(w) \;+\; \theta \, D_{\mathrm{KL}}(w \,\|\, w^{0}),
 
-where :math:`\chi^2` measures the disagreement with experiment and :math:`D_{\mathrm{KL}}(w\|w^{0}) = \sum_i w_i \ln (w_i / w_i^{0})` is the relative entropy (information loss) between the new and prior ensembles. The hyperparameter :math:`\theta` controls the trade-off: large :math:`\theta` keeps the ensemble close to the prior (trusts the simulation), small :math:`\theta` fits the data aggressively (trusts the experiment). The maximum-entropy solution has the closed exponential form
+where :math:`\chi^2 = \sum_k ((\langle F_k\rangle_w - F_k^{\text{exp}})/\sigma_k)^2` is the (total) disagreement with experiment and :math:`D_{\mathrm{KL}}(w\|w^{0}) = \sum_i w_i \ln (w_i / w_i^{0})` is the relative entropy (information loss) between the new and prior ensembles. The hyperparameter :math:`\theta` controls the trade-off: large :math:`\theta` keeps the ensemble close to the prior (trusts the simulation), small :math:`\theta` fits the data aggressively (trusts the experiment). The maximum-entropy solution has the closed exponential form
 
 .. math::
 
@@ -116,7 +116,9 @@ The scale/offset accumulates across iterations; the returned :class:`~soursop.ss
 
 Convergence is declared when the change in :math:`\chi^2` between iterations drops below ``ftol`` (or ``max_ibme_iterations`` is reached). Set ``fit_offset=False`` to fit a scale only (no additive background), and ``lr_weights=False`` to use an unweighted regression instead of the default :math:`1/\sigma^2` weighting.
 
-**When to use which.** Use ``BME`` when calculated and experimental observables are directly comparable. Use ``iBME`` when there is an unknown multiplicative scale and/or additive offset linking them (SAXS being the textbook case). If in doubt, ``iBME`` with ``fit_offset=True`` reduces to ``BME`` when the true scale is 1 and offset is 0, at the cost of a few extra iterations.
+**When to use which.** Use ``BME`` when calculated and experimental observables are directly comparable. Use ``iBME`` only when there really is an unknown multiplicative scale and/or additive offset linking them (SAXS being the textbook case). iBME is *not* a safe default: the regression step absorbs any discrepancy that correlates with the magnitude of the observables into the scale, including a genuine change in ensemble size, so on data that need no scale it can return the prior essentially unchanged (with a fitted scale away from 1) where BME would have reweighted. Because a single scale and offset are applied to every observable, iBME should be given one homogeneous data type at a time (e.g. one SAXS curve), not a mixture of, say, SAXS intensities and radii of gyration. The number of observables must also exceed the number of fitted parameters (two with ``fit_offset=True``, one without); with exactly that many the problem is exactly determined, chi-squared is zero for any weights, and a warning is emitted.
+
+Reported ``chi_squared_initial`` / ``chi_squared_final`` values (for BME and iBME alike) are the *reduced* :math:`\chi^2`, i.e. :math:`\chi^2/m` for :math:`m` observables. Internally each observable is standardised against the prior (shifted by its prior mean and divided by the average of its prior spread and its uncertainty, as in the reference implementation) before optimising; the solution is invariant to this, but it makes convergence independent of the units the observables are expressed in.
 
 
 BMECustom — vector / matrix BME with a pluggable cost
@@ -143,8 +145,8 @@ The cost function **must take the weights** — reweighting is the act of choosi
     from soursop.ssbme import BMECustom
 
     # SAXS-like: m points, n conformers
-    bme = BMECustom(I_exp, calc_I, uncertainty=sigma_exp)
-    result = bme.fit(theta=1.0)
+    bmec = BMECustom(I_exp, calc_I, uncertainty=sigma_exp)
+    result = bmec.fit(theta=1.0)
     weights = result.weights
 
     # custom cost — chi-squared on a log scale
@@ -156,13 +158,15 @@ The cost function **must take the weights** — reweighting is the act of choosi
 
 The result is a :class:`~soursop.ssbme.BMECustomResult` carrying ``cost_initial`` / ``cost_final`` in place of :math:`\chi^2`, ``phi``, the per-frame ``reweighting_factors`` :math:`r_i = w_i / w_i^{0}`, a ``predict`` for new observables, and the usual ``diagnostics`` / ``print_diagnostics``. :meth:`BMECustom.scan_theta <soursop.ssbme.BMECustom.scan_theta>` runs the same L-curve trade-off using the cost in place of :math:`\chi^2`.
 
+**Theta is not on BME's scale.** :class:`BME` minimises :math:`\tfrac12\sum_k ((\langle F_k\rangle - F_k^{\text{exp}})/\sigma_k)^2 + \theta\, D_{\mathrm{KL}}`, i.e. :math:`\tfrac{m}{2}\,\chi^2_{\text{red}} + \theta\, D_{\mathrm{KL}}`, whereas :class:`BMECustom` with the default cost minimises :math:`\chi^2_{\text{red}} + \theta\, D_{\mathrm{KL}}`. The two differ only by the constant factor :math:`m/2` on the cost, so ``BMECustom(...).fit(theta=2 * theta_bme / m)`` reproduces ``BME(...).fit(theta=theta_bme)`` exactly, and a BMECustom ``theta`` corresponds to a BME theta of :math:`m\theta/2`. The reduced form is deliberate: it keeps the penalty strength independent of the length of the experimental vector, and it means a user-supplied cost on the same scale as :math:`\chi^2_{\text{red}}` behaves identically to the default. Use :meth:`BMECustom.scan_theta <soursop.ssbme.BMECustom.scan_theta>` rather than carrying a :math:`\theta` over from a :class:`BME` fit.
+
 **Performance note.** The default :math:`\chi^2` path uses an analytic gradient; a custom ``cost_function`` triggers a finite-difference gradient (one cost evaluation per weight), so an expensive cost on a very large ensemble can be slow. Convexity (and hence a unique optimum) is guaranteed only when the cost is convex in ``w``; an arbitrary cost is optimised locally.
 
 
 Choosing theta (the L-curve scan)
 ---------------------------------------------------------
 
-:math:`\theta` is the single most important choice and should **not** be left at an arbitrary value. The principled approach is an L-curve scan: fit over a grid of :math:`\theta`, then plot :math:`\chi^2` against the relative entropy (or :math:`\phi`). The curve is L-shaped — there is a "knee" beyond which fitting the data better requires a disproportionate loss of ensemble diversity. :func:`~soursop.ssbme.theta_scan` (also available as ``BME.scan_theta`` / ``iBME.scan_theta``) automates this and selects the knee via a perpendicular-distance or Menger-curvature criterion::
+:math:`\theta` is the single most important choice and should **not** be left at an arbitrary value. The principled approach is an L-curve scan: fit over a grid of :math:`\theta`, then plot :math:`\chi^2` against the relative entropy (or :math:`\phi`). The curve is L-shaped — there is a "knee" beyond which fitting the data better requires a disproportionate loss of ensemble diversity. :func:`~soursop.ssbme.theta_scan` (also available as ``BME.scan_theta`` / ``iBME.scan_theta``) automates this and selects the knee via a perpendicular-distance or Menger-curvature criterion. Here ``bme`` is a :class:`~soursop.ssbme.BME` object as in the first example::
 
     scan = bme.scan_theta(theta_range=(0.01, 50.0), n_points=20)
     scan.print_summary()
@@ -183,7 +187,7 @@ Every fit returns a :class:`~soursop.ssbme.BMEResult`. Inspect it before trustin
 * **φ is not tiny.** A very low :math:`\phi` (e.g. :math:`< 0.1`) means a handful of frames carry essentially all the weight; the "reweighted ensemble" is then statistically a few structures, not an ensemble. This usually indicates the prior ensemble does not contain conformations consistent with the data — reweighting cannot create structures that were never sampled. Prefer increasing :math:`\theta`, loosening uncertainties, or improving sampling.
 * **Two effective sample sizes.** The diagnostics report both the entropy-based :math:`N_{\text{eff}} = N\phi` (the usual BME measure) and the Rényi-2 / participation ratio :math:`1/\sum_i w_i^2`, which is more sensitive to a few dominant weights.
 * **Realistic uncertainties.** :math:`\sigma_k` must include experimental error *and* forward-model error. Uncertainties that are too tight force aggressive, low-:math:`\phi` reweighting; too loose and nothing happens.
-* **Don't validate on the fitting data.** :math:`\chi^2` against the observables used for reweighting will always improve. Assess quality with cross-validation (the L-curve knee) or by predicting *independent* observables with :meth:`~soursop.ssbme.BME.predict`.
+* **Don't validate on the fitting data.** :math:`\chi^2` against the observables used for reweighting will always improve. Assess quality by predicting *independent* observables (ideally held out from the fit) with :meth:`~soursop.ssbme.BME.predict`; the L-curve knee chooses :math:`\theta` but is not a validation.
 * **Garbage in, garbage out.** Reweighting only redistributes weight among conformations that were already sampled. It is not a substitute for adequate sampling (see PENGUIN in :doc:`sssampling`) or a reasonable force field.
 
 
@@ -259,6 +263,7 @@ The ``ExperimentalObservable`` container is documented under
         .. automethod:: diagnostics
         .. automethod:: print_diagnostics
         .. autoattribute:: kl_divergence
+        .. autoattribute:: reweighting_factors
 
 .. autoclass:: soursop.ssbme.ThetaScanResult
 

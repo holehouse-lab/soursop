@@ -34,10 +34,13 @@ from soursop.tests.build_reference.build_references import (
 
 
 # Loose enough to absorb FP-level drift across mdtraj/numpy/BLAS versions,
-# tight enough to flag any real behavioural regression. Matches the
-# tolerance used by the existing distance-map regression tests in this repo.
+# tight enough to flag any real behavioural regression. The absolute
+# tolerance matters for the small-magnitude leaves (contact orders of ~1e-4,
+# DSSP fractions of ~1e-3, the overlap concentration of ~4e-3): at the
+# previous atol of 1e-4 those were effectively unchecked, with up to 50%
+# relative slack.
 RTOL = 1e-5
-ATOL = 1e-4
+ATOL = 1e-8
 
 # Top-level meta keys that are environment-dependent and therefore exempt
 # from the leaf comparison. Other meta keys (R1, R2, save_stride, ...) are

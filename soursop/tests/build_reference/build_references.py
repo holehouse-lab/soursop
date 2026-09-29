@@ -403,9 +403,13 @@ def _contacts(p, save_stride: int, resolution: str) -> dict:
 
     # get_Q requires at least one native contact (heavy-atom pair within
     # threshold and separated by >3 residues in sequence). For very short
-    # peptides this can be zero, in which case get_Q returns NaN. Skip
-    # gracefully in that case.
-    q_avg = p.get_Q(protein_average=True)
+    # peptides this can be zero, in which case get_Q raises (since 2.0.6;
+    # it used to return NaN). Skip gracefully in that case.
+    try:
+        q_avg = p.get_Q(protein_average=True)
+    except SSException as e:
+        print(f"  [WARNING] skipping get_Q: {e}")
+        return out
     if not np.all(np.isfinite(np.asarray(q_avg))):
         print(
             "  [WARNING] skipping get_Q: native-contact count is zero "

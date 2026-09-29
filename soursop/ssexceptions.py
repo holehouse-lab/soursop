@@ -44,9 +44,43 @@ class notYetImplementedException(Exception):
 
 # ........................................................................
 #
-def SSWarning(string):
+class SoursopWarning(UserWarning):
     """
-    Custom function to display non-fatal warnings.
+    Warning category used for every non-fatal advisory SOURSOP emits.
+
+    It subclasses :class:`UserWarning`, so existing filters on
+    ``UserWarning`` keep working, but it also lets you target SOURSOP's
+    advisories specifically, e.g.
+    ``warnings.filterwarnings('error', category=SoursopWarning)``.
 
     """
-    warnings.warn(string)
+
+    pass
+
+
+# ........................................................................
+#
+def SSWarning(string, stacklevel=2):
+    """
+    Emit a non-fatal SOURSOP warning.
+
+    This is a thin wrapper around :func:`warnings.warn` that always uses the
+    :class:`SoursopWarning` category. By default the warning is attributed
+    to the SOURSOP function that called ``SSWarning`` (rather than to this
+    helper), so a ``module='soursop'`` filter matches it.
+
+    Parameters
+    ----------
+    string : str
+        The warning message.
+
+    stacklevel : int, optional
+        Passed to :func:`warnings.warn`. Default is 2 (the caller of this
+        function).
+
+    Returns
+    -------
+    None
+
+    """
+    warnings.warn(string, SoursopWarning, stacklevel=stacklevel)

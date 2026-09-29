@@ -15,7 +15,7 @@
 """
 ssnmr - NMR observables for IDP/IDR ensembles.
 
-This module covers two complementary NMR predictions:
+This module covers three complementary NMR predictions:
 
 1. **Sequence-based random-coil chemical shifts** — predicts random-coil
    backbone shifts (CA, CB, CO, N, HN, HA) for an arbitrary amino-acid
@@ -37,6 +37,11 @@ This module covers two complementary NMR predictions:
    :class:`soursop.ssbme.BME` / ``BMECustom`` and
    :class:`soursop.sscoper.COPER` reweighting.
 
+3. **NOE distances** — per-frame inter-atom distances for a set of NOE
+   atom pairs (:func:`compute_NOE_distances`, in Angstroms) and their
+   :math:`\\langle r^{-p} \\rangle^{-1/p}` ensemble average
+   (:func:`noe_ensemble_average`).
+
 The Karplus coefficient table is adapted from biceps (Voelz lab,
 https://github.com/vvoelz/biceps), itself ported from MDTraj's
 ``mdtraj/nmr/scalar_couplings.py`` (Beauchamp / McGibbon / Lane).
@@ -49,9 +54,10 @@ import re
 
 import numpy as np
 
-from .ssexceptions import SSException
+from .ssexceptions import SSException, SSWarning
 from .ssutils import (
     validate_keyword_option,
+    validate_stride,
     validate_weights,
     weighted_mean,
 )
@@ -78,10 +84,15 @@ def compute_random_coil_chemical_shifts(
     and glycine corrections are from Kjaergaard, Brander & Poulsen
     (J. Biomol. NMR 2011, 49:139-149); the correction-factor methodology
     follows Schwarzinger et al. (JACS 2001, 123:2970-2978); and the
-    perdeuteration corrections are from Cavanagh, Fairbrother, Palmer,
-    Rance & Skelton, *Protein NMR Spectroscopy*, 2nd ed. (Academic Press,
-    2007). The implementation is a port of the JavaScript tool by Alex
-    Maltsev (NIH); see
+    perdeuteration corrections follow the values currently used by the
+    Poulsen random-coil web server
+    (https://spin.niddk.nih.gov/bax/nmrserver/Poulsen_rc_CS/), which
+    are the alpha-synuclein deuterium isotope shifts of Maltsev, Ying &
+    Bax (J. Biomol. NMR 2012, 54:181-191). The older Cavanagh, Fairbrother,
+    Palmer, Rance & Skelton (*Protein NMR Spectroscopy*, 2nd ed., 2007)
+    perdeuteration table is no longer used by the server and so is not
+    used here either. The implementation is a port of the JavaScript tool
+    by Alex Maltsev (NIH); see
     https://www1.bio.ku.dk/english/research/bms/research/sbinlab/randomchemicalshifts/
 
     The input may be a standard one-letter sequence; phospho-residues can
@@ -139,17 +150,18 @@ def compute_random_coil_chemical_shifts(
     >>> sorted(shifts[0].keys())
     ['CA', 'CB', 'CO', 'HA', 'HN', 'Index', 'N', 'Res']
     """
-    # sanity check temperature
-    if temperature > 100 or temperature < 0:
+    # sanity check temperature (written so NaN fails too; "T > 100 or T < 0"
+    # is False for NaN, which then crashed or passed silently further down)
+    if not (0 <= temperature <= 100):
         raise SSException(
-            "Temperature provided (%i) was non-physiological. Remember temperature should be in *celcius*."
+            "Temperature provided (%s) was non-physiological. Remember temperature should be in *celsius*."
             % (temperature)
         )
 
     # pH sanity check
-    if pH < 0 or pH > 14:
+    if not (0 <= pH <= 14):
         raise SSException(
-            "pH provided (%i) was non-physiological. Remember pH should be in between 0 and 14."
+            "pH provided (%s) was non-physiological. Remember pH should be in between 0 and 14."
             % (pH)
         )
 
@@ -1558,50 +1570,55 @@ def compute_random_coil_chemical_shifts(
     tpo_ph_corr = [0, 0, 0, 0, 0, 0]
     ptr_ph_corr = [0, 0, 0, 0, 0, 0]
 
-    # Arrays for CS corrections for deuterated proteins
+    # Arrays for CS corrections for deuterated proteins. These are the
+    # values currently active on the Poulsen/Maltsev web server (Maltsev,
+    # Ying & Bax, J. Biomol. NMR 2012, 54:181-191); the older Cavanagh et
+    # al. values are retained on the server only as a commented-out block.
+    # Residue order is alphabetical by one-letter code (A C D E F G H I K L
+    # M N P Q R S T V W Y), matching key_aa1/key_aa3.
     ca_deut = [
-        -0.68,
-        -0.55,
-        -0.55,
-        -0.69,
-        -0.55,
+        -0.47,
+        -0.45,
         -0.39,
-        -0.55,
-        -0.77,
-        -0.69,
-        -0.62,
-        -0.69,
-        -0.55,
-        -0.69,
-        -0.69,
-        -0.69,
-        -0.55,
-        -0.55,
-        -0.84,
-        -0.55,
-        -0.55,
+        -0.49,
+        -0.43,
+        -0.47,
+        -0.45,
+        -0.47,
+        -0.46,
+        -0.45,
+        -0.44,
+        -0.39,
+        -0.45,
+        -0.48,
+        -0.46,
+        -0.45,
+        -0.43,
+        -0.51,
+        -0.43,
+        -0.43,
     ]
     cb_deut = [
-        -1.00,
+        -0.88,
         -0.71,
-        -0.71,
-        -0.97,
-        -0.71,
+        -0.66,
+        -0.88,
+        -0.85,
         0.00,
+        -0.67,
+        -1.02,
+        -1.03,
+        -1.10,
+        -0.89,
+        -0.62,
+        -0.91,
+        -0.86,
+        -1.03,
         -0.71,
-        -1.28,
-        -1.11,
-        -1.26,
-        -0.97,
-        -0.71,
-        -1.11,
-        -0.97,
-        -1.11,
-        -0.71,
-        -0.71,
-        -1.20,
-        -0.71,
-        -0.71,
+        -0.57,
+        -0.96,
+        -0.85,
+        -0.86,
     ]
 
     # RUN
@@ -1832,7 +1849,9 @@ def __set_sequence(sequence, key1, key3):
     encoding used by the chemical-shift tables. The numeric list is padded
     with two sentinel residues (code ``23``) at each end so that the
     nearest-neighbour correction can be applied uniformly at the chain
-    termini. Unrecognised characters are skipped.
+    termini. Unrecognised characters are skipped with an ``SSWarning``
+    naming them (whitespace is skipped silently). Unbalanced parentheses
+    are rejected rather than parsed letter by letter.
 
     Parameters
     ----------
@@ -1853,6 +1872,11 @@ def __set_sequence(sequence, key1, key3):
         A 2-tuple ``(sequence, aminos)`` where ``sequence`` is the
         sentinel-padded list of numeric residue codes and ``aminos`` is
         the list of the parsed residue abbreviations (unpadded).
+
+    Raises
+    ------
+    SSException
+        If the sequence contains an unmatched ``(`` or ``)``.
 
     Example
     -------
@@ -1876,7 +1900,40 @@ def __set_sequence(sequence, key1, key3):
     # Strip white space at beginning and end
     inp = inp.strip()
 
+    # an unbalanced parenthesis would otherwise be parsed letter by letter
+    # (so "A(SEP" silently becomes A, S, E, P) - reject it outright
+    depth = 0
+    for ch in inp:
+        if ch == "(":
+            depth += 1
+            if depth > 1:
+                break
+        elif ch == ")":
+            depth -= 1
+            if depth < 0:
+                break
+    if depth != 0:
+        raise SSException(
+            "Unbalanced parentheses in sequence '%s'; multi-letter residue codes must be written as e.g. 'A(SEP)A'"
+            % inp
+        )
+
+    # Inline phospho-notation (e.g. 'ApSerG', 'ApSG') is common in the
+    # literature but is not understood here: single letters are
+    # case-folded, so the lowercase 'p' would silently become a proline.
+    # Parenthesised codes outside are fine, so only look at bare text.
+    bare = re.sub(r"\([^)]*\)", "", inp)
+    if re.search(r"p(?:Ser|Thr|Tyr|[STY])", bare):
+        SSWarning(
+            "compute_random_coil_chemical_shifts: the sequence contains a lowercase "
+            "'p' before S/T/Y (inline phospho notation such as 'pS' or 'pSer'). "
+            "Single letters are case-insensitive, so this is read as a proline "
+            "followed by the unmodified residue. Write phosphorylated residues in "
+            "parentheses, e.g. 'A(SEP)G', 'A(TPO)G' or 'A(PTR)G'."
+        )
+
     regex = re.findall(r"\(([^)]+)\)|(.)", inp)
+    skipped = []
     for i in range(len(regex)):
         set = regex[i]
         if set[0] == "":
@@ -1891,6 +1948,8 @@ def __set_sequence(sequence, key1, key3):
             # which let codes 26-35 (chars '[ \ ] ^ _ ` a b c d') through to
             # `key_aa1[code]` and raised IndexError.
             if (code < 0 or code > 25) or (key_aa1[code] == -1):
+                if not aa1.isspace():
+                    skipped.append(set[1])
                 continue
             # Only record the residue in `aminos` once it is known-valid and
             # appended to `sequence`. Appending before the validity check let
@@ -1905,7 +1964,18 @@ def __set_sequence(sequence, key1, key3):
                 aminos.append(aa3)
                 sequence.append(key_aa3[aa3])
             else:
+                skipped.append("(%s)" % set[0])
                 continue
+
+    # a dropped character silently shortens the output and shifts the
+    # nearest-neighbour context of every residue around it, so say so
+    if len(skipped) > 0:
+        SSWarning(
+            "compute_random_coil_chemical_shifts: skipped %d unrecognised token(s) in "
+            "the sequence (%s). These residues are absent from the output and do not "
+            "contribute to the neighbour corrections of the residues around them."
+            % (len(skipped), ", ".join(repr(s) for s in skipped))
+        )
 
     sequence.append(23)
     sequence.append(23)
@@ -1958,7 +2028,10 @@ def __round3(num, asFloat=False):
     if asFloat:
         return float(strng)
     else:
-        return strng
+        # the length arithmetic above mis-pads when rounding to an integer
+        # adds a digit (e.g. 9.512 -> '9.5120'), so format the rounded value
+        # explicitly to exactly three decimals
+        return f"{float(strng):.3f}"
 
 
 # ----------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -2065,8 +2138,12 @@ def compute_J3_HN_HA(
     literature parameterisation. The result is a ``(n_frames, n_phi)``
     matrix (per frame, per residue with a defined φ) ready to be passed
     as ``calculated_values`` to :class:`soursop.ssbme.BME` or
-    :class:`soursop.sscoper.COPER`. The first residue has no φ, so
-    ``n_phi == n_residues - 1`` for a single-chain protein.
+    :class:`soursop.sscoper.COPER`. φ is only defined for residues with a
+    preceding backbone carbonyl, so on an uncapped chain
+    ``n_phi == n_residues - 1`` (the N-terminal residue has no φ) and on an
+    ACE/NME-capped chain ``n_phi == n_residues - 2`` (every real residue
+    has a φ; the two caps do not). The atom lists in the first return value
+    identify the residue of each column.
 
     Parameters
     ----------
@@ -2141,6 +2218,7 @@ def compute_J3_HN_HA(
     # convention (see docs/usage/weights.rst): validate_weights handles
     # both the stride-subsample-and-renormalise and the simple cases.
     n_frames_total = phi.shape[0]
+    stride = validate_stride(stride, n_frames_total)
     phi_strided = phi[::stride] if stride != 1 else phi
     validated_weights = validate_weights(
         weights, n_frames_total, stride=stride, etol=etol
@@ -2177,7 +2255,11 @@ def compute_NOE_distances(protein, atom_pairs, stride=1):
 
     Thin wrapper around :func:`mdtraj.compute_distances` that returns
     distances in **Angstroms** (the soursop convention) and the shape
-    that ``BME`` / ``COPER`` / ``BMECustom`` consume directly. The
+    that ``BME`` / ``COPER`` / ``BMECustom`` consume directly. Distances
+    are plain Euclidean distances (no minimum-image convention), like every
+    other distance in soursop; prior to 2.0.6 this function used mdtraj's
+    default ``periodic=True`` and so returned minimum-image distances for
+    pairs further apart than half the box. The
     raw r-values are returned per frame; collapse to a single NOE
     ensemble distance with :func:`noe_ensemble_average` (or take ``r**-p``
     yourself if you want the linear-additive observable to feed to BME
@@ -2203,7 +2285,9 @@ def compute_NOE_distances(protein, atom_pairs, stride=1):
     Raises
     ------
     SSException
-        If ``atom_pairs`` does not have shape ``(n_pairs, 2)``.
+        If ``atom_pairs`` does not have shape ``(n_pairs, 2)``, contains
+        non-integer values, or contains an index outside
+        ``[0, n_atoms - 1]``.
 
     Examples
     --------
@@ -2216,13 +2300,34 @@ def compute_NOE_distances(protein, atom_pairs, stride=1):
     # mdtraj is already imported by ssprotein; we only need it locally.
     import mdtraj as md
 
-    pairs = np.asarray(atom_pairs, dtype=int)
+    raw = np.asarray(atom_pairs)
+    # a float index used to be truncated silently (0.7 -> 0), and an
+    # out-of-range one gave mdtraj's misleading "must be between 0 and
+    # n_frames" error
+    if raw.size > 0 and not np.issubdtype(raw.dtype, np.integer):
+        if not (
+            np.issubdtype(raw.dtype, np.floating)
+            and np.all(np.isfinite(raw))
+            and np.all(raw == np.round(raw))
+        ):
+            raise SSException("atom_pairs must contain integer atom indices")
+    pairs = raw.astype(int) if raw.size > 0 else raw.reshape(-1, 2).astype(int)
     if pairs.ndim != 2 or pairs.shape[1] != 2:
         raise SSException(f"atom_pairs must have shape (n_pairs, 2), got {pairs.shape}")
+    n_atoms = protein.traj.n_atoms
+    if pairs.size > 0 and (pairs.min() < 0 or pairs.max() >= n_atoms):
+        raise SSException(
+            f"atom_pairs contains an atom index outside 0..{n_atoms - 1} "
+            f"(this protein has {n_atoms} atoms)"
+        )
 
+    stride = validate_stride(stride, protein.traj.n_frames)
     traj = protein.traj[::stride] if stride != 1 else protein.traj
-    # mdtraj returns nm; soursop convention is Angstroms.
-    return md.compute_distances(traj, pairs) * 10.0
+    # mdtraj returns nm; soursop convention is Angstroms. periodic=False, as
+    # everywhere else in soursop: chains are assumed whole, and mdtraj's
+    # default minimum-image convention returned spurious short distances for
+    # any pair separated by more than half the box.
+    return md.compute_distances(traj, pairs, periodic=False) * 10.0
 
 
 def noe_ensemble_average(
@@ -2231,6 +2336,7 @@ def noe_ensemble_average(
     weights=False,
     etol=1e-7,
     axis=0,
+    stride=1,
 ):
     """NOE-averaged distance across the ``axis`` of a distance array.
 
@@ -2257,6 +2363,12 @@ def noe_ensemble_average(
         Tolerance on ``sum(weights) == 1``. Default ``1e-7``.
     axis : int, optional
         Axis to collapse. Default 0 (frame axis).
+    stride : int, optional
+        The stride that was used to compute ``distances`` (e.g. with
+        :func:`compute_NOE_distances`). With ``stride > 1``, ``weights``
+        is the full-length per-frame vector of the unstrided trajectory
+        and is subsampled and renormalised here, exactly as in every other
+        SOURSOP function that takes ``weights``. Default 1.
 
     Returns
     -------
@@ -2266,10 +2378,25 @@ def noe_ensemble_average(
     Raises
     ------
     SSException
-        If ``weights`` fails validation, or if any distance along
-        ``axis`` is non-positive (since ``r^-p`` is undefined).
+        If ``power`` is not a finite positive number, if ``weights`` fails
+        validation (or, with ``stride``, does not correspond to the strided
+        distances), or if any distance is non-finite or non-positive
+        (since ``r^-p`` is undefined).
     """
+    try:
+        power_ok = bool(np.isfinite(power)) and power > 0
+    except TypeError:
+        power_ok = False
+    if not power_ok:
+        # power=0 used to raise ZeroDivisionError and a negative power
+        # silently computed a different average
+        raise SSException(
+            f"noe_ensemble_average: power must be positive, got {power!r}"
+        )
+
     d = np.asarray(distances, dtype=np.float64)
+    if not np.all(np.isfinite(d)):
+        raise SSException("noe_ensemble_average: all distances must be finite")
     if np.any(d <= 0):
         raise SSException(
             "noe_ensemble_average: all distances must be positive (got "
@@ -2278,7 +2405,17 @@ def noe_ensemble_average(
 
     inv_p = d ** (-float(power))
     n_along = d.shape[axis]
-    validated = validate_weights(weights, n_along, stride=1, etol=etol)
+    if stride == 1 or weights is False or weights is None:
+        validated = validate_weights(weights, n_along, stride=1, etol=etol)
+    else:
+        n_total = len(np.asarray(weights).ravel())
+        validated = validate_weights(weights, n_total, stride=stride, etol=etol)
+        if len(validated) != n_along:
+            raise SSException(
+                f"noe_ensemble_average: {n_total} weights with stride={stride} give "
+                f"{len(validated)} strided frames, but distances has {n_along} along "
+                f"axis {axis}"
+            )
 
     if validated is False:
         # uniform mean

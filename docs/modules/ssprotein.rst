@@ -15,7 +15,7 @@ Analyses fall into several broad categories:
 * **Inter-residue distances** — pairwise CA or COM distance matrices, distance maps, and polymer-scaled distance maps.
 * **Global size and shape** — radius of gyration, hydrodynamic radius, end-to-end distance, asphericity, acylindricity, prolateness, gyration tensor, and the :math:`t`-parameter.
 * **Secondary structure** — per-frame DSSP assignments and BBSEG backbone-torsion-based classification.
-* **Polymer scaling** — internal scaling profiles (:math:`\langle r^2 \rangle` vs sequence separation), the scaling exponent :math:`\nu`, and local heterogeneity in scaling behaviour.
+* **Polymer scaling** — internal scaling profiles (:math:`\langle r \rangle` or :math:`\sqrt{\langle r^2 \rangle}` vs sequence separation), the scaling exponent :math:`\nu`, and local heterogeneity in scaling behaviour.
 * **Contact and RMSD analysis** — contact maps (with configurable threshold and mode), RMSD to a reference structure, and fraction of native contacts :math:`Q`.
 * **Solvent accessibility** — per-residue and region-level SASA via ``get_all_SASA``, ``get_regional_SASA``, and ``get_site_accessibility``. On one-bead-per-residue coarse-grained chains these use the force field's own per-residue bead sizes (see :ref:`cg-sasa` below) rather than atomic van der Waals radii.
 * **Local dynamics** — local collapse profiles, sidechain alignment angles, dihedral mutual information, local-to-global correlation, and angle decay.
@@ -69,6 +69,8 @@ SOURSOP therefore computes SASA on these chains using the force field's own bead
 
 The same ``forcefield`` keyword is accepted by ``get_regional_SASA`` and ``get_site_accessibility``. On a one-bead chain only ``mode='residue'`` and ``mode='atom'`` are meaningful (and are equivalent) — a single bead represents the whole residue, so there is no backbone/sidechain decomposition to make and those modes raise.
 
+For the same reason ``get_secondary_structure_DSSP`` and ``get_sidechain_alignment_angle`` raise an ``SSException`` on a one-bead chain: there is no backbone for DSSP to classify (it would otherwise silently report 100% coil) and no sidechain atom to build an orientation vector from. Two-bead (CA/CB) models are handled separately via ``is_swan``.
+
 The underlying bead sizes are readable directly if you want them for something else::
 
   from soursop.ssdata import get_cg_bead_sigmas
@@ -76,7 +78,7 @@ The underlying bead sizes are readable directly if you want them for something e
   sigmas = get_cg_bead_sigmas('mpipi')     # residue name -> sigma in Angstroms
   sigmas['GLY']                            # 4.69511
 
-Note this applies only to one-bead-per-residue models. All-atom chains — and two-bead (CA/CB) models, which carry a CB for every non-glycine residue — use mdtraj's atomic radii as before, and passing a ``forcefield`` to them raises.
+Note this applies only to one-bead-per-residue models. All-atom chains — and two-bead (CA/CB) models, which carry a CB for every non-glycine residue — use mdtraj's atomic radii as before, and passing a ``forcefield`` to them raises. Note that on a two-bead chain this means every bead gets the 1.7 Å carbon radius whatever the residue, so the SASA values are only meaningful for relative comparisons within that model (a warning says so).
 
 
 SSProtein Properties
@@ -95,7 +97,6 @@ SSProtein objects have a set of object variables associated with them.
         .. autoattribute:: n_residues
         .. autoattribute:: residue_index_list
         .. autoattribute:: unitcell
-        .. autoattribute:: length
 
 
 SSProtein Functions
@@ -104,6 +105,7 @@ SSProtein Functions
 .. autoclass:: soursop.ssprotein.SSProtein
         :no-index:
 
+        .. automethod:: length
         .. automethod:: reset_cache
         .. automethod:: print_residues
         .. automethod:: get_amino_acid_sequence

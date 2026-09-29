@@ -18,7 +18,7 @@ using the Bayesian Maximum Entropy framework. BME finds the minimally biased
 set of frame weights (smallest relative entropy from the prior) that brings
 the ensemble averages into agreement with experimental data.
 
-Two reweighters are provided:
+Three reweighters are provided:
 
 ``BME``
     Standard maximum-entropy reweighting. Use when the calculated observables
@@ -31,6 +31,11 @@ Two reweighters are provided:
     the method of choice when there is an unknown global scale/offset between
     the calculated and experimental data (e.g. SAXS intensities). Ported from
     the reference implementation of Bottaro et al.
+
+``BMECustom``
+    BME-style penalty reweighting against a whole experimental profile (e.g.
+    a SAXS curve) with an optional user-supplied cost function in place of
+    the Gaussian chi-squared.
 
 ``ExperimentalObservable``
     Container for a single experimental data point (value, uncertainty and
@@ -94,9 +99,10 @@ import numpy as np
 from scipy.optimize import minimize
 from scipy.special import logsumexp, rel_entr
 
-from .ssexceptions import SSException
+from .ssexceptions import SSException, SSWarning
 from .ssutils import (
     MIN_WEIGHT_THRESHOLD,
+    build_scan_grid,
     VALID_CONSTRAINTS,
     ExperimentalObservable,
     constraint_chi_squared,
@@ -116,6 +122,130 @@ from .ssutils import (
 _srel = relative_entropy
 _weighted_linear_regression = weighted_linear_regression
 _validate_inputs = validate_reweighting_inputs
+
+
+def _weighted_average(weights: np.ndarray, calculated_values) -> np.ndarray:
+    """Weighted average of per-frame values over the frame axis.
+
+    Shared by the ``predict`` methods of the reweighting result classes. A
+    1D input of shape ``(n_frames,)`` is treated as a single observable and
+    reshaped to ``(n_frames, 1)``; previously such input broadcast to an
+    ``(n_frames, n_frames)`` array and was returned essentially unchanged.
+
+    Parameters
+    ----------
+    weights : numpy.ndarray
+        Frame weights, shape ``(n_frames,)``.
+    calculated_values : array_like
+        Per-frame values, shape ``(n_frames, ...)`` or ``(n_frames,)``.
+
+    Returns
+    -------
+    numpy.ndarray
+        Weighted average over axis 0. Shape ``(1,)`` for 1D input, otherwise
+        the input shape with the frame axis removed.
+
+    Raises
+    ------
+    SSException
+        If the number of frames does not match ``weights``.
+    """
+    calculated_values = np.asarray(calculated_values, dtype=np.float64)
+    if calculated_values.ndim == 0:
+        raise SSException("calculated_values must have a leading frame axis")
+    if calculated_values.ndim == 1:
+        calculated_values = calculated_values.reshape(-1, 1)
+    if calculated_values.shape[0] != weights.shape[0]:
+        raise SSException(
+            f"Number of frames in calculated_values "
+            f"({calculated_values.shape[0]}) must match the fitted "
+            f"ensemble ({weights.shape[0]})"
+        )
+    w = weights.reshape((-1,) + (1,) * (calculated_values.ndim - 1))
+    return np.sum(w * calculated_values, axis=0)
+
+
+# scipy.optimize.minimize methods that honour ``bounds``
+_BOUNDED_OPTIMIZERS = {"L-BFGS-B", "TNC", "SLSQP", "TRUST-CONSTR"}
+
+
+def _check_theta(theta) -> None:
+    """Raise unless ``theta`` is a finite, positive number.
+
+    ``theta <= 0`` alone let ``nan`` through (every comparison with nan is
+    False), which then produced an abnormal fit.
+
+    Parameters
+    ----------
+    theta : float
+        Regularisation strength.
+
+    Raises
+    ------
+    SSException
+        If ``theta`` is not finite and positive.
+    """
+    try:
+        ok = bool(np.isfinite(theta)) and theta > 0
+    except TypeError:
+        ok = False
+    if not ok:
+        raise SSException(f"theta must be a finite, positive number, got {theta!r}")
+
+
+def _check_optimizer(optimizer: str, observables) -> None:
+    """Raise if ``upper``/``lower`` observables are paired with an unbounded optimizer.
+
+    One-sided restraints are implemented as sign bounds on their Lagrange
+    multipliers. scipy methods that cannot handle bounds (BFGS, CG,
+    Newton-CG, ...) drop them with only a RuntimeWarning, silently turning
+    the restraint into an equality pull while ``chi_squared_final`` still
+    reports the one-sided value.
+
+    Parameters
+    ----------
+    optimizer : str
+        scipy.optimize.minimize method name.
+    observables : list of ExperimentalObservable
+        The observables being fitted.
+
+    Raises
+    ------
+    SSException
+        If any observable is ``upper`` or ``lower`` and ``optimizer`` does
+        not support bounds.
+    """
+    one_sided = any(obs.constraint != "equality" for obs in observables)
+    if one_sided and str(optimizer).upper() not in _BOUNDED_OPTIMIZERS:
+        raise SSException(
+            f"optimizer '{optimizer}' cannot handle bounds, which 'upper'/'lower' "
+            "observables need. Use one of L-BFGS-B (default), TNC, SLSQP or "
+            "trust-constr."
+        )
+
+
+def _optimizer_options(optimizer: str, max_iterations: int) -> dict:
+    """scipy ``options`` that cap the iterations for ``optimizer``.
+
+    TNC does not accept ``maxiter`` (scipy warns and ignores it); its
+    equivalent cap is ``maxfun``.
+
+    Parameters
+    ----------
+    optimizer : str
+        scipy.optimize.minimize method name.
+    max_iterations : int
+        Iteration cap.
+
+    Returns
+    -------
+    dict
+        Options dictionary for ``scipy.optimize.minimize``.
+    """
+    if str(optimizer).upper() == "TNC":
+        return {"maxfun": max_iterations}
+    return {"maxiter": max_iterations}
+
 
 __all__ = [
     "BME",
@@ -231,27 +361,22 @@ class BMEResult:
         Parameters
         ----------
         calculated_values : numpy.ndarray
-            Per-frame observable values, shape ``(n_frames, n_observables)``.
+            Per-frame observable values, shape ``(n_frames, ...)``. A 1D
+            array of shape ``(n_frames,)`` is treated as a single observable.
             ``n_frames`` must match the fitted ensemble.
 
         Returns
         -------
         numpy.ndarray
-            Weighted means, shape ``(n_observables,)``.
+            Weighted average over frames (axis 0); shape ``(n_observables,)``
+            for 2D input, ``(1,)`` for 1D input.
 
         Raises
         ------
         SSException
             If the number of frames does not match the fitted ensemble.
         """
-        calculated_values = np.asarray(calculated_values)
-        if calculated_values.shape[0] != self.weights.shape[0]:
-            raise SSException(
-                f"Number of frames in calculated_values "
-                f"({calculated_values.shape[0]}) must match the fitted "
-                f"ensemble ({self.weights.shape[0]})"
-            )
-        return np.sum(self.weights[:, np.newaxis] * calculated_values, axis=0)
+        return _weighted_average(self.weights, calculated_values)
 
     def diagnostics(self, warn_threshold: float = 0.5) -> dict:
         """Diagnose the reweighting result and flag potential issues.
@@ -272,23 +397,30 @@ class BMEResult:
         Two effective sample sizes are reported: the entropy-based
         ``neff_entropy`` (``N * phi``, the usual BME measure) and the
         Renyi-2 / participation ratio ``neff_renyi2`` (``1 / sum w^2``),
-        which is more sensitive to a few dominant weights.
+        which is more sensitive to a few dominant weights. Here ``N`` and
+        the weight statistics refer to the frames with non-zero *prior*
+        weight: frames the prior already excludes are not a loss of
+        diversity (prior to 2.0.6 they triggered "large weight range" and
+        "low effective sample size" warnings even for a no-op fit). A
+        failed fit is reported with status ``'FAILED'``.
         """
         diag: dict = {}
         warnings: List[str] = []
-        n = len(self.weights)
+        support = np.asarray(self.initial_weights) > 0
+        w = self.weights[support]
+        n = int(np.sum(support))
 
         neff_entropy = n * float(self.phi)
         diag["neff_entropy"] = neff_entropy
         diag["neff_entropy_fraction"] = float(self.phi)
 
-        neff_renyi2 = 1.0 / np.sum(self.weights**2)
+        neff_renyi2 = 1.0 / np.sum(w**2)
         diag["neff_renyi2"] = float(neff_renyi2)
         diag["neff_renyi2_fraction"] = float(neff_renyi2 / n)
 
-        diag["weight_min"] = float(self.weights.min())
-        diag["weight_max"] = float(self.weights.max())
-        diag["weight_std"] = float(self.weights.std())
+        diag["weight_min"] = float(w.min())
+        diag["weight_max"] = float(w.max())
+        diag["weight_std"] = float(w.std())
         if diag["weight_min"] > 0:
             diag["weight_range_orders"] = float(
                 np.log10(diag["weight_max"] / diag["weight_min"])
@@ -320,14 +452,33 @@ class BMEResult:
                 f"Large weight range ({diag['weight_range_orders']:.1f} "
                 "orders of magnitude): a few frames dominate the ensemble."
             )
-        if self.chi_squared_final > 2 * len(self.observables):
+        # chi_squared_final is the REDUCED chi-squared (mean over observables),
+        # so the threshold is a constant; the previous ``2 * n_observables``
+        # compared a per-observable mean against a total and so almost never
+        # fired for more than one observable.
+        if self.chi_squared_final > 2.0:
             warnings.append(
-                f"High final Chi-squared ({self.chi_squared_final:.2f}): "
+                f"High final reduced chi-squared ({self.chi_squared_final:.2f} > 2): "
                 "poor fit; observables may be incompatible with the ensemble."
             )
 
+        # a failed fit has phi / chi2 = nan, so every check above silently
+        # passed and the report used to read "OK - No issues detected"
+        failed = (not self.success) or not (
+            np.isfinite(self.phi) and np.isfinite(self.chi_squared_final)
+        )
+        if failed:
+            warnings.insert(
+                0,
+                f"Fit failed ({self.message}); the weights are not a converged "
+                "reweighting.",
+            )
+
         diag["warnings"] = warnings
-        diag["status"] = "OK" if len(warnings) == 0 else "WARNING"
+        if failed:
+            diag["status"] = "FAILED"
+        else:
+            diag["status"] = "OK" if len(warnings) == 0 else "WARNING"
         return diag
 
     def print_diagnostics(self, warn_threshold: float = 0.5):
@@ -461,9 +612,10 @@ def theta_scan(
         Per-frame calculated values, shape ``(n_frames, n_observables)``.
     reweighter : str, optional
         ``"bme"`` (default) or ``"ibme"``.
-    theta_range : tuple or numpy.ndarray, optional
-        ``(min, max)`` for a generated grid of ``n_points``, or an explicit
-        1D array of theta values. Default ``(0.01, 10.0)``.
+    theta_range : tuple, list or numpy.ndarray, optional
+        A ``(min, max)`` tuple for a generated grid of ``n_points``, or an
+        explicit 1D list/array of theta values (a list is always read as
+        explicit values). Default ``(0.01, 10.0)``.
     n_points : int, optional
         Number of grid points when ``theta_range`` is a tuple. Default 15.
     log_scale : bool, optional
@@ -485,32 +637,25 @@ def theta_scan(
     Raises
     ------
     SSException
-        If ``reweighter`` is unknown, ``n_points`` < 1, or a log-scale grid
-        has non-positive endpoints.
+        If ``reweighter`` is unknown, ``n_points`` < 1, a log-scale grid
+        has non-positive endpoints, or every fit in the scan failed. Fits
+        that fail individually are excluded from the knee selection (with an
+        ``SSWarning``) but kept in ``results``.
     """
     if reweighter not in ("bme", "ibme"):
         raise SSException(f"Unknown reweighter: {reweighter}, must be 'bme' or 'ibme'")
 
-    if isinstance(theta_range, (tuple, list)):
-        if n_points < 1:
-            raise SSException(
-                f"n_points must be >= 1 for a tuple theta_range, got {n_points}"
-            )
-        if log_scale and (theta_range[0] <= 0 or theta_range[1] <= 0):
-            raise SSException(
-                "theta_range endpoints must be positive when log_scale=True, "
-                f"got {theta_range}"
-            )
-        if log_scale:
-            theta_values = np.logspace(
-                np.log10(theta_range[0]), np.log10(theta_range[1]), n_points
-            )
-        else:
-            theta_values = np.linspace(theta_range[0], theta_range[1], n_points)
-    else:
-        theta_values = np.asarray(theta_range, dtype=np.float64)
+    theta_values = build_scan_grid(theta_range, n_points, log_scale, "theta_range")
 
     fit_kwargs = dict(fit_kwargs) if fit_kwargs else {}
+    # these are set by the scan itself; passing them in fit_kwargs used to
+    # raise a raw "got multiple values for keyword argument" TypeError
+    reserved = {"theta", "verbose", "auto_theta"} & set(fit_kwargs)
+    if reserved:
+        raise SSException(
+            f"theta_scan: fit_kwargs must not set {sorted(reserved)}; the scan sets "
+            "these itself"
+        )
 
     chi2_vals: List[float] = []
     phi_vals: List[float] = []
@@ -541,7 +686,29 @@ def theta_scan(
     phi_arr = np.array(phi_vals)
     kl_arr = np.array(kl_vals)
 
-    optimal_idx, method_name = find_optimal_theta(chi2_arr, kl_arr, method=method)
+    # a failed fit carries chi2 = nan / KL = inf; left in, the knee finder
+    # silently returned index 0 (the smallest theta) whenever every fit failed.
+    # Any non-finite metric is excluded for the same reason.
+    ok = np.array([r.success for r in results], dtype=bool)
+    ok &= np.isfinite(chi2_arr) & np.isfinite(kl_arr)
+    if not np.any(ok):
+        messages = sorted({str(r.message) for r in results})
+        raise SSException(
+            "theta_scan: every fit failed, so no theta can be selected. Optimizer "
+            f"messages: {messages}. Try more max_iterations, a wider theta range or "
+            "rescaled observables."
+        )
+    if not np.all(ok):
+        SSWarning(
+            f"theta_scan: {int(np.sum(~ok))} of {len(ok)} fits failed and were "
+            "ignored when selecting theta (their results are kept in .results with "
+            "success=False)."
+        )
+    ok_idx = np.flatnonzero(ok)
+    local_idx, method_name = find_optimal_theta(
+        chi2_arr[ok_idx], kl_arr[ok_idx], method=method
+    )
+    optimal_idx = int(ok_idx[local_idx])
 
     return ThetaScanResult(
         theta_values=theta_values,
@@ -598,10 +765,22 @@ class BME:
         else:
             self.initial_weights = initial_weights / np.sum(initial_weights)
 
+        # Frames with zero prior weight get weight exactly 0 whatever the
+        # multipliers, so their calculated values never matter; zero them in
+        # the internal working copy so a NaN there (allowed, as in COPER)
+        # cannot poison the sums
+        support = self.initial_weights > 0
+        self._calc = np.where(
+            support[:, np.newaxis],
+            np.asarray(calculated_values, dtype=np.float64),
+            0.0,
+        )
+
         # Deterministic initialisation of the dual Lagrange multipliers. The
         # dual problem is convex, so the optimum is independent of the start;
         # seeding a local RNG (rather than the global np.random.normal used
-        # previously) makes fits reproducible run-to-run.
+        # previously) makes fits reproducible run-to-run. The multipliers
+        # are held in the standardised units below.
         _lambda_rng = np.random.default_rng(0)
         self._lambdas = _lambda_rng.normal(
             loc=0.0, scale=LAMBDA_INIT_SCALE, size=self.n_observables
@@ -615,6 +794,23 @@ class BME:
             [obs.uncertainty**2 for obs in self.observables],
             dtype=np.float64,
         )
+
+        # Standardise every observable before optimising, exactly as the
+        # reference BME implementation does (Bottaro et al., z-score against
+        # the prior): with mu the prior mean and s the prior spread of the
+        # calculated values, each observable is shifted by mu and divided
+        # by d = (s + sigma) / 2. The maximum-entropy solution is invariant
+        # to this change of units (the multipliers simply scale by d), but
+        # the optimizer's stopping tolerance is absolute, so without it
+        # observables that are small in absolute terms (e.g. SAXS in cm^-1)
+        # stopped at iteration 0 and returned the prior with success=True.
+        w0 = self.initial_weights
+        mu = w0 @ self._calc
+        spread = np.sqrt(w0 @ (self._calc - mu) ** 2)
+        self._scale = 0.5 * (spread + np.sqrt(self._exp_sigma2))
+        self._calc_std = (self._calc - mu) / self._scale
+        self._exp_std = (self._exp_values - mu) / self._scale
+        self._sigma2_std = self._exp_sigma2 / self._scale**2
 
         self._result: Optional[BMEResult] = None
         self._theta_scan_result: Optional[ThetaScanResult] = None
@@ -637,7 +833,7 @@ class BME:
         float
             Mean of ``(diff / sigma)^2`` over observables.
         """
-        return constraint_chi_squared(weights, self.calculated_values, self.observables)
+        return constraint_chi_squared(weights, self._calc, self.observables)
 
     # ------------------------------------------------------------------
     def _objective_and_gradient(self, lambdas: np.ndarray) -> Tuple[float, np.ndarray]:
@@ -645,7 +841,8 @@ class BME:
 
         Implements ``L = lambda^T O_exp + (theta/2) lambda^T Sigma^2 lambda
         + log Z`` and its gradient, scaled by ``1/theta`` for numerical
-        stability.
+        stability. Everything is evaluated on the standardised observables
+        (see ``__init__``), so ``lambdas`` are in standardised units.
 
         Parameters
         ----------
@@ -657,19 +854,19 @@ class BME:
         tuple
             ``(objective/theta, gradient/theta)``.
         """
-        log_w = -np.sum(lambdas * self.calculated_values, axis=1) + np.log(
-            self.initial_weights
-        )
+        # log(0) = -inf is the intended result for frames with zero prior
+        # weight (they get weight exactly 0), so the divide warning is noise.
+        with np.errstate(divide="ignore"):
+            log_w0 = np.log(self.initial_weights)
+        log_w = -np.sum(lambdas * self._calc_std, axis=1) + log_w0
         log_z = logsumexp(log_w)
         probs = np.exp(log_w - log_z)
-        avg_calc = np.sum(probs[:, np.newaxis] * self.calculated_values, axis=0)
+        avg_calc = np.sum(probs[:, np.newaxis] * self._calc_std, axis=0)
 
-        regularization = self._theta / 2 * np.sum(lambdas**2 * self._exp_sigma2)
-        constraint = np.dot(lambdas, self._exp_values)
+        regularization = self._theta / 2 * np.sum(lambdas**2 * self._sigma2_std)
+        constraint = np.dot(lambdas, self._exp_std)
         objective = log_z + constraint + regularization
-        gradient = (
-            self._exp_values + self._theta * lambdas * self._exp_sigma2 - avg_calc
-        )
+        gradient = self._exp_std + self._theta * lambdas * self._sigma2_std - avg_calc
         return objective / self._theta, gradient / self._theta
 
     # ------------------------------------------------------------------
@@ -699,10 +896,11 @@ class BME:
             print(f"  Frames: {self.n_frames}")
             print(f"  Chi-squared initial: {chi2_initial:.4f}")
 
+        _check_optimizer(optimizer, self.observables)
         opt = minimize(
             self._objective_and_gradient,
             self._lambdas,
-            options={"maxiter": max_iterations},
+            options=_optimizer_options(optimizer, max_iterations),
             method=optimizer,
             jac=True,
             bounds=self._bounds,
@@ -715,9 +913,9 @@ class BME:
         }
 
         if opt.success:
-            log_w = -np.sum(
-                opt.x[np.newaxis, :] * self.calculated_values, axis=1
-            ) + np.log(self.initial_weights)
+            with np.errstate(divide="ignore"):
+                log_w0 = np.log(self.initial_weights)
+            log_w = -np.sum(opt.x[np.newaxis, :] * self._calc_std, axis=1) + log_w0
             weights = np.exp(log_w - logsumexp(log_w))
             chi2_final = self._compute_chi_squared(weights)
             rel = float(np.sum(rel_entr(weights, self.initial_weights)))
@@ -729,7 +927,8 @@ class BME:
             return BMEResult(
                 weights=weights,
                 initial_weights=self.initial_weights.copy(),
-                lambdas=opt.x.copy(),
+                # report the multipliers in the observables' own units
+                lambdas=opt.x / self._scale,
                 chi_squared_initial=chi2_initial,
                 chi_squared_final=chi2_final,
                 phi=phi,
@@ -748,7 +947,7 @@ class BME:
         return BMEResult(
             weights=self.initial_weights.copy(),
             initial_weights=self.initial_weights.copy(),
-            lambdas=opt.x.copy(),
+            lambdas=opt.x / self._scale,
             chi_squared_initial=chi2_initial,
             chi_squared_final=np.nan,
             phi=np.nan,
@@ -786,7 +985,9 @@ class BME:
             If given, use this theta (no scan). Must be positive.
         auto_theta : bool, optional
             If True and ``theta`` is None, run an L-curve scan to pick theta.
-            Default True.
+            Default True. If False and ``theta`` is None, the theta of the
+            previous fit on this object is reused (or ``DEFAULT_THETA`` =
+            0.5 for a first fit).
         theta_scan_kwargs : dict, optional
             Extra keyword arguments forwarded to :meth:`scan_theta`.
 
@@ -797,11 +998,12 @@ class BME:
         Raises
         ------
         SSException
-            If ``theta`` is not positive.
+            If ``theta`` is not finite and positive, if ``optimizer`` cannot
+            handle the bounds that ``upper``/``lower`` observables need, or
+            (with ``auto_theta``) if every fit in the theta scan failed.
         """
         if theta is not None:
-            if theta <= 0:
-                raise SSException(f"theta must be positive, got {theta}")
+            _check_theta(theta)
             self._theta = float(theta)
             self._theta_scan_result = None
             if verbose:
@@ -809,7 +1011,14 @@ class BME:
         elif auto_theta:
             if verbose:
                 print("[BME] Auto theta: running L-curve scan...")
-            scan_kwargs = dict(theta_range=(0.01, 10.0), n_points=15)
+            # the per-theta fits use the same optimizer settings as a manual
+            # fit would (previously max_iterations / optimizer were silently
+            # dropped on the auto-theta path)
+            scan_kwargs = dict(
+                theta_range=(0.01, 10.0),
+                n_points=15,
+                fit_kwargs=dict(max_iterations=max_iterations, optimizer=optimizer),
+            )
             if theta_scan_kwargs:
                 scan_kwargs.update(theta_scan_kwargs)
             scan = self.scan_theta(**scan_kwargs)
@@ -817,7 +1026,9 @@ class BME:
             self._theta = float(scan.optimal_theta)
             self._result = scan.results[opt_idx]
             self._theta_scan_result = scan
-            self._lambdas = self._result.lambdas.copy()
+            # results carry multipliers in the observables' units; the
+            # optimizer works in standardised units
+            self._lambdas = self._result.lambdas * self._scale
             if verbose:
                 print(
                     f"[BME] Selected theta={self._theta:.4g} via "
@@ -850,6 +1061,7 @@ class BME:
         log_scale: bool = True,
         method: str = "perpendicular",
         verbose: bool = False,
+        fit_kwargs: Optional[dict] = None,
     ) -> ThetaScanResult:
         """Run an L-curve theta scan using this instance's data.
 
@@ -857,6 +1069,9 @@ class BME:
         ----------
         theta_range, n_points, log_scale, method, verbose
             See :func:`theta_scan`.
+        fit_kwargs : dict, optional
+            Extra keyword arguments forwarded to :meth:`fit` for each theta
+            (``max_iterations``, ``optimizer``).
 
         Returns
         -------
@@ -872,6 +1087,7 @@ class BME:
             initial_weights=self.initial_weights,
             method=method,
             verbose=verbose,
+            fit_kwargs=fit_kwargs,
         )
         self._theta_scan_result = scan
         return scan
@@ -997,6 +1213,10 @@ class iBME:
             iterations. Default 0.01.
         max_ibme_iterations : int, optional
             Maximum number of scale/offset+BME iterations. Default 50.
+            Convergence is judged on the change in chi-squared between
+            iterations, so at least two are needed; if the loop ends without
+            converging the result has ``success=False`` (and
+            ``metadata['converged'] = False``) and a warning is emitted.
         fit_offset : bool, optional
             If True fit a scale and offset; if False fit scale only.
             Default True.
@@ -1021,17 +1241,43 @@ class iBME:
         Raises
         ------
         SSException
-            If ``theta`` is not positive.
+            If ``theta`` is not finite and positive, if ``optimizer`` cannot
+            handle the bounds that ``upper``/``lower`` observables need, or
+            if there are fewer observables than fitted parameters (two with
+            ``fit_offset=True``).
         """
-        if theta <= 0:
-            raise SSException(f"theta must be positive, got {theta}")
+        _check_theta(theta)
+        _check_optimizer(optimizer, self.observables)
+        # a scale (and offset) is fitted every iteration, so the data must
+        # over-determine them for the maxent step to have anything to do
+        n_params = 2 if fit_offset else 1
+        if self.n_observables < n_params:
+            raise SSException(
+                "iBME with fit_offset=True fits a scale and an offset, which "
+                f"needs at least two observables (got {self.n_observables}). "
+                "With a single observable use BME (a scale-only iBME fit would be "
+                "exactly determined)."
+            )
+        if self.n_observables == n_params:
+            what = "a scale and an offset" if fit_offset else "a scale"
+            SSWarning(
+                f"iBME with fit_offset={fit_offset} and exactly {n_params} "
+                f"observable(s) is exactly determined: {what} can map the ensemble "
+                "average(s) onto the target(s) for any weight vector, so chi-squared "
+                "is zero and the weights stay at the prior. Use more observables"
+                + (" or fit_offset=False." if fit_offset else ", or use BME.")
+            )
         self._theta = float(theta)
 
         w0 = self.initial_weights.copy()
         current_weights = w0.copy()
         # Working copy of the calculated values; rescaled in place each
         # iteration so the scale/offset accumulates (matches reference iBME).
-        calc = self.calculated_values.astype(np.float64).copy()
+        # (frames with zero prior weight never contribute, so zero their
+        # values; a NaN there would otherwise poison every weighted average)
+        calc = np.where(
+            (w0 > 0)[:, np.newaxis], self.calculated_values.astype(np.float64), 0.0
+        )
 
         if lr_weights:
             lr_w = 1.0 / self._exp_sigma**2
@@ -1046,7 +1292,7 @@ class iBME:
         chi2_initial = np.nan
         chi2_old = np.nan
         last_result: Optional[BMEResult] = None
-        it = 0
+        converged = False
 
         for it in range(max_ibme_iterations):
             calc_avg = np.sum(calc * current_weights[:, np.newaxis], axis=0)
@@ -1092,6 +1338,7 @@ class iBME:
                 )
 
             if np.isfinite(diff) and diff < ftol:
+                converged = True
                 if verbose:
                     print(
                         f"iBME converged below tolerance {ftol:.2e} after "
@@ -1100,7 +1347,18 @@ class iBME:
                 break
 
         phi = float(np.exp(-_srel(w0, current_weights)))
-        success = last_result is not None and last_result.success
+        # success needs both the last inner BME fit and the outer iBME loop
+        # to have converged. Prior to 2.0.6 running out of
+        # max_ibme_iterations (or never testing convergence at all, with
+        # max_ibme_iterations=1) was still reported as a success
+        success = last_result is not None and last_result.success and converged
+        if last_result is not None and last_result.success and not converged:
+            SSWarning(
+                f"iBME did not converge: |delta chi-squared| stayed above "
+                f"ftol={ftol:g} for all {len(iterations)} iteration(s) "
+                f"(max_ibme_iterations={max_ibme_iterations}). The result is marked "
+                "success=False; increase max_ibme_iterations or ftol."
+            )
         metadata = {
             "optimizer": optimizer,
             "max_iterations": max_iterations,
@@ -1108,6 +1366,7 @@ class iBME:
             "ftol": ftol,
             "fit_offset": fit_offset,
             "lr_weights": lr_weights,
+            "converged": converged,
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         }
 
@@ -1122,7 +1381,7 @@ class iBME:
             chi_squared_initial=chi2_initial,
             chi_squared_final=chi2_old,
             phi=phi,
-            n_iterations=it + 1,
+            n_iterations=len(iterations),
             success=success,
             message=(
                 last_result.message if last_result is not None else "no iterations run"
@@ -1327,8 +1586,15 @@ class BMECustomResult:
 
     @property
     def reweighting_factors(self) -> np.ndarray:
-        """Per-frame reweighting factors ``r_i = w_i / w0_i``."""
-        return self.weights / self.initial_weights
+        """Per-frame reweighting factors ``r_i = w_i / w0_i``.
+
+        Frames with zero prior weight (which keep weight zero) are reported
+        as 0, as in :attr:`soursop.sscoper.COPERResult.reweighting_factors`.
+        """
+        out = np.zeros_like(self.weights)
+        active = self.initial_weights > 0
+        out[active] = self.weights[active] / self.initial_weights[active]
+        return out
 
     def predict(self, calculated_values: np.ndarray) -> np.ndarray:
         """Weighted average of arbitrary observables using these weights.
@@ -1336,28 +1602,21 @@ class BMECustomResult:
         Parameters
         ----------
         calculated_values : numpy.ndarray
-            Per-frame values, shape ``(n_frames, ...)``; ``n_frames`` must
-            match the fitted ensemble.
+            Per-frame values, shape ``(n_frames, ...)``; a 1D array of
+            shape ``(n_frames,)`` is treated as a single observable.
+            ``n_frames`` must match the fitted ensemble.
 
         Returns
         -------
         numpy.ndarray
-            Weighted average over frames (axis 0).
+            Weighted average over frames (axis 0); ``(1,)`` for 1D input.
 
         Raises
         ------
         SSException
             If the number of frames does not match the fitted ensemble.
         """
-        calculated_values = np.asarray(calculated_values)
-        if calculated_values.shape[0] != self.weights.shape[0]:
-            raise SSException(
-                f"Number of frames in calculated_values "
-                f"({calculated_values.shape[0]}) must match the fitted "
-                f"ensemble ({self.weights.shape[0]})"
-            )
-        weights = self.weights.reshape((-1,) + (1,) * (calculated_values.ndim - 1))
-        return np.sum(weights * calculated_values, axis=0)
+        return _weighted_average(self.weights, calculated_values)
 
     def diagnostics(self, warn_threshold: float = 0.5) -> dict:
         """Diagnose the reweighting result and flag potential issues.
@@ -1375,11 +1634,14 @@ class BMECustomResult:
         """
         diag: dict = {}
         warnings: List[str] = []
-        n = len(self.weights)
+        # statistics over the frames with non-zero prior weight (see
+        # BMEResult.diagnostics)
+        support = np.asarray(self.initial_weights) > 0
+        n = int(np.sum(support))
 
         diag["neff_entropy"] = n * float(self.phi)
         diag["neff_entropy_fraction"] = float(self.phi)
-        diag["neff_renyi2"] = float(1.0 / np.sum(self.weights**2))
+        diag["neff_renyi2"] = float(1.0 / np.sum(self.weights[support] ** 2))
         diag["neff_renyi2_fraction"] = float(diag["neff_renyi2"] / n)
         diag["cost_improvement"] = self.cost_initial - self.cost_final
 
@@ -1397,12 +1659,29 @@ class BMECustomResult:
                 "are effectively used."
             )
 
+        failed = (not self.success) or not np.isfinite(self.phi)
+        if failed:
+            warnings.insert(
+                0,
+                f"Fit failed ({self.message}); the weights are not a converged "
+                "reweighting.",
+            )
+
         diag["warnings"] = warnings
-        diag["status"] = "OK" if len(warnings) == 0 else "WARNING"
+        if failed:
+            diag["status"] = "FAILED"
+        else:
+            diag["status"] = "OK" if len(warnings) == 0 else "WARNING"
         return diag
 
     def print_diagnostics(self, warn_threshold: float = 0.5):
-        """Print a formatted diagnostic report for this result."""
+        """Print a formatted diagnostic report for this result.
+
+        Parameters
+        ----------
+        warn_threshold : float, optional
+            Passed through to :meth:`diagnostics`. Default 0.5.
+        """
         diag = self.diagnostics(warn_threshold)
         n = len(self.weights)
         key_w, val_w = 32, 14
@@ -1450,15 +1729,34 @@ class BMECustom:
         \\mathcal{L}(w) = \\text{cost}(w) + \\theta\\, D_{\\mathrm{KL}}(w\\,\\|\\,w^0)
 
     directly over the ``n`` frame weights (subject to the simplex
-    ``w_i \\ge 0``, ``\\sum_i w_i = 1``) using SciPy's ``trust-constr``. The
-    entropy penalty ``theta`` plays the same role as in :class:`BME`: large
-    ``theta`` keeps the ensemble close to the prior, small ``theta`` fits
-    the data harder.
+    ``w_i \\ge 0``, ``\\sum_i w_i = 1``). The entropy penalty ``theta``
+    plays the same qualitative role as in :class:`BME`: large ``theta``
+    keeps the ensemble close to the prior, small ``theta`` fits the data
+    harder.
 
     Unlike :class:`BME` (which exploits a closed-form exponential solution
     special to the Gaussian chi-squared), an arbitrary cost has no such
     closed form, so the weights are optimised directly. The default cost
-    reproduces :class:`BME`'s reduced chi-squared exactly.
+    is :class:`BME`'s reduced chi-squared
+    ``chi2_red = (1/m) sum_k ((<calc>_k - V_k) / sigma_k)^2``, so
+    ``cost_initial`` / ``cost_final`` are directly comparable with
+    ``BMEResult.chi_squared_initial`` / ``chi_squared_final``.
+
+    **Theta is not on the same scale as in BME.** :class:`BME` minimises
+    ``(1/2) sum_k ((<calc>_k - V_k) / sigma_k)^2 + theta * D_KL``, i.e.
+    ``(m/2) * chi2_red + theta * D_KL``, whereas :class:`BMECustom` (with
+    the default cost) minimises ``chi2_red + theta * D_KL``. The two are the
+    same problem up to a constant factor ``m/2`` on the cost, so
+
+    ``BMECustom(...).fit(theta=2 * theta_bme / m)``
+
+    gives the same weights as ``BME(...).fit(theta=theta_bme)``; equivalently
+    a BMECustom ``theta`` corresponds to a BME theta of ``m * theta / 2``.
+    The reduced form is kept here so that the penalty strength is
+    independent of the length of the experimental vector (a SAXS profile
+    with 500 points and one with 50 need not use wildly different
+    ``theta``), and so that a user-supplied cost on the same scale as the
+    reduced chi-squared behaves identically to the default.
 
     Parameters
     ----------
@@ -1555,8 +1853,10 @@ class BMECustom:
                     "uncertainty must be a scalar or a length-m vector "
                     f"(m={self.m}), got shape {sigma.shape}"
                 )
-            if np.any(sigma <= 0):
-                raise SSException("uncertainty values must be positive")
+            if not np.all(np.isfinite(sigma)) or np.any(sigma <= 0):
+                raise SSException("uncertainty values must be finite and positive")
+        if not np.all(np.isfinite(experiment)):
+            raise SSException("experiment must contain only finite values")
 
         self.experiment = experiment
         self.calculated_values = calculated_values
@@ -1567,9 +1867,31 @@ class BMECustom:
             self.initial_weights = np.ones(self.n_frames) / self.n_frames
         else:
             initial_weights = np.asarray(initial_weights, dtype=np.float64)
+            # an (n, 1) column vector used to pass the length check and then
+            # fail with a raw broadcasting error
+            if initial_weights.ndim != 1:
+                raise SSException(
+                    f"initial_weights must be a 1D vector, got shape {initial_weights.shape}"
+                )
             if len(initial_weights) != self.n_frames:
                 raise SSException("initial_weights length must match number of frames")
+            if not np.all(np.isfinite(initial_weights)):
+                raise SSException("initial_weights must be finite")
+            if np.any(initial_weights < 0):
+                raise SSException("initial_weights must be non-negative")
+            if not np.sum(initial_weights) > 0:
+                raise SSException("initial_weights must not all be zero")
             self.initial_weights = initial_weights / np.sum(initial_weights)
+
+        # frames with zero prior weight always end with zero weight, so their
+        # values never matter; zero them in the working copy used by the
+        # default cost so a NaN there cannot poison the weighted average
+        support = self.initial_weights > 0
+        if not np.all(np.isfinite(calculated_values[support])):
+            raise SSException(
+                "calculated_values must be finite on every frame with non-zero prior weight"
+            )
+        self._calc = np.where(support[:, np.newaxis], calculated_values, 0.0)
 
         self._result: Optional[BMECustomResult] = None
         self._theta: Optional[float] = None
@@ -1579,7 +1901,7 @@ class BMECustom:
     def _cost(self, weights: np.ndarray) -> float:
         """Evaluate the (user or default) cost at ``weights``."""
         if self.cost_function is None:
-            avg = weights @ self.calculated_values
+            avg = weights @ self._calc
             diff = (avg - self.experiment) / self.uncertainty
             return float(np.mean(diff**2))
         return float(
@@ -1588,9 +1910,9 @@ class BMECustom:
 
     def _default_cost_grad(self, weights: np.ndarray) -> np.ndarray:
         """Analytic gradient of the default chi-squared cost."""
-        avg = weights @ self.calculated_values
+        avg = weights @ self._calc
         coef = (2.0 / self.m) * (avg - self.experiment) / self.uncertainty**2
-        return self.calculated_values @ coef
+        return self._calc @ coef
 
     # ------------------------------------------------------------------
     def fit(
@@ -1601,6 +1923,11 @@ class BMECustom:
         verbose: bool = True,
     ) -> BMECustomResult:
         """Reweight by minimising ``cost(w) + theta * D_KL(w || w0)``.
+
+        Note that with the default (reduced chi-squared) cost this ``theta``
+        is on a different scale from :class:`BME`'s: ``theta_bme = m * theta
+        / 2`` where ``m`` is the experimental vector length (see the class
+        docstring).
 
         Internally the simplex ``w_i >= 0``, ``sum_i w_i = 1`` is enforced
         via a softmax reparameterisation (``w = softmax(z)``), reducing the
@@ -1628,14 +1955,26 @@ class BMECustom:
         Raises
         ------
         SSException
-            If ``theta`` is not positive.
+            If ``theta`` is not finite and positive.
         """
-        if theta <= 0:
-            raise SSException(f"theta must be positive, got {theta}")
+        _check_theta(theta)
         self._theta = float(theta)
         n = self.n_frames
         w0 = self.initial_weights.copy()
-        log_w0 = np.log(np.maximum(w0, MIN_WEIGHT_THRESHOLD))
+
+        # Optimise over the prior's support only and put exact zeros back
+        # afterwards (as COPER does). A frame with zero prior weight must
+        # have zero posterior weight, since otherwise KL(w || w0) is
+        # infinite; prior to 2.0.6 such frames were given a tiny stand-in
+        # prior, which a fit that flattened a non-uniform prior could push
+        # above zero, returning phi = 0 and KL = inf.
+        support = w0 > 0
+        log_w0 = np.log(w0[support])
+
+        def full_weights(w_support):
+            w = np.zeros(n)
+            w[support] = w_support
+            return w
 
         def softmax(z):
             # Numerically stable softmax.
@@ -1649,7 +1988,7 @@ class BMECustom:
             # log w_i = z_i - logsumexp(z).
             log_w = z - logsumexp(z)
             kl = float(np.sum(w * (log_w - log_w0)))
-            return self._cost(w) + theta * kl
+            return self._cost(full_weights(w)) + theta * kl
 
         def objective_and_grad(z):
             # Analytic value+gradient for the DEFAULT chi^2 cost (only used on
@@ -1657,10 +1996,13 @@ class BMECustom:
             log_w = z - logsumexp(z)
             w = np.exp(log_w)
             kl = float(np.sum(w * (log_w - log_w0)))
-            val = self._cost(w) + theta * kl
+            w_full = full_weights(w)
+            val = self._cost(w_full) + theta * kl
             # d/dw of [cost + theta*KL]; the +1 from d(w log w)/dw is projected
             # away by the softmax Jacobian below, but is kept for clarity.
-            g = self._default_cost_grad(w) + theta * (log_w - log_w0 + 1.0)
+            g = self._default_cost_grad(w_full)[support] + theta * (
+                log_w - log_w0 + 1.0
+            )
             # chain through the softmax Jacobian J = diag(w) - w w^T:
             # (J g)_i = w_i (g_i - w . g).
             grad_z = w * (g - float(w @ g))
@@ -1675,7 +2017,7 @@ class BMECustom:
             print(f"  Theta: {theta}")
             print(f"  Cost initial: {cost_initial:.4f}")
 
-        # Initial parameter: z = log w0 -> softmax(z) = w0.
+        # Initial parameter: z = log w0 -> softmax(z) = w0 (on the support).
         z0 = log_w0.copy()
 
         # Use the analytic value+gradient for the default chi^2 cost (O(N*m)
@@ -1700,14 +2042,16 @@ class BMECustom:
                 options={"maxiter": max_iterations, "ftol": 1e-9, "gtol": 1e-7},
             )
 
-        w_opt = softmax(opt.x)
+        w_opt = full_weights(softmax(opt.x))
         cost_final = self._cost(w_opt)
         phi = float(np.exp(-_srel(w0, w_opt)))
 
-        # L-BFGS-B reports success when it converges by ``ftol`` / ``gtol``.
-        # Fall back to "did we end up no worse than the prior?" so a stalled
-        # but improving fit isn't reported as a failure.
-        success = bool(opt.success) or cost_final <= cost_initial + 1e-9
+        # Report the optimizer's own verdict. Prior to 2.0.6 success also
+        # held whenever cost_final <= cost_initial, which is always true
+        # (the optimizer starts at the prior and only lowers cost + theta*KL),
+        # so iteration-limit and abnormal terminations counted as successes
+        # and scan_theta's failed-fit filter never fired.
+        success = bool(opt.success)
 
         if verbose:
             print(f"  Cost final: {cost_final:.4f}")
@@ -1731,6 +2075,7 @@ class BMECustom:
                 "optimizer": optimizer,
                 "max_iterations": max_iterations,
                 "custom_cost": self.cost_function is not None,
+                "improved_on_prior": bool(cost_final <= cost_initial + 1e-9),
                 "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             },
         )
@@ -1744,58 +2089,81 @@ class BMECustom:
         log_scale: bool = True,
         method: str = "perpendicular",
         verbose: bool = False,
+        fit_kwargs: Optional[dict] = None,
     ) -> ThetaScanResult:
         """Scan ``theta`` and pick the cost vs. relative-entropy knee.
 
         The L-curve analogue of :meth:`BME.scan_theta`. The returned
         :class:`ThetaScanResult` stores the cost in its
         ``chi_squared_values`` field (the generic fit metric for this
-        variant).
+        variant). As with :meth:`BME.scan_theta`, the object's current
+        fit (``result`` / ``theta``) is left untouched by the scan.
 
         Parameters
         ----------
         theta_range, n_points, log_scale, method, verbose
             See :func:`theta_scan`. Default range ``(0.01, 100.0)``.
+        fit_kwargs : dict, optional
+            Extra keyword arguments forwarded to :meth:`fit` for each theta
+            (``max_iterations``, ``optimizer``).
 
         Returns
         -------
         ThetaScanResult
+
+        Raises
+        ------
+        SSException
+            If the theta grid is empty or malformed, ``fit_kwargs`` sets
+            ``theta`` or ``verbose``, or every fit failed.
         """
-        if isinstance(theta_range, (tuple, list)):
-            if n_points < 1:
-                raise SSException(
-                    f"n_points must be >= 1 for a tuple theta_range, got {n_points}"
-                )
-            if log_scale and (theta_range[0] <= 0 or theta_range[1] <= 0):
-                raise SSException(
-                    "theta_range endpoints must be positive when "
-                    f"log_scale=True, got {theta_range}"
-                )
-            if log_scale:
-                thetas = np.logspace(
-                    np.log10(theta_range[0]), np.log10(theta_range[1]), n_points
-                )
-            else:
-                thetas = np.linspace(theta_range[0], theta_range[1], n_points)
-        else:
-            thetas = np.asarray(theta_range, dtype=np.float64)
+        thetas = build_scan_grid(theta_range, n_points, log_scale, "theta_range")
+
+        fit_kwargs = dict(fit_kwargs) if fit_kwargs else {}
+        reserved = {"theta", "verbose"} & set(fit_kwargs)
+        if reserved:
+            raise SSException(
+                f"BMECustom.scan_theta: fit_kwargs must not set {sorted(reserved)}"
+            )
+
+        # each fit overwrites the current result/theta; restore them after the
+        # scan (prior to 2.0.6 the object was left at the last grid theta)
+        saved_result, saved_theta = self._result, self._theta
 
         costs: List[float] = []
         phis: List[float] = []
         kls: List[float] = []
         results: List[BMECustomResult] = []
-        for i, t in enumerate(thetas):
-            if verbose:
-                print(f"Processing theta {i + 1}/{len(thetas)}: {t:.4f}")
-            res = self.fit(theta=float(t), verbose=False)
-            results.append(res)
-            costs.append(res.cost_final)
-            phis.append(res.phi)
-            kls.append(res.kl_divergence)
+        try:
+            for i, t in enumerate(thetas):
+                if verbose:
+                    print(f"Processing theta {i + 1}/{len(thetas)}: {t:.4f}")
+                res = self.fit(theta=float(t), verbose=False, **fit_kwargs)
+                results.append(res)
+                costs.append(res.cost_final)
+                phis.append(res.phi)
+                kls.append(res.kl_divergence)
+        finally:
+            self._result, self._theta = saved_result, saved_theta
 
         cost_arr = np.array(costs)
         kl_arr = np.array(kls)
-        optimal_idx, method_name = find_optimal_theta(cost_arr, kl_arr, method=method)
+        ok = np.array([r.success for r in results], dtype=bool)
+        ok &= np.isfinite(cost_arr) & np.isfinite(kl_arr)
+        if not np.any(ok):
+            raise SSException(
+                "BMECustom.scan_theta: every fit failed, so no theta can be selected."
+            )
+        if not np.all(ok):
+            SSWarning(
+                f"BMECustom.scan_theta: {int(np.sum(~ok))} of {len(ok)} fits failed and "
+                "were ignored when selecting theta."
+            )
+        ok_idx = np.flatnonzero(ok)
+        local_idx, method_name = find_optimal_theta(
+            cost_arr[ok_idx], kl_arr[ok_idx], method=method
+        )
+        optimal_idx = int(ok_idx[local_idx])
         scan = ThetaScanResult(
             theta_values=thetas,
             chi_squared_values=cost_arr,
@@ -1811,6 +2179,17 @@ class BMECustom:
 
     def predict(self, calculated_values: np.ndarray) -> np.ndarray:
         """Weighted means of arbitrary observables using the fitted weights.
+
+        Parameters
+        ----------
+        calculated_values : numpy.ndarray
+            Per-frame values, shape ``(n_frames, ...)``; a 1D array of shape
+            ``(n_frames,)`` is treated as a single observable.
+
+        Returns
+        -------
+        numpy.ndarray
+            Weighted average over frames (axis 0).
 
         Raises
         ------

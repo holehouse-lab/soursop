@@ -288,7 +288,11 @@ def test_simple_types():
 
 
 def test_simple_deut():
-    """Tests the ability of the function randCoilChemShifts to accurately predict random coil chemical shifts for perdeuterated proteins."""
+    """Tests the ability of the function randCoilChemShifts to accurately predict random coil chemical shifts for perdeuterated proteins.
+
+    Reference values follow the perdeuteration corrections used by the live
+    Poulsen random-coil server (Maltsev, Ying & Bax 2012), adopted in 2.0.6.
+    """
     output = nmr.compute_random_coil_chemical_shifts(
         "ACDE",
         temperature=25,
@@ -301,8 +305,8 @@ def test_simple_deut():
         {
             "Res": "A",
             "Index": 0,
-            "CA": 51.993,
-            "CB": 18.015,
+            "CA": 52.203,
+            "CB": 18.135,
             "CO": 177.793,
             "N": 126.005,
             "HN": 8.429,
@@ -311,7 +315,7 @@ def test_simple_deut():
         {
             "Res": "C",
             "Index": 1,
-            "CA": 58.025,
+            "CA": 58.125,
             "CB": 29.054,
             "CO": 174.410,
             "N": 118.672,
@@ -321,8 +325,8 @@ def test_simple_deut():
         {
             "Res": "D",
             "Index": 2,
-            "CA": 54.178,
-            "CB": 40.295,
+            "CA": 54.338,
+            "CB": 40.345,
             "CO": 176.417,
             "N": 122.553,
             "HN": 8.414,
@@ -331,8 +335,8 @@ def test_simple_deut():
         {
             "Res": "E",
             "Index": 3,
-            "CA": 56.260,
-            "CB": 29.243,
+            "CA": 56.46,
+            "CB": 29.333,
             "CO": 176.706,
             "N": 121.300,
             "HN": 8.362,

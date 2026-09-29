@@ -184,11 +184,15 @@ def get_distance_periodic(distance1, distance2, box_size, box_shape="cube"):
 
     Computes, for two equal-length arrays of 3D coordinates, the distance
     between each corresponding pair of points using the minimum-image
-    convention for a cubic periodic box. This corrects distances for
-    particles that are nearest across a periodic boundary. The
-    implementation is a straightforward per-pair Python loop and is not
-    performance-optimised; for a non-periodic system the result is
-    identical to the naive Euclidean distance.
+    convention for a rectangular (orthorhombic) periodic box. This corrects
+    distances for particles that are nearest across a periodic boundary.
+    Each displacement component is wrapped as ``d - L * round(d / L)``, so
+    the result is correct however many box lengths apart the two points are
+    (prior to 2.0.6 only separations of up to 1.5 box lengths were handled,
+    which broke for chains made whole with ``-pbc nojump`` that had drifted
+    out of the primary cell). For a non-periodic system (all separations
+    below half a box length) the result is identical to the naive Euclidean
+    distance.
 
     Parameters
     ----------
@@ -201,14 +205,17 @@ def get_distance_periodic(distance1, distance2, box_size, box_shape="cube"):
         of a particle / atom / bead. Must be the same length as
         ``distance1``.
 
-    box_size : int or float
-        Edge length of the cubic periodic box (in the same units as the
-        coordinates).
+    box_size : float or array_like
+        Box edge length(s), in the same units as the coordinates. Either a
+        single number (a cubic box), three numbers ``(Lx, Ly, Lz)`` (a
+        rectangular box), or an ``(n, 3)`` array giving the box for each
+        pair (e.g. per-frame boxes from an NPT simulation). Every length
+        must be positive.
 
     box_shape : {'cube'}, optional
-        Geometry of the periodic cell used for the minimum-image
-        convention. Currently only ``'cube'`` is supported. Default
-        ``'cube'``.
+        Kept for backwards compatibility. Only ``'cube'`` is accepted, and
+        it covers every rectangular box described by ``box_size``.
+        Triclinic boxes are not supported. Default ``'cube'``.
 
     Returns
     -------
@@ -219,16 +226,17 @@ def get_distance_periodic(distance1, distance2, box_size, box_shape="cube"):
     Raises
     ------
     soursop.ssexceptions.SSException
-        If ``distance1`` and ``distance2`` differ in length, or if an
-        unsupported ``box_shape`` is passed.
+        If ``distance1`` and ``distance2`` differ in length, if an
+        unsupported ``box_shape`` is passed, or if ``box_size`` has the
+        wrong shape or a non-positive length.
 
     Example
     -------
     >>> import numpy as np
     >>> a = np.array([[0.1, 0.1, 0.1]])
     >>> b = np.array([[9.9, 9.9, 9.9]])
-    >>> get_distance_periodic(a, b, 10.0)        # nearest across the boundary
-    [0.34641016151377546]
+    >>> [round(d, 6) for d in get_distance_periodic(a, b, 10.0)]  # across the boundary
+    [0.34641]
     """
 
     if len(distance1) != len(distance2):
@@ -238,25 +246,26 @@ def get_distance_periodic(distance1, distance2, box_size, box_shape="cube"):
 
     ssutils.validate_keyword_option(box_shape, ["cube"], "box_shape")
 
-    if len(distance1) != len(distance2):
+    p1 = np.asarray(distance1, dtype=np.float64).reshape(-1, 3)
+    p2 = np.asarray(distance2, dtype=np.float64).reshape(-1, 3)
+
+    box = np.asarray(box_size, dtype=np.float64)
+    if box.ndim == 0:
+        box = np.full(3, float(box))
+    if box.shape not in ((3,), (len(p1), 3)):
         raise SSException(
-            "The two distance vectors in get_distance_periodic() must be the same length"
+            f"box_size must be a single length, three lengths, or one (Lx, Ly, Lz) row per position; received an array of shape {box.shape}"
+        )
+    if np.any(box <= 0) or not np.all(np.isfinite(box)):
+        raise SSException(
+            "Every box length passed to get_distance_periodic() must be positive and finite"
         )
 
-    # should rewrite in cython at some point...
-    distances = []
-    for idx in range(len(distance1)):
-        c1 = distance1[idx]
-        c2 = distance2[idx]
+    # wrap each displacement component into [-L/2, L/2]
+    delta = p1 - p2
+    delta = delta - box * np.round(delta / box)
 
-        delta = np.abs(c1 - c2)
-
-        # apply minimum image convention
-        delta = np.where(delta > 0.5 * box_size, box_size - delta, delta)
-
-        distances.append(np.linalg.norm(delta))
-
-    return distances
+    return [float(x) for x in np.linalg.norm(delta, axis=1)]
 
 
 # ------------------------------------------------------------------

@@ -12,13 +12,24 @@
 
 import os
 
-# Generate _version.py if missing and in the Read the Docs environment
-if os.getenv("READTHEDOCS") == "True" and not os.path.isfile("../soursop/_version.py"):
+# code that allows access to the data directory
+_ROOT = os.path.abspath(os.path.dirname(__file__))
+
+# Generate _version.py if missing and in the Read the Docs environment. The
+# path is resolved relative to this file (it used to depend on the current
+# working directory), and a source checkout without _version.py falls back to
+# the version recorded by soursop.soursop rather than failing to import.
+if os.getenv("READTHEDOCS") == "True" and not os.path.isfile(
+    os.path.join(_ROOT, "_version.py")
+):
     import versioningit
 
-    __version__ = versioningit.get_version("../")
+    __version__ = versioningit.get_version(os.path.dirname(_ROOT))
 else:
-    from soursop._version import __version__
+    try:
+        from soursop._version import __version__
+    except ImportError:  # pragma: no cover - only before the build step runs
+        from soursop.soursop import __version__
 
 # The git revision is derived from the version string written by versioningit
 # (see soursop.soursop.version_git_revision). Guarded so a partially-built or
@@ -29,9 +40,6 @@ try:
     __git_revision__ = _version_git_revision()
 except Exception:  # pragma: no cover - defensive fallback
     __git_revision__ = "unknown"
-
-# code that allows access to the data directory
-_ROOT = os.path.abspath(os.path.dirname(__file__))
 
 
 def get_data(path):

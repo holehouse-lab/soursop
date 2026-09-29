@@ -2,6 +2,137 @@
 
 All notable changes to SOURSOP are documented in this file.
 
+## 2.0.6 (September 2026 - to be released)
+
+A correctness release. Every module was checked against independent implementations (mdtraj/numpy from first principles, the Poulsen server's JavaScript, HDXer, the Pesce et al. Rh scripts, brute-force reweighting solves) and every fix has a regression test. Fixes that change numerical output are marked **Numerical change**.
+
+### Breaking changes
+* `SSTrajectory.get_interchain_contact_map` is indexed by CA-bearing residues (`resid_with_CA`), so caps are excluded and the map is `(n_CA_1, n_CA_2)`, matching `get_interchain_distance_map` and `SSProtein.get_contact_map`. It used to be indexed by resid with caps as zero rows/columns, so capped chains were offset by one. Uncapped chains are unchanged.
+* `get_distance_map(weights=...)` returns the weighted standard-deviation map instead of `None`.
+* `get_site_accessibility` keys use the 0-based SOURSOP resid (not the PDB residue number); `get_Q(protein_average=False)` keys are `"RESNAME-RESID"` (not e.g. `'MET1'`).
+* `ssmutualinformation.calc_MI` weights follow the package weights contract (they must sum to 1 within `etol`).
+* A list passed as `theta_range` or `chi2_limits` is read as explicit values; only a `(min, max)` tuple is expanded into a grid.
+* `success` is stricter: iBME and iCOPER require the outer loop to converge, `BMECustom` reports the optimizer's own verdict, and COPER requires the weights to satisfy the limit.
+* Out-of-range `protein_grouping` indices raise, and `pdblead=True` prepends only the first model of a multi-model PDB.
+
+### New features and improvements
+* `SSTrajectory` checks on load that every chain is whole. Any bonded pair (or consecutive CA pair, if there are no bonds) further apart than half the shortest box vector gives a warning naming the chain, residues and frames; `check_whole_molecules='raise'` raises and `False` skips it. The per-chain report is available from `SSTrajectory.check_molecules_whole()`, and the whole-molecule input contract is documented.
+* `ssexceptions.SoursopWarning`: a warning category for every SOURSOP warning, so they can be filtered or escalated.
+* New keywords: `seed`, `pseudocount` and `verbose` (`sssampling`); `hbond_method`, `hbond_cutoff` and `hbond_exclude_neighbours` (`sshdx`); `fit_kwargs` (`BME.scan_theta`, `BMECustom.scan_theta`, `COPER.scan_chi2_limit`); `stride` (`noe_ensemble_average`); and `etol` on every method that takes `weights`.
+* New helpers: `ssutils.validate_stride`, `ssutils.build_scan_grid`, `ssdata.normalize_residue_name`.
+
+### Bug fixes
+
+**ssprotein: size and shape**
+* `get_hydrodynamic_radius(mode='kr')`: added the missing `N/(N-1)` factor (Rh was `1/N` too small, 17% on GS6) and `R1`/`R2` are no longer ignored. **Numerical change.**
+* `get_hydrodynamic_radius(mode='nygaard')`: uses the CA Rg and CA-residue count the equation was calibrated on, not the all-atom Rg and a cap-inclusive count (+2.2% on NTL9, -18% on GS6). Raises for fewer than two residues or a non-positive Rg/Rh ratio (short chains). **Numerical change.**
+* `get_gyration_tensor` (and asphericity, acylindricity, prolateness): moments are taken about the geometric centre, so `trace(T)` equals `Rg**2`. **Small numerical change** (up to ~4e-3 relative on all-atom chains).
+* `get_t`: `N` counts the residues in `[R1, R2]`, not the whole chain.
+* `get_molecular_volume` raises for fewer than four atoms or a degenerate hull; `get_residue_mass` raises on coarse-grained chains.
+
+**ssprotein: distances, contacts and polymer scaling**
+* `get_scaling_exponent`: the log-spaced fit points now reach the largest separations, the count of valid separations was one too high, and the short-chain fallback uses every valid separation. Bootstrap resamples containing only zero-weight frames are dropped (they gave NaN intervals), `end_effect=0` no longer raises `IndexError`, and invalid fit arguments raise. **Numerical change** (ν moves by 0.002-0.011 on the test fixtures).
+* `get_distance_map`: with `RMS=True` the std map and the instantaneous maps are in Å, not squared distances. **Numerical change** for the `RMS=True` std map.
+* `get_contact_map`: uses plain Euclidean distances like every other SOURSOP method (it used the minimum image, so on chains spanning half the box, pairs 50-70 Å apart became contacts); FOR/NH2 caps no longer shift the rows; inter-chain pairs of a multi-chain `SSProtein` are evaluated; fewer than four CA residues, or a sidechain mode on residues without sidechains, raise; contact order is `nan` for residues with no `|i-j| >= 3` partner. **Numerical change** for chains spanning more than half their box.
+* `get_internal_scaling`: accepts `stride` with `weights`, and `weights=None`; rejects caps as region endpoints (a cap's COM shifted the profile).
+* `get_local_to_global_correlation`: pairs are sampled without replacement. Raises for fewer than two strided frames, degenerate weights and invalid arguments (`ssutils.weighted_corr` also raises for degenerate weights). **Numerical change.**
+* `get_local_collapse` and `get_local_heterogeneity`: default bins were in nm, dropping every value of 10 Å or more; they are now `np.arange(0, 100, 0.1)` Å. `get_local_collapse` reports weighted histograms in frame counts, and its bin and window checks are fixed. **Numerical change** for the default histograms.
+* `get_Q`: no longer rotates `self.traj` in place (which corrupted later positional analyses); raises if the reference frame has no native contacts.
+* `get_clusters` returns frame indices into the full trajectory, not the strided one; `get_angle_decay(return_all_pairs=True)` is keyed by residue id.
+
+**ssprotein: SASA, secondary structure and angles**
+* `get_all_SASA`: the sidechain/backbone split is made by atom name. Sidechain SASA was zero for residues mdtraj does not class as protein (ASH, KAC, ...), and terminal amine and carboxylate atoms were counted as sidechain. `mode='all'` arrays are column-aligned. **Numerical change** for terminal residues. Warns on two-bead chains.
+* `get_site_accessibility`: keys fixed (see *Breaking changes*); duplicate PDB numbers across chains used to overwrite entries.
+* `get_secondary_structure_DSSP`: runs on the whole chain, then selects the region (sub-regions lost H-bond partners). Raises for regions that include a cap (mdtraj segfaults), for one-bead chains, and for chains with no assignable backbone (previously 100% coil). The two-bead detector validates its windows.
+* `get_secondary_structure_BBSEG(R1, R2)`: the two boundary residues are no longer dropped.
+* `get_sidechain_alignment_angle`: `arccos` is clipped and computed in float64 (NaN, and 0.03° errors); atom overrides work; raises on coarse-grained chains and zero-length vectors; docstring interpretation corrected.
+* `get_angles`: raises when no backbone dihedral can be built.
+* `get_amino_acid_sequence(oneletter=True)`: force-field names (HIE, HSD, ASH, CYX, ...) map to the parent residue instead of raising `KeyError`.
+
+**ssprotein: input handling**
+* Out-of-range or non-integer residue indices, frames, strides and region endpoints raise `SSException` everywhere; several returned `[]`, `0` or `(0, 0, 0)`, or were silently truncated. NumPy integers are accepted.
+* Cached results are returned read-only or as copies, and `reset_cache` re-reads the topology.
+* `SSProtein` auto-detects two-bead models by default and warns if there are no CA atoms.
+
+**sstrajectory, sstools and ssutils**
+* `periodic=True` distances were wrong beyond 1.5 box lengths and assumed a cube sized from frame 0; they now use each frame's box (mdtraj's minimum image in `'atom'` mode). **Numerical change.**
+* Two-bead detection runs per protein (a single ion switched it off for every chain).
+* `get_overall_*` use exactly the atoms of the loaded proteins (with `protein_grouping` they included residues outside every group).
+* `get_interchain_distance_map`: indexing fixed for chains with CA-less residues. `get_interchain_distance(periodic=True)` returns an array. The inter-chain methods validate protein IDs, residue indices and `stride`.
+* `validate_weights`: checks the sum before striding, and validates `stride` first.
+* `extra_valid_residue_names` accepts a single string; `parallel_load_trjs` accepts `pathlib.Path`; `set_numpy_threads` uses `threadpoolctl`; the `pdblead` box comparison uses a tolerance; the package imports without `_version.py`.
+
+**sshdx**
+* `N_h` follows Best & Vendruscolo and HDXer: every protein oxygen within 2.4 Å of the amide H counts. The old definition is available as `hbond_method='wernet-nilsson'`. **Numerical change** for every default ln P (about 0.3 on the folded fixtures).
+* Caps (any residue without a CA) and free N-termini are no longer reported.
+* Deuterium is not counted as a heavy atom.
+* Sequence exclusion applies only within a chain.
+* Distances are not minimum-imaged, and cutoffs and `stride` are validated. Hydrogen-free or bond-less topologies raise.
+
+**ssnmr**
+* Perdeuteration corrections follow the live Poulsen server; they differed by 0.1-0.3 ppm. **Numerical change** for `use_perdeuteration=True`.
+* `compute_NOE_distances`: not minimum-imaged, and atom indices are validated. **Numerical change** for pairs more than half a box apart.
+* `noe_ensemble_average`: takes `stride` and requires `power > 0`.
+* Chemical shifts:
+  * unbalanced parentheses and NaN temperature or pH raise;
+  * skipped characters and inline phospho notation (`'ApSG'`) warn;
+  * string output always has three decimals.
+
+**sspre**
+* Coarse-grained chains fall back to the CA bead in both models (one-bead anchor and target, two-bead target).
+* A label and target that coincide give `nan` instead of an infinite rate.
+* Label parameters are validated.
+* A missing target, or a label cloud excluded in every frame, raises.
+* The `W_H` check catches linear frequencies of 1.0-1.2 GHz.
+
+**ssmutualinformation**
+* `calc_MI` raises on NaN data (it gave spurious MI) and validates weights; the docstring example runs.
+
+**ssbme**
+
+* BME standardizes observables internally, as the reference implementation does, so convergence no longer depends on units (SAXS in cm⁻¹ used to return the prior). **Numerical change** only where fits stopped early.
+* `BMECustom` optimises only over frames with non-zero prior weight (zero-prior frames gave KL = inf). Its `scan_theta` leaves the object's fit untouched.
+* Theta scans exclude failed or non-finite fits from the knee selection. `auto_theta` forwards the optimizer settings. The curvature knee no longer returns an endpoint.
+* iBME: an under-determined scale/offset fit raises, and an exactly determined one warns.
+* Raises for:
+  * unbounded optimizers used with `upper`/`lower` observables;
+  * non-finite observables, `theta`, calculated values (on the prior's support) or priors.
+* `diagnostics()` flags failed fits as `FAILED` and computes its statistics over the prior's support; the reduced-χ² warning threshold is fixed.
+* `predict` averages 1-D input (also `COPERResult.predict`).
+
+**sscoper**
+* Infeasibility is only declared when a Frank-Wolfe bound certifies it; otherwise the entropy step decides. The softmax feasibility step called large feasible problems infeasible (9 of 15 at 10⁴ frames), and multi-group problems now also run a per-group violation search.
+* iCOPER tests convergence on the scale/offset update. It used the change in χ², which is pinned at the limit, so it stopped after two iterations. **Numerical change** where the constraint binds.
+* Frames with zero prior weight are excluded, and a prior that already satisfies the limit is returned unchanged.
+* The optimizer must support nonlinear constraints.
+* `chi2_limit_scan` picks the knee among successful, feasible limits.
+* A group named `"all"` raises, and the iCOPER fit-size guards match iBME's.
+
+**sssampling (PENGUIN)**
+* EV reference: both table keys came from the neighbouring residue, and resampling never reached the ±180° tails (it is now inverse-CDF). `seed` makes it reproducible. **Numerical change** for every run without `reference_list`.
+* Uncapped chains: phi and psi columns were offset by one residue; `residue_indices` records the residues used.
+* Relative entropy was `inf` almost everywhere; PDFs are now smoothed by `pseudocount` (default 1e-6). **Numerical change.**
+* `compute_pdf` and the 2D histograms normalise by the actual bin widths, and `bwidth` must divide 360° into at least two bins.
+* `truncate=True` keeps the `SSTrajectory` options and `proteinID`.
+* Caches are keyed on `proteinID` and `method`.
+* NH2/FOR caps work on the EV path, and `pathlib.Path` topologies work.
+* Trajectories and references must match in residues and caps, and inputs are validated up front.
+* `quality_plot`: fixed a crash on uncapped chains and misaligned panels.
+
+### Documentation
+* Docstrings and rst pages corrected to match behavior throughout, notably:
+  * the Rg, Rh, gyration-tensor and scaling-exponent conventions;
+  * the weights contract;
+  * SASA, HDX and NMR syntax;
+  * the COPER ΔS, the BMECustom θ scale and iBME guidance;
+  * the PENGUIN EV reference.
+* Every example in the docs was checked against the API.
+
+### Testing
+* Regression tests for every fix, in `tests/test_bugfixes_2_0_6*.py`.
+* `test_reference_observables.py` compares with `atol=1e-8` (was `1e-4`); reference pickles rebuilt for the numerical changes above.
+* Weak or broken tests fixed: one-sided comparisons, missing `assert`s, an unseeded RNG, pass-only tests, and tests pinning superseded behaviour.
+
 ## 2.0.5 (August 2026)
 
 A correctness and documentation release from a follow-up package-wide review after 2.0.4: six bug fixes (one interpreter-crashing, several silently-wrong), a documentation audit pass, and expanded regression coverage. No new features and no API changes beyond stricter input validation.

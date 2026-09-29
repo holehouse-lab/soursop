@@ -14,9 +14,7 @@ from soursop.sspre import (
 # value) to reproduce the committed 2019 reference PRE profiles; SSPRE now warns
 # that this looks like a linear rather than angular frequency. Silence just that
 # warning across this module.
-pytestmark = pytest.mark.filterwarnings(
-    "ignore:.*looks unusual for a proton Larmor"
-)
+pytestmark = pytest.mark.filterwarnings("ignore:.*looks unusual for a proton Larmor")
 
 
 test_data_dir = soursop.get_data("test_data")

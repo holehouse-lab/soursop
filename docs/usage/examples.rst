@@ -53,6 +53,8 @@ The most common IDP observables describe the overall size and shape of the chain
     print(f"Mean Rh  = {np.mean(rh):.2f} ± {np.std(rh):.2f} Å")
     print(f"Mean e2e = {np.mean(e2e):.2f} ± {np.std(e2e):.2f} Å")
 
+Both ``get_hydrodynamic_radius`` and ``get_t`` accept ``R1`` / ``R2`` to restrict the calculation to a sub-region. For the hydrodynamic radius both estimators work on the CA-bearing residues of the region (caps never contribute): ``mode='nygaard'`` feeds the Nygaard equation the Rg of their CA atoms and ``N`` equal to their number, as in the paper, and ``mode='kr'`` sums the Kirkwood-Riseman ``1/r_ij`` over every pair of them. Note that Pesce et al. report an ensemble :math:`R_h` as the harmonic mean of the per-frame values, ``1 / np.mean(1 / rh)``. For ``get_t`` the chain length ``N`` is the number of residues in the region (``R2 - R1 + 1``), every residue including caps by default.
+
 **Asphericity** describes how far the chain deviates from a sphere (0 = perfectly spherical, 1 = rod-like)::
 
     asph = protein.get_asphericity()
@@ -72,26 +74,28 @@ The most common IDP observables describe the overall size and shape of the chain
 3. Polymer scaling and internal structure
 ---------------------------------------------------------
 
-IDR conformational behaviour is often interpreted through the lens of polymer physics. The **internal scaling profile** :math:`\langle r^2(i,j) \rangle` reports the mean-square inter-residue distance as a function of sequence separation :math:`|i - j|`.
+IDR conformational behaviour is often interpreted through the lens of polymer physics. The **internal scaling profile** reports how the inter-residue distance grows with sequence separation :math:`|i - j|`. ``get_internal_scaling`` gives the mean distance :math:`\langle r(i,j) \rangle` in Ångströms; ``get_internal_scaling_RMS`` gives the root-mean-square distance :math:`\sqrt{\langle r^2(i,j) \rangle}`, the order parameter the scaling-exponent fit below uses.
 
 **Internal scaling** (mean across the ensemble)::
 
     import matplotlib.pyplot as plt
 
-    separation, mean_r2 = protein.get_internal_scaling(mode='CA', mean_vals=True)
+    separation, mean_r = protein.get_internal_scaling(mode='CA', mean_vals=True)
+    separation, rms_r = protein.get_internal_scaling_RMS(mode='CA')
 
-    plt.loglog(separation, mean_r2)
+    plt.loglog(separation, mean_r, label=r"$\langle r \rangle$")
+    plt.loglog(separation, rms_r, label=r"$\sqrt{\langle r^2 \rangle}$")
     plt.xlabel("Sequence separation |i - j|")
-    plt.ylabel(r"$\langle r^2 \rangle$ (Å²)")
-    plt.title("Internal scaling profile")
+    plt.ylabel("Inter-residue distance (Å)")
+    plt.legend()
     plt.show()
 
-**Scaling exponent** :math:`\nu` — the Flory exponent extracted by fitting :math:`\sqrt{\langle r^2 \rangle} = A_0\,|i-j|^{\nu}`. ``get_scaling_exponent`` returns a 10-element tuple; the first two entries are the point estimates ``nu`` and ``A0``, entries 2–5 are the bootstrap confidence-interval bounds on each, and entries 6–7 are the reduced :math:`\chi^2` of the fit::
+**Scaling exponent** :math:`\nu` — the Flory exponent extracted by fitting :math:`\sqrt{\langle r^2 \rangle} = A_0\,|i-j|^{\nu}`. ``get_scaling_exponent`` returns a 10-element list; the first two entries are the point estimates ``nu`` and ``A0``, entries 2–5 are the bootstrap confidence-interval bounds on each, and entries 6–7 are the reduced :math:`\chi^2` of the fit (over the log-spaced fit points and over every separation in the fit region, respectively)::
 
     result = protein.get_scaling_exponent(mode='CA')
     nu, A0 = result[0], result[1]
     nu_lo, nu_hi = result[2], result[3]          # 95% CI on nu (entries 4,5 are the A0 CI)
-    redchi = result[7]                           # reduced chi^2 across all separations
+    redchi = result[7]                           # reduced chi^2 across the fit region
 
     print(f"Flory exponent ν = {nu:.3f}  (95% CI {nu_lo:.3f}–{nu_hi:.3f})")
     print(f"homopolymer-fit reduced χ² = {redchi:.2f}")
@@ -108,7 +112,7 @@ model (≈1 indicates the data are consistent with a single homopolymer scaling
 law within their bootstrap errors; substantially larger values flag systematic
 deviation, e.g. heteropolymeric structure).
 
-**Polymer-scaled distance map** normalises the mean inter-residue distance matrix by the expected homopolymer scaling, highlighting regions that are more compact or more expanded than a reference random coil. It returns the map together with the ``nu``, ``A0`` and reduced :math:`\chi^2` of the homopolymer fit it performs internally. Note ``mode`` here selects how the deviation is *expressed*, not which atoms are used — the options are ``'fractional-change'`` (the default), ``'signed-fractional-change'``, ``'scaled'``, and ``'signed-absolute-change'``::
+**Polymer-scaled distance map** normalises the root-mean-square inter-residue (centre-of-mass) distance matrix by the expected homopolymer scaling (so any ``nu`` / ``A0`` you pass by hand should come from an RMS fit, as returned by ``get_scaling_exponent``), highlighting regions that are more compact or more expanded than a reference random coil. It returns the map together with the ``nu``, ``A0`` and reduced :math:`\chi^2` of the homopolymer fit it performs internally. Note ``mode`` here selects how the deviation is *expressed*, not which atoms are used — the options are ``'fractional-change'`` (the default), ``'signed-fractional-change'``, ``'scaled'``, and ``'signed-absolute-change'``::
 
     dmap, nu, A0, redchi = protein.get_polymer_scaled_distance_map(
         mode='signed-fractional-change')
@@ -257,10 +261,11 @@ Only residues with *both* φ and ψ defined are classified, and ``resid_list`` a
     plt.title('Per-residue solvent accessibility')
     plt.show()
 
-Other granularities are available via ``mode``: ``'atom'`` for per-atom SASA, ``'sidechain'`` / ``'backbone'`` for the per-residue sum over those atoms only, and ``'all'`` for a 3-tuple of ``(residue, sidechain, backbone)`` arrays::
+Other granularities are available via ``mode``: ``'atom'`` for per-atom SASA, ``'sidechain'`` / ``'backbone'`` for the per-residue sum over those atoms only, and ``'all'`` for a 3-tuple of ``(residue, sidechain, backbone)`` arrays. In ``'all'`` mode the three arrays are column-aligned over the CA-bearing residues (``protein.resid_with_CA``), so on a capped chain the residue array here excludes the ACE/NME caps that ``mode='residue'`` on its own includes::
 
     residue_sasa, sidechain_sasa, backbone_sasa = protein.get_all_SASA(
         mode='all', stride=10)
+    assert residue_sasa.shape == sidechain_sasa.shape == backbone_sasa.shape
 
 **Regional SASA** for a specific stretch of residues — useful for assessing the accessibility of a functional linear motif. This returns a single number: the sum, over residues ``R1`` to ``R2-1``, of each residue's time-averaged SASA::
 
@@ -308,7 +313,9 @@ For systems with more than one protein chain, system-level analyses are performe
         proteinID1=0, proteinID2=1, mode='CA'
     )
 
-    # inter-chain contact map
+    # inter-chain contact map; like the distance map above it is indexed by
+    # the CA-bearing residues of each chain (caps excluded), so row k is
+    # residue traj.proteinTrajectoryList[0].resid_with_CA[k]
     contact_map = traj.get_interchain_contact_map(
         proteinID1=0, proteinID2=1, threshold=8.0, mode='ca'
     )
@@ -434,7 +441,7 @@ For disordered proteins it is important to verify that independent replicate sim
 
 See the :doc:`../modules/sssampling` page for a full description of the methodology.
 
-**Quickstart — using the precomputed EV reference**::
+**Quickstart — using the precomputed EV reference** (with several trajectories the files are loaded in parallel, so in a script put this under ``if __name__ == "__main__":``, or pass ``force_sequential=True``)::
 
     from soursop.sssampling import SamplingQuality
 
