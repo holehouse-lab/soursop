@@ -55,7 +55,7 @@ def test_whole_fixtures_are_not_flagged(pdb, xtc):
         assert entry["tested"]
         assert not entry["split"]
         assert entry["n_frames_split"] == 0
-        assert entry["max_ca_distance"] < entry["half_box"]
+        assert entry["max_distance"] < entry["half_box"]
 
 
 def test_chain_larger_than_half_the_box_is_still_whole():
@@ -66,7 +66,7 @@ def test_chain_larger_than_half_the_box_is_still_whole():
     assert np.max(P.get_end_to_end_distance()) > 0.5 * np.min(P.unitcell)
     entry = T.check_molecules_whole()[0]
     assert entry["tested"] and not entry["split"]
-    assert entry["max_ca_distance"] < 5.0
+    assert entry["max_distance"] < 5.0
 
 
 def test_no_box_cannot_be_tested():
@@ -74,7 +74,7 @@ def test_no_box_cannot_be_tested():
     assert T.traj.unitcell_lengths is None
     entry = T.check_molecules_whole()[0]
     assert not entry["tested"] and not entry["split"]
-    assert entry["half_box"] is None and entry["max_ca_distance"] is None
+    assert entry["half_box"] is None and entry["max_distance"] is None
 
 
 def test_zero_length_box_cannot_be_tested():
@@ -107,8 +107,8 @@ class TestWrappedChain:
         assert entry["worst_pair"] == (29, 30)
         # the broken pair is roughly one box vector apart
         box = 10 * T.traj.unitcell_lengths[0, 0]
-        assert abs(entry["max_ca_distance"] - box) < 10.0
-        assert entry["max_ca_distance"] > entry["half_box"]
+        assert abs(entry["max_distance"] - box) < 10.0
+        assert entry["max_distance"] > entry["half_box"]
 
     def test_partial_wrap_counts_only_affected_frames(self):
         T = _load("ntl9_AA.pdb", "ntl9_AA.xtc")

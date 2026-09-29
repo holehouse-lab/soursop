@@ -266,10 +266,12 @@ class SSPRE:
             )
 
         # W_H is the ANGULAR proton Larmor frequency (rad/s); for a 300 MHz -
-        # 1 GHz magnet omega_H = 2*pi*nu_H is ~1.9e9 - 6.3e9. Warn outside a
-        # generous angular band. A value near ~6e8 usually means the caller
-        # passed the linear frequency (nu_H) by mistake.
-        if W_H < 1000000000 or W_H > 1000000000000:
+        # 1.2 GHz magnet omega_H = 2*pi*nu_H is ~1.9e9 - 7.5e9. Warn outside a
+        # generous angular band. A value of ~3e8 - 1.2e9 usually means the
+        # caller passed the linear frequency (nu_H) by mistake; the lower
+        # bound is 1.5e9 (a 240 MHz magnet) so that linear frequencies of
+        # 1.0 - 1.2 GHz magnets are caught too (prior to 2.0.6 it was 1e9).
+        if not (1.5e9 <= W_H <= 1e12):
             SSWarning(
                 f"WARNING: W_H = {self.W_H} looks unusual for a proton Larmor "
                 "frequency. W_H must be the ANGULAR frequency omega_H = 2*pi*nu_H "
@@ -394,12 +396,16 @@ class SSPRE:
             every frame the relaxation is averaged over the whole cloud (and,
             as always, over frames), so the r^-6 non-linearity is respected
             across both the conformer cloud and the ensemble. This works on
-            both all-atom and one-bead-per-residue coarse-grained
-            trajectories: on the latter every residue is a single ``CA``
-            bead, so the default ``spin_label_atom='CB'`` and
-            ``target_relaxation_atom='N'`` are automatically replaced by
-            ``'CA'`` and the cloud becomes an isotropic sphere about the
-            bead. The default ``label_*`` parameters below are calibrated
+            both all-atom and coarse-grained trajectories: on one-bead
+            chains every residue is a single ``CA`` bead, so the default
+            ``spin_label_atom='CB'`` and ``target_relaxation_atom='N'`` are
+            automatically replaced by ``'CA'`` and the cloud becomes an
+            isotropic sphere about the bead; on two-bead (CA/CB) chains the
+            CB anchor is kept and the ``'N'`` target is replaced by ``'CA'``.
+            The same substitutions apply to the point model
+            (``use_label=False``), where a label and target that coincide
+            (e.g. CA/CA at the labelled residue) give ``nan`` for that
+            residue rather than an infinite rate. The default ``label_*`` parameters below are calibrated
             against DEER-PREdict. Set ``use_label=False`` to recover the
             classic point-at-``spin_label_atom`` behaviour used by SOURSOP
             <= 2.0.1.
@@ -477,7 +483,10 @@ class SSPRE:
             If ``label_steric`` is invalid, if ``label_position`` is not a
             residue of the chain, if the anchor or target atom cannot be
             found (the target in any residue, for the label-cloud model),
-            if ``n_label_conformers`` is less than 1, or if every label
+            if ``n_label_conformers`` is less than 1, if ``label_distance``
+            is not positive, ``label_cone_angle`` is outside ``[0, 180]``,
+            ``label_bead_radius`` is negative or (for ``'soft'`` sterics)
+            ``label_wall_stiffness`` is not positive, or if every label
             conformer is sterically excluded in every frame.
 
         Example
@@ -526,17 +535,23 @@ class SSPRE:
             # and calculate the PREFACTOR/<R^6> value because there is a non-linear mapping between relaxation and distance so
             # it's important the former method is used (i.e. only average at the end). This calculates the gamma coefficient for
             # each residue, which measures relaxation
+            spin_label_atom, target_relaxation_atom = self.__coarse_grained_atoms(
+                spin_label_atom, target_relaxation_atom
+            )
             for idx in residue_list:
-                r_6_nm = np.power(
-                    0.1
-                    * self.SSPO.get_inter_residue_atomic_distance(
-                        label_position,
-                        idx,
-                        A1=spin_label_atom,
-                        A2=target_relaxation_atom,
-                    ),
-                    6,
+                r_nm = 0.1 * self.SSPO.get_inter_residue_atomic_distance(
+                    label_position,
+                    idx,
+                    A1=spin_label_atom,
+                    A2=target_relaxation_atom,
                 )
+                # the label and target coincide (e.g. CA/CA at the labelled
+                # residue of a coarse-grained chain): r^-6 is undefined, so
+                # report NaN rather than an infinite rate
+                if np.any(r_nm <= 0):
+                    gamma.append(np.nan)
+                    continue
+                r_6_nm = np.power(r_nm, 6)
                 gamma.append(np.mean(self.PREFACTOR / r_6_nm))
 
         # convert the t_delay from ms to seconds
@@ -550,6 +565,38 @@ class SSPRE:
             )
 
         return (profile, gamma)
+
+    # ........................................................................
+    #
+    def __coarse_grained_atoms(self, spin_label_atom, target_relaxation_atom):
+        """Map the all-atom default atom names onto coarse-grained beads.
+
+        One-bead chains only have a CA bead, so a ``'CB'`` anchor and an
+        ``'N'`` target both become ``'CA'``. Two-bead (CA/CB) chains keep the
+        CB anchor, but have no backbone N, so an ``'N'`` target becomes
+        ``'CA'``. Any other (explicitly chosen) atom names are left alone.
+
+        Parameters
+        ----------
+        spin_label_atom : str
+            Requested anchor atom name.
+        target_relaxation_atom : str
+            Requested target atom name.
+
+        Returns
+        -------
+        tuple of (str, str)
+            The (possibly substituted) anchor and target atom names.
+        """
+        if self.SSPO.is_coarse_grained:
+            if spin_label_atom == "CB":
+                spin_label_atom = "CA"
+            if target_relaxation_atom == "N":
+                target_relaxation_atom = "CA"
+        elif self.SSPO.is_swan:
+            if target_relaxation_atom == "N":
+                target_relaxation_atom = "CA"
+        return spin_label_atom, target_relaxation_atom
 
     # ........................................................................
     #
@@ -658,6 +705,29 @@ class SSPRE:
             every frame.
         """
 
+        # geometry parameters: a negative bead radius used to give an all-NaN
+        # profile (or silently switch sterics off), a cone angle above 180
+        # silently wrapped, and a negative distance put the cloud inside the
+        # backbone
+        if not (np.isfinite(label_distance) and label_distance > 0):
+            raise SSException(
+                f"label_distance must be positive (A), got {label_distance}"
+            )
+        if not (np.isfinite(label_cone_angle) and 0 <= label_cone_angle <= 180):
+            raise SSException(
+                f"label_cone_angle must be between 0 and 180 degrees, got {label_cone_angle}"
+            )
+        if not (np.isfinite(label_bead_radius) and label_bead_radius >= 0):
+            raise SSException(
+                f"label_bead_radius must be non-negative (A), got {label_bead_radius}"
+            )
+        if label_steric == "soft" and not (
+            np.isfinite(label_wall_stiffness) and label_wall_stiffness > 0
+        ):
+            raise SSException(
+                f"label_wall_stiffness must be positive, got {label_wall_stiffness}"
+            )
+
         label_distance_nm = label_distance / 10.0
 
         if int(n_label_conformers) < 1:
@@ -668,12 +738,13 @@ class SSPRE:
         # A one-bead-per-residue chain has a single 'CA' bead per residue, so
         # the all-atom defaults (CB anchor, backbone N target) cannot be
         # selected. Fall back to the bead for both; the cloud is then an
-        # isotropic sphere about the bead, as documented.
-        if self.SSPO.is_coarse_grained:
-            if spin_label_atom == "CB":
-                spin_label_atom = "CA"
-            if target_relaxation_atom == "N":
-                target_relaxation_atom = "CA"
+        # isotropic sphere about the bead, as documented. A two-bead (CA/CB)
+        # chain keeps its CB anchor but has no backbone N either, so the
+        # target falls back to CA there too (prior to 2.0.6 two-bead chains
+        # raised with the default target).
+        spin_label_atom, target_relaxation_atom = self.__coarse_grained_atoms(
+            spin_label_atom, target_relaxation_atom
+        )
 
         # anchor atom the label cloud hangs off (CB for AA, CA for CG)
         anchor_xyz = self.__get_atom_xyz_nm(label_position, spin_label_atom)

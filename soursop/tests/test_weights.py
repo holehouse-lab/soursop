@@ -349,13 +349,14 @@ class TestSASASummariesWeights:
         per_res = np.transpose(
             P.get_all_SASA(mode="residue", stride=1)
         )  # (n_res, n_frames)
-        lookup = P.get_amino_acid_sequence()
+        # keys are RESNAME-RESID with the 0-based SOURSOP resid (2.0.6)
+        resnames = P.get_amino_acid_sequence(numbered=False)
         for k in range(n):
             wtd = P.get_site_accessibility(
                 [1, 2], mode="resid", stride=1, weights=_one_hot(n, k)
             )
             for i in (1, 2):
-                mean_k, std_k = wtd[lookup[i]]
+                mean_k, std_k = wtd[f"{resnames[i]}-{i}"]
                 assert np.isclose(mean_k, per_res[i][k], rtol=1e-9, atol=1e-9)
                 assert np.isclose(std_k, 0.0, atol=1e-9)
 

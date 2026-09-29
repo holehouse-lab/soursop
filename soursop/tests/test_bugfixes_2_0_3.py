@@ -67,7 +67,8 @@ def test_com_distance_map_weights_and_stride_no_crash():
     # previously raised ValueError (weights strided to n<n_frames vs unstrided data)
     dmap, std = P.get_distance_map(mode="COM", stride=3, weights=w, verbose=False)
     assert dmap.shape[0] == len(P.resid_with_CA)
-    assert std is None
+    # since 2.0.6 the weighted std map is returned (it used to be None)
+    assert std.shape == dmap.shape and np.all(np.isfinite(std))
 
 
 # ---------------------------------------------------------------------------
@@ -105,13 +106,28 @@ def test_dssp_fractions_sum_to_one_uncapped():
 
 
 # ---------------------------------------------------------------------------
-# ssprotein.get_distance_map - weighted std map is None (not a NaN array)
+# ssprotein.get_distance_map - weighted std map. 2.0.3 returned None (rather
+# than a NaN array); since 2.0.6 it is the weighted population standard
+# deviation, matching SSTrajectory.get_interchain_distance_map.
 # ---------------------------------------------------------------------------
-def test_distance_map_weighted_std_is_none():
+def test_distance_map_weighted_std_is_the_weighted_std():
     P = _prot("gs6_AA")
-    w = np.full(P.n_frames, 1.0 / P.n_frames)
+    n = P.n_frames
+    w = np.random.default_rng(0).random(n)
+    w /= w.sum()
     _, std = P.get_distance_map(weights=w, verbose=False)
-    assert std is None
+    # first-principles check on one pair (CA residues 0 and 3)
+    ca = [P.get_CA_index(r) for r in P.resid_with_CA]
+    import mdtraj as md
+
+    d = 10 * md.compute_distances(P.traj, [[ca[0], ca[3]]], periodic=False)[:, 0]
+    mu = np.sum(w * d)
+    assert np.isclose(std[0, 3], np.sqrt(np.sum(w * (d - mu) ** 2)), rtol=1e-6)
+    # a one-hot weight vector has zero spread
+    one_hot = np.zeros(n)
+    one_hot[2] = 1.0
+    _, std_one = P.get_distance_map(weights=one_hot, verbose=False)
+    assert np.allclose(std_one, 0.0)
 
 
 # ---------------------------------------------------------------------------

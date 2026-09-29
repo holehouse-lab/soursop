@@ -15,7 +15,7 @@
 """
 ssnmr - NMR observables for IDP/IDR ensembles.
 
-This module covers two complementary NMR predictions:
+This module covers three complementary NMR predictions:
 
 1. **Sequence-based random-coil chemical shifts** — predicts random-coil
    backbone shifts (CA, CB, CO, N, HN, HA) for an arbitrary amino-acid
@@ -36,6 +36,11 @@ This module covers two complementary NMR predictions:
    n_phi)`` array is the natural input for
    :class:`soursop.ssbme.BME` / ``BMECustom`` and
    :class:`soursop.sscoper.COPER` reweighting.
+
+3. **NOE distances** — per-frame inter-atom distances for a set of NOE
+   atom pairs (:func:`compute_NOE_distances`, in Angstroms) and their
+   :math:`\\langle r^{-p} \\rangle^{-1/p}` ensemble average
+   (:func:`noe_ensemble_average`).
 
 The Karplus coefficient table is adapted from biceps (Voelz lab,
 https://github.com/vvoelz/biceps), itself ported from MDTraj's
@@ -145,15 +150,16 @@ def compute_random_coil_chemical_shifts(
     >>> sorted(shifts[0].keys())
     ['CA', 'CB', 'CO', 'HA', 'HN', 'Index', 'N', 'Res']
     """
-    # sanity check temperature
-    if temperature > 100 or temperature < 0:
+    # sanity check temperature (written so NaN fails too; "T > 100 or T < 0"
+    # is False for NaN, which then crashed or passed silently further down)
+    if not (0 <= temperature <= 100):
         raise SSException(
             "Temperature provided (%s) was non-physiological. Remember temperature should be in *celsius*."
             % (temperature)
         )
 
     # pH sanity check
-    if pH < 0 or pH > 14:
+    if not (0 <= pH <= 14):
         raise SSException(
             "pH provided (%s) was non-physiological. Remember pH should be in between 0 and 14."
             % (pH)
@@ -1912,6 +1918,20 @@ def __set_sequence(sequence, key1, key3):
             % inp
         )
 
+    # Inline phospho-notation (e.g. 'ApSerG', 'ApSG') is common in the
+    # literature but is not understood here: single letters are
+    # case-folded, so the lowercase 'p' would silently become a proline.
+    # Parenthesised codes outside are fine, so only look at bare text.
+    bare = re.sub(r"\([^)]*\)", "", inp)
+    if re.search(r"p(?:Ser|Thr|Tyr|[STY])", bare):
+        SSWarning(
+            "compute_random_coil_chemical_shifts: the sequence contains a lowercase "
+            "'p' before S/T/Y (inline phospho notation such as 'pS' or 'pSer'). "
+            "Single letters are case-insensitive, so this is read as a proline "
+            "followed by the unmodified residue. Write phosphorylated residues in "
+            "parentheses, e.g. 'A(SEP)G', 'A(TPO)G' or 'A(PTR)G'."
+        )
+
     regex = re.findall(r"\(([^)]+)\)|(.)", inp)
     skipped = []
     for i in range(len(regex)):
@@ -2008,7 +2028,10 @@ def __round3(num, asFloat=False):
     if asFloat:
         return float(strng)
     else:
-        return strng
+        # the length arithmetic above mis-pads when rounding to an integer
+        # adds a digit (e.g. 9.512 -> '9.5120'), so format the rounded value
+        # explicitly to exactly three decimals
+        return f"{float(strng):.3f}"
 
 
 # ----------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -2262,7 +2285,9 @@ def compute_NOE_distances(protein, atom_pairs, stride=1):
     Raises
     ------
     SSException
-        If ``atom_pairs`` does not have shape ``(n_pairs, 2)``.
+        If ``atom_pairs`` does not have shape ``(n_pairs, 2)``, contains
+        non-integer values, or contains an index outside
+        ``[0, n_atoms - 1]``.
 
     Examples
     --------
@@ -2275,9 +2300,26 @@ def compute_NOE_distances(protein, atom_pairs, stride=1):
     # mdtraj is already imported by ssprotein; we only need it locally.
     import mdtraj as md
 
-    pairs = np.asarray(atom_pairs, dtype=int)
+    raw = np.asarray(atom_pairs)
+    # a float index used to be truncated silently (0.7 -> 0), and an
+    # out-of-range one gave mdtraj's misleading "must be between 0 and
+    # n_frames" error
+    if raw.size > 0 and not np.issubdtype(raw.dtype, np.integer):
+        if not (
+            np.issubdtype(raw.dtype, np.floating)
+            and np.all(np.isfinite(raw))
+            and np.all(raw == np.round(raw))
+        ):
+            raise SSException("atom_pairs must contain integer atom indices")
+    pairs = raw.astype(int) if raw.size > 0 else raw.reshape(-1, 2).astype(int)
     if pairs.ndim != 2 or pairs.shape[1] != 2:
         raise SSException(f"atom_pairs must have shape (n_pairs, 2), got {pairs.shape}")
+    n_atoms = protein.traj.n_atoms
+    if pairs.size > 0 and (pairs.min() < 0 or pairs.max() >= n_atoms):
+        raise SSException(
+            f"atom_pairs contains an atom index outside 0..{n_atoms - 1} "
+            f"(this protein has {n_atoms} atoms)"
+        )
 
     stride = validate_stride(stride, protein.traj.n_frames)
     traj = protein.traj[::stride] if stride != 1 else protein.traj
@@ -2294,6 +2336,7 @@ def noe_ensemble_average(
     weights=False,
     etol=1e-7,
     axis=0,
+    stride=1,
 ):
     """NOE-averaged distance across the ``axis`` of a distance array.
 
@@ -2320,6 +2363,12 @@ def noe_ensemble_average(
         Tolerance on ``sum(weights) == 1``. Default ``1e-7``.
     axis : int, optional
         Axis to collapse. Default 0 (frame axis).
+    stride : int, optional
+        The stride that was used to compute ``distances`` (e.g. with
+        :func:`compute_NOE_distances`). With ``stride > 1``, ``weights``
+        is the full-length per-frame vector of the unstrided trajectory
+        and is subsampled and renormalised here, exactly as in every other
+        SOURSOP function that takes ``weights``. Default 1.
 
     Returns
     -------
@@ -2329,10 +2378,25 @@ def noe_ensemble_average(
     Raises
     ------
     SSException
-        If ``weights`` fails validation, or if any distance along
-        ``axis`` is non-positive (since ``r^-p`` is undefined).
+        If ``power`` is not a finite positive number, if ``weights`` fails
+        validation (or, with ``stride``, does not correspond to the strided
+        distances), or if any distance is non-finite or non-positive
+        (since ``r^-p`` is undefined).
     """
+    try:
+        power_ok = bool(np.isfinite(power)) and power > 0
+    except TypeError:
+        power_ok = False
+    if not power_ok:
+        # power=0 used to raise ZeroDivisionError and a negative power
+        # silently computed a different average
+        raise SSException(
+            f"noe_ensemble_average: power must be positive, got {power!r}"
+        )
+
     d = np.asarray(distances, dtype=np.float64)
+    if not np.all(np.isfinite(d)):
+        raise SSException("noe_ensemble_average: all distances must be finite")
     if np.any(d <= 0):
         raise SSException(
             "noe_ensemble_average: all distances must be positive (got "
@@ -2341,7 +2405,17 @@ def noe_ensemble_average(
 
     inv_p = d ** (-float(power))
     n_along = d.shape[axis]
-    validated = validate_weights(weights, n_along, stride=1, etol=etol)
+    if stride == 1 or weights is False or weights is None:
+        validated = validate_weights(weights, n_along, stride=1, etol=etol)
+    else:
+        n_total = len(np.asarray(weights).ravel())
+        validated = validate_weights(weights, n_total, stride=stride, etol=etol)
+        if len(validated) != n_along:
+            raise SSException(
+                f"noe_ensemble_average: {n_total} weights with stride={stride} give "
+                f"{len(validated)} strided frames, but distances has {n_along} along "
+                f"axis {axis}"
+            )
 
     if validated is False:
         # uniform mean

@@ -78,7 +78,7 @@ The underlying bead sizes are readable directly if you want them for something e
   sigmas = get_cg_bead_sigmas('mpipi')     # residue name -> sigma in Angstroms
   sigmas['GLY']                            # 4.69511
 
-Note this applies only to one-bead-per-residue models. All-atom chains — and two-bead (CA/CB) models, which carry a CB for every non-glycine residue — use mdtraj's atomic radii as before, and passing a ``forcefield`` to them raises.
+Note this applies only to one-bead-per-residue models. All-atom chains — and two-bead (CA/CB) models, which carry a CB for every non-glycine residue — use mdtraj's atomic radii as before, and passing a ``forcefield`` to them raises. Note that on a two-bead chain this means every bead gets the 1.7 Å carbon radius whatever the residue, so the SASA values are only meaningful for relative comparisons within that model (a warning says so).
 
 
 SSProtein Properties

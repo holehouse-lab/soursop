@@ -32,13 +32,14 @@ A first example
   # be extracted from the proteinTrajectoryList
   protein = TO.proteinTrajectoryList[0]
 
-  # per-residue center-of-mass distance between residues 10 and 20
+  # per-frame center-of-mass distance between residues 10 and 20
+  # (a numpy array with one value per frame)
   d_10_20 = protein.get_inter_residue_COM_distance(10, 20)
 
-  # ensemble-average asphericity
+  # per-frame asphericity (use asph.mean() for the ensemble average)
   asph = protein.get_asphericity()
 
-  # ensemble-average radius of gyration
+  # per-frame radius of gyration (use rg.mean() for the ensemble average)
   rg = protein.get_radius_of_gyration()
 
   # ensemble-average inter-residue distance map
@@ -95,9 +96,10 @@ minimum-image convention (outside the opt-in ``periodic=True`` flag of
 the inter-chain methods) and never re-images or unwraps anything. So the
 trajectory you load must already contain whole molecules: re-image
 wrapped output before analysis (``gmx trjconv -pbc mol -center``, or
-``traj.make_molecules_whole()`` in mdtraj). ``SSTrajectory`` checks for
-the tell-tale signature of a wrapped chain on load (two consecutive
-residues further apart than half the box) and warns if it finds one; see
+``traj = traj.make_molecules_whole()`` in mdtraj, which returns a new
+trajectory rather than editing ``traj`` in place). ``SSTrajectory``
+checks for the tell-tale signature of a wrapped chain on load (two
+bonded atoms further apart than half the box) and warns if it finds one; see
 :doc:`../modules/sstrajectory` for the details and for
 ``check_molecules_whole``.
 

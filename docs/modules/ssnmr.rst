@@ -24,9 +24,9 @@ Corrections applied include:
 * **pH** — charged-state populations for Asp, Glu, His, and phosphorylated residues (pSer, pThr, pTyr) are accounted for via fractional deprotonation at the given pH.
 * **Perdeuteration** — optional corrections for fully deuterated protein samples.
 
-**Supported residue types.** All 20 canonical amino acids are supported, along with three phosphorylated residues: phosphoserine (``pSer`` / ``SEP`` / ``PS``), phosphothreonine (``pThr`` / ``PTHR`` / ``PT``), and phosphotyrosine (``pTyr`` / ``PTYR`` / ``PY``). Phosphorylated residues cannot be combined with the perdeuteration corrections.
+**Supported residue types.** All 20 canonical amino acids are supported, along with three phosphorylated residues: phosphoserine (``pSer`` / ``SEP`` / ``PS``), phosphothreonine (``pThr`` / ``PTHR`` / ``PT``), and phosphotyrosine (``pTyr`` / ``PTYR`` / ``PY``). Multi-letter codes must be written **in parentheses**, e.g. ``"AS(SEP)GA"`` or ``"AS(pSer)GA"``; single letters are case-insensitive, so inline notation such as ``"ApSGA"`` would be read as A-P-S-G-A (a proline), and SOURSOP warns if it sees it. Phosphorylated residues cannot be combined with the perdeuteration corrections.
 
-**Output format.** The function returns a list of per-residue dictionaries, one per position (excluding the two terminal padding residues), each containing keys ``Res``, ``Index``, ``CA``, ``CB``, ``CO``, ``N``, ``HN``, and ``HA``. Glycine lacks a Cβ (``CB`` is ``"**.***"``) and proline lacks a backbone amide (``N`` and ``HN`` are ``"*.***"``). Shifts are returned as floats or three-decimal-place strings depending on the ``asFloat`` flag.
+**Output format.** The function returns a list of per-residue dictionaries, one per position (excluding the two terminal padding residues), each containing keys ``Res``, ``Index``, ``CA``, ``CB``, ``CO``, ``N``, ``HN``, and ``HA``. Glycine lacks a Cβ (``CB`` is ``"**.***"``) and proline lacks a backbone amide (``N`` is ``"***.***"`` and ``HN`` is ``"*.***"``). Shifts are returned as floats or three-decimal-place strings depending on the ``asFloat`` flag.
 
 **Example usage**::
 
@@ -93,7 +93,7 @@ where ``A``, ``B``, ``C`` and ``φ₀`` are empirical coefficients fitted to exp
      - 1.90
      - 0.76
 
-All six models share ``φ₀ = −60°`` (the convention is to phase-shift the Karplus form by ``−60°`` so that ``θ = 0`` corresponds to the ideal HN–Cα–N–C′ eclipsed geometry). The per-model ``σ`` is the RMSD of the parameterisation against its training experimental dataset and is a sensible **forward-model uncertainty** to use when feeding J-couplings into the :doc:`BME <bme>` or :doc:`COPER <coper>` reweighters.
+All six models share ``φ₀ = −60°`` (the Karplus relation is written in the H\ :sup:`N`–N–Cα–Hα dihedral θ, and for L-amino acids θ = φ − 60°, so the φ dihedral is phase-shifted by ``−60°``). The per-model ``σ`` is the RMSD of the parameterisation against its training experimental dataset and is a sensible **forward-model uncertainty** to use when feeding J-couplings into the :doc:`BME <bme>` or :doc:`COPER <coper>` reweighters.
 
 **Units.** ``ssnmr`` takes φ in **degrees** (consistent with :meth:`SSProtein.get_angles <soursop.ssprotein.SSProtein.get_angles>`) and returns J in **Hz**.
 
@@ -122,9 +122,13 @@ The ``(n_frames, n_phi)`` matrix is the natural input for the reweighters - so a
 
     atoms, J_calc, sigma = compute_J3_HN_HA(protein, return_uncertainty=True)
 
-    # one experimental observable per residue with a defined phi
+    # one experimental observable per residue with a defined phi. Note that
+    # these columns include proline (no HN, so no measurable 3J(HN,HA)) and
+    # glycine (two HA); drop those columns (and their J_exp entries) unless
+    # your data really contain values for them. The name uses the column
+    # index k, not the residue index (see atoms for the mapping).
     obs = [ExperimentalObservable(value=J_exp[k], uncertainty=sigma,
-                                  name=f"3J_HN_HA_res{k}")
+                                  name=f"3J_HN_HA_col{k}")
            for k in range(J_calc.shape[1])]
 
     result = BME(obs, J_calc).fit(theta=2.0, auto_theta=False)

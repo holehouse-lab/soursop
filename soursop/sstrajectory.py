@@ -20,7 +20,6 @@ from .ssprotein import SSProtein
 from .ssexceptions import SSException, SSWarning
 from . import ssutils
 from . import ssio
-from . import sstools
 
 ## Order of standard args:
 ## 1. stride
@@ -96,13 +95,15 @@ class SSTrajectory:
         of it sits on the far side of the box, will therefore give wrong
         radii of gyration, distance maps, contact maps and so on with no
         error. Make molecules whole before loading (e.g. ``gmx trjconv -pbc
-        mol -center``, or in Python ``traj.make_molecules_whole()`` /
-        ``traj.image_molecules()`` on the mdtraj trajectory). On load,
-        SOURSOP checks every protein chain for the tell-tale signature of a
-        wrapped molecule - two consecutive residues whose CA atoms are
-        further apart than half the shortest box vector - and warns (or
-        raises, see ``check_whole_molecules``) if it finds one; the same
-        check is available at any time as :meth:`check_molecules_whole`.
+        mol -center``, or in Python ``traj = traj.make_molecules_whole()``
+        / ``traj = traj.image_molecules()`` on the mdtraj trajectory; both
+        return a new trajectory unless ``inplace=True`` is passed). On
+        load, SOURSOP checks every protein chain for the tell-tale
+        signature of a wrapped molecule - two bonded atoms (or, without
+        bond information, two consecutive CA atoms) further apart than half
+        the shortest box vector - and warns (or raises, see
+        ``check_whole_molecules``) if it finds one; the same check is
+        available at any time as :meth:`check_molecules_whole`.
 
         There are two ways new SSTrajectory objects can be generated;
 
@@ -138,10 +139,12 @@ class SSTrajectory:
             as one might want normally.
 
         .swan_trajectory : bool
-            True if the trajectory was detected (or forced) to be a two-bead
-            (CA backbone / CB sidechain) coarse-grained model. This is auto-detected
-            on load and propagated to every SSProtein in proteinTrajectoryList, which
-            switches sidechain-vector and secondary-structure analyses to the
+            True if any protein was detected (or forced) to be a two-bead
+            (CA backbone / CB sidechain) coarse-grained model. Detection is
+            done per protein, on that protein's own atoms, so ions, ligands
+            or solvent elsewhere in the system do not affect it; check
+            ``SSProtein.is_swan`` for an individual chain. Two-bead chains
+            switch sidechain-vector and secondary-structure analyses to the
             two-bead CA/CB definitions.
 
 
@@ -189,12 +192,13 @@ class SSTrajectory:
             of normally seen protein residue names. These are defined in
             soursop/ssdata, and are listed below::
 
-                'ALA', 'CYS', 'ASP', 'ASH', 'GLU', 'GLU', 'PHE', 'GLY',
-                'HIE', 'HIS', 'HID', 'HIP', 'ILE', 'LEU', 'LYS', 'LYD',
-                'MET', 'ASN', 'PRO', 'GLN', 'ARG', 'SER', 'THR', 'VAL',
-                'TRP', 'TYR', 'AIB', 'ABA', 'NVA', 'NLE', 'ORN', 'DAB',
-                'PTR', 'TPO', 'SEP', 'KAC', 'KM1', 'KM2'  'KM3', 'ACE',
-                'NME', 'FOR', 'NH2'
+                'ALA', 'CYS', 'ASP', 'ASH', 'GLU', 'GLH', 'PHE', 'GLY',
+                'HIE', 'HIS', 'HID', 'HIP', 'HSD', 'HSE', 'HSP', 'CYX',
+                'CYM', 'ILE', 'LEU', 'LYS', 'LYD', 'LYN', 'MET', 'ASN',
+                'PRO', 'GLN', 'ARG', 'SER', 'THR', 'VAL', 'TRP', 'TYR',
+                'AIB', 'ABA', 'NVA', 'NLE', 'ORN', 'DAB', 'PTR', 'TPO',
+                'SEP', 'KAC', 'KM1', 'KM2', 'KM3', 'ACE', 'NME', 'FOR',
+                'NH2'
 
             This keyword allows the user to pass a list of ADDITIONAL residues
             that we want SOURSOP to recognize as valid residues to extract a
@@ -223,11 +227,12 @@ class SSTrajectory:
 
         swan_trajectory : bool or None
             Controls two-bead (CA/CB) coarse-grained handling. If None
-            (default) SOURSOP auto-detects whether the topology is a two-bead model
-            (a single CA per residue plus a single CB per non-glycine residue,
-            and nothing else) on load. Pass True or False to force the behaviour
-            and skip auto-detection. The resulting value is stored as the
-            ``.swan_trajectory`` attribute and propagated to every SSProtein.
+            (default) SOURSOP auto-detects, separately for each protein,
+            whether its topology is a two-bead model (a single CA per residue
+            plus a single CB per non-glycine residue, and nothing else). Pass
+            True or False to force the behaviour for every protein and skip
+            auto-detection. ``.swan_trajectory`` is then True if any protein
+            is treated as two-bead.
             Default = None
 
         check_whole_molecules : bool or str
@@ -301,13 +306,20 @@ class SSTrajectory:
             )
 
         # determine whether this is a two-bead (CA/CB) coarse-grained model.
-        # This is auto-detected from the topology unless explicitly forced via
-        # the swan_trajectory keyword, and must be resolved BEFORE the per-protein
-        # SSProtein objects are built so the flag can be threaded into them.
+        # If swan_trajectory is forced (True/False) that value is threaded into
+        # every SSProtein. If it is None each SSProtein auto-detects from its
+        # own (protein-only) topology. Prior to 2.0.6 detection ran once on
+        # the whole system, so a single ion, ligand or solvent bead switched
+        # the two-bead paths off for every chain and DSSP then reported the
+        # backbone-less chains as 100% coil.
         if swan_trajectory is None:
-            self.swan_trajectory = ssutils.is_swan_topology(self.traj.topology)
+            self.__swan_request = None
         else:
-            self.swan_trajectory = bool(swan_trajectory)
+            self.__swan_request = bool(swan_trajectory)
+
+        # atom indices (in self.traj) of each protein, filled in when the
+        # proteins are extracted below
+        self.__protein_atom_indices = None
 
         # Next, having read in the trajectory we parse out into proteins
         # extract a list of protein trajectories where each protein is assumed
@@ -320,6 +332,13 @@ class SSTrajectory:
             self.proteinTrajectoryList = self.__get_proteins_by_residue(
                 self.traj, protein_grouping, debug
             )
+
+        # the public flag is True if any protein was forced or detected to be a
+        # two-bead model
+        if self.__swan_request is None:
+            self.swan_trajectory = any(P.is_swan for P in self.proteinTrajectoryList)
+        else:
+            self.swan_trajectory = self.__swan_request
 
         # this is initialized to None and then gets defined using the lazy_loading_single_protein_trajectory()
         # decorator when it's first needed
@@ -555,7 +574,7 @@ class SSTrajectory:
         except TypeError:
             if print_warnings:
                 ssio.warning_message(
-                    "Warning: UnitCell lengths were not provided... This may cause issues but we're going to assume everything is OK for now..."
+                    "UnitCell lengths were not provided... This may cause issues but we're going to assume everything is OK for now..."
                 )
 
         # if pdbLead is true then load the pdb_filename as a trajectory
@@ -566,30 +585,42 @@ class SSTrajectory:
             # reuse that result rather than paying for a third full parse of the
             # same file. md.load(pdb_filename) on that file returns exactly the
             # trajectory we just built, so this is behaviour-preserving.
+            #
+            # Only the first model is prepended: the docs promise the PDB
+            # becomes "the first frame", but prior to 2.0.6 every model of a
+            # multi-model PDB was prepended (duplicating the whole trajectory
+            # when the PDB was also the trajectory file)
             if same_pdb:
-                pdbtraj = traj
+                pdbtraj = traj[0]
             else:
-                pdbtraj = md.load(pdb_filename)
-            traj = pdbtraj + traj
+                pdbtraj = md.load_frame(pdb_filename, 0)
+            try:
+                traj = pdbtraj + traj
+            except ValueError as e:
+                raise SSException(
+                    f"pdblead=True: could not prepend the PDB file to the trajectory ({e}). This usually means one of the two files has periodic box information and the other does not; add a CRYST1 record to the PDB file (or remove the box from the trajectory), or load with pdblead=False."
+                ) from None
 
             # having added the PDB file now check all the unit-cells match up!
             try:
                 uc_lengths_1 = traj.unitcell_lengths[0]
                 uc_lengths_2 = traj.unitcell_lengths[1]
 
-                if (
-                    (uc_lengths_1[0] != uc_lengths_2[0])
-                    or (uc_lengths_1[1] != uc_lengths_2[1])
-                    or (uc_lengths_1[2] != uc_lengths_2[2])
+                # PDB CRYST1 records store box lengths to 0.001 A while
+                # xtc/dcd files store float32 nm, so compare with a tolerance
+                # rather than exactly (an exact compare warned on every file)
+                if print_warnings and not np.allclose(
+                    uc_lengths_1, uc_lengths_2, rtol=0, atol=1e-3
                 ):
                     ssio.warning_message(
-                        f"........................\nWARNING:\nThe unit cell dimensions of the PDB file and trajectory file did not match, specifically\nPDB file = [ {uc_lengths_1} ]\nXTC file = [ {uc_lengths_2} ]\nThis may cause issues if native MDTraj utilities are used (and potentially for SOURSOP utilities that are based on these). It is not necessarily an issue, but PLEASE sanity check your outcome. To be safe we recommend editing the PDB-file unitcell dimensions to match."
+                        f"The unit cell dimensions of the PDB file and trajectory file did not match, specifically\nPDB file = [ {uc_lengths_1} ]\nXTC file = [ {uc_lengths_2} ]\nThis may cause issues if native MDTraj utilities are used (and potentially for SOURSOP utilities that are based on these). It is not necessarily an issue, but PLEASE sanity check your outcome. To be safe we recommend editing the PDB-file unitcell dimensions to match."
                     )
 
             except TypeError:
-                ssio.warning_message(
-                    "Warning: UnitCell lengths were not provided... This may cause issues but we're going to assume everything is OK for now..."
-                )
+                if print_warnings:
+                    ssio.warning_message(
+                        "UnitCell lengths were not provided... This may cause issues but we're going to assume everything is OK for now..."
+                    )
 
         return traj
 
@@ -613,6 +644,18 @@ class SSTrajectory:
             Returns a single SSProtein object
 
         """
+
+        # Use exactly the atoms of the proteins in proteinTrajectoryList.
+        # Prior to 2.0.6 this re-ran chain detection, so with
+        # protein_grouping the overall_* observables silently included
+        # residues outside every group (or failed outright)
+        if self.__protein_atom_indices is not None:
+            protein_atoms = sorted(
+                int(a) for group in self.__protein_atom_indices for a in group
+            )
+            return SSProtein(
+                trajectory.atom_slice(protein_atoms), swan=self.__swan_request
+            )
 
         # extract full system topology
         topology = trajectory.topology
@@ -643,9 +686,7 @@ class SSTrajectory:
 
                 protein_atoms.extend(local_atoms)
 
-        return SSProtein(
-            trajectory.atom_slice(protein_atoms), swan=self.swan_trajectory
-        )
+        return SSProtein(trajectory.atom_slice(protein_atoms), swan=self.__swan_request)
 
     # oxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxo
     #
@@ -755,7 +796,11 @@ class SSTrajectory:
             # add that SSProtein to the ever-growing proteinTrajectory list. NOTE that
             # THIS is the line that is the source of most of the slowness for trajectory
             # loading....
-            proteinTrajectoryList.append(SSProtein(PT, swan=self.swan_trajectory))
+            proteinTrajectoryList.append(SSProtein(PT, swan=self.__swan_request))
+
+        # remember which atoms of the full system make up the proteins so the
+        # overall_* observables use exactly the same set
+        self.__protein_atom_indices = [list(a) for a in chainAtoms]
 
         if len(proteinTrajectoryList) == 0:
             ssio.warning_message("No protein chains found in the trajectory")
@@ -830,10 +875,19 @@ class SSTrajectory:
 
             normalized = []
             for resid in group:
-                if not isinstance(resid, (int, np.integer)):
+                if isinstance(resid, bool) or not isinstance(resid, (int, np.integer)):
                     raise SSException(
                         f"protein_grouping group {group_index} contains a non-integer "
                         f"residue index: {resid!r}"
+                    )
+                # out-of-range indices used to be dropped silently (or, if a
+                # whole group was out of range, the group was skipped and
+                # every later protein index shifted); negative ones reached
+                # mdtraj's selection parser
+                if not (0 <= int(resid) < topology.n_residues):
+                    raise SSException(
+                        f"protein_grouping group {group_index} contains residue index "
+                        f"{resid}, but valid indices are 0..{topology.n_residues - 1}"
                     )
                 normalized.append(int(resid))
 
@@ -899,7 +953,11 @@ class SSTrajectory:
                     "After extracting a protein subtrajectory, the first resid is not 0. This may reflect a bug, or you may not be using MDTraj 1.9.5"
                 )
 
-            proteinTrajectoryList.append(SSProtein(PT, swan=self.swan_trajectory))
+            proteinTrajectoryList.append(SSProtein(PT, swan=self.__swan_request))
+
+        # remember which atoms of the full system make up the proteins so the
+        # overall_* observables use exactly the same set
+        self.__protein_atom_indices = [list(a) for a in group_atoms]
 
         if len(proteinTrajectoryList) == 0:
             ssio.warning_message("No protein chains found in the trajectory")
@@ -909,21 +967,33 @@ class SSTrajectory:
     # oxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxo
     #
     #
-    def check_molecules_whole(self, chunk_size=5000):
+    def check_molecules_whole(self, chunk_size=1000):
         """Test every protein chain for being split across the periodic boundary.
 
         SOURSOP never applies periodic-boundary corrections, so it relies on
-        the molecules it is given being whole. A chain that a simulation
-        engine has wrapped back into the primary cell leaves a clear
-        signature: somewhere along the backbone two consecutive residues sit
-        on opposite sides of the box, so their CA atoms are separated by
-        roughly a box vector rather than the ~3.8 A of a peptide bond. This
-        method looks for exactly that - a consecutive-residue CA-CA distance
-        greater than half the shortest box vector of that frame - in every
-        chain and every frame. A whole chain that is simply larger than the
-        box is *not* flagged (its consecutive residues remain bonded
-        distances apart), and neither is a genuine chain break shorter than
-        half the box, which is not a periodic-boundary problem.
+        the molecules it is given being whole. A chain (or part of one) that
+        a simulation engine has wrapped back into the primary cell leaves a
+        clear signature: two covalently bonded atoms sit on opposite sides
+        of the box, so they are separated by roughly a box vector rather
+        than the 1-2 A of a bond. This method looks for exactly that - a
+        bonded-atom distance greater than half the shortest box vector of
+        that frame - in every chain and every frame.
+
+        The bonds tested are those in the topology that join two atoms of
+        the same residue, or of two sequence-adjacent residues of the same
+        chain (consecutive residue indices whose PDB residue numbers also
+        differ by one). This catches a split sidechain or cap as well as a
+        split backbone, and never pairs residues that were never bonded
+        (e.g. the end of one chain and the start of the next when
+        ``protein_grouping`` or a ``.gro`` file puts them side by side). If
+        the topology has no bonds (e.g. one-bead coarse-grained models read
+        without CONECT records), consecutive CA atoms that pass the same
+        adjacency test are used instead.
+
+        A whole chain that is simply larger than the box is *not* flagged
+        (its bonded atoms remain bonded distances apart), and neither is a
+        genuine chain break shorter than half the box, which is not a
+        periodic-boundary problem.
 
         The check needs a unit cell. Trajectories without one, or whose box
         vectors are zero or non-finite (old CAMPARI files), cannot be tested
@@ -933,20 +1003,27 @@ class SSTrajectory:
         ----------
         chunk_size : int, optional
             Number of frames processed at a time, to bound memory on very
-            long trajectories. Default 5000.
+            long trajectories. Must be a positive integer. Default 1000.
 
         Returns
         -------
         list of dict
             One entry per protein in ``proteinTrajectoryList`` with the keys
             ``'protein'`` (its index), ``'tested'`` (False when there is no
-            usable unit cell or fewer than two consecutive CA-bearing
-            residues), ``'split'`` (True if any consecutive pair exceeds
-            half the box in any frame), ``'n_frames_split'``,
-            ``'worst_frame'``, ``'worst_pair'`` (the two resids),
-            ``'max_ca_distance'`` (Angstroms) and ``'half_box'`` (the
-            smallest half box vector over the trajectory, Angstroms, or
-            ``None``).
+            usable unit cell or nothing to test), ``'split'`` (True if any
+            tested pair exceeds half the box in any frame),
+            ``'n_frames_split'``, ``'worst_frame'``, ``'worst_pair'`` (the
+            resids, in the chain's own 0-based numbering, of the two atoms
+            in the most stretched pair; both entries are the same resid for
+            an intra-residue bond), ``'worst_atoms'`` (the two atom names),
+            ``'max_distance'`` (the largest tested distance, Angstroms) and
+            ``'half_box'`` (the smallest half box vector over the trajectory,
+            Angstroms, or ``None``).
+
+        Raises
+        ------
+        SSException
+            If ``chunk_size`` is not a positive integer.
 
         Example
         -------
@@ -955,12 +1032,36 @@ class SSTrajectory:
         False
         """
 
+        if (
+            isinstance(chunk_size, bool)
+            or not isinstance(chunk_size, (int, np.integer))
+            or chunk_size < 1
+        ):
+            raise SSException(
+                f"chunk_size must be a positive integer; received {chunk_size!r}"
+            )
+        chunk_size = int(chunk_size)
+
         lengths = self.traj.unitcell_lengths
         usable_box = (
             lengths is not None and np.all(np.isfinite(lengths)) and np.all(lengths > 0)
         )
         # half the shortest box vector in every frame, in Angstroms
         half_box = 0.5 * 10.0 * lengths.min(axis=1) if usable_box else None
+
+        def _bonded_neighbours(res_a, res_b):
+            # same residue, or sequence neighbours in the same chain. The
+            # resSeq test stops a .gro file (one chain for everything) or a
+            # protein_grouping group that spans chains from pairing the end
+            # of one chain with the start of the next
+            if res_a.index == res_b.index:
+                return True
+            if res_a.chain.index != res_b.chain.index:
+                return False
+            return (
+                abs(res_a.index - res_b.index) == 1
+                and abs(res_a.resSeq - res_b.resSeq) == 1
+            )
 
         report = []
         for k, protein in enumerate(self.proteinTrajectoryList):
@@ -971,27 +1072,41 @@ class SSTrajectory:
                 "n_frames_split": 0,
                 "worst_frame": None,
                 "worst_pair": None,
-                "max_ca_distance": None,
+                "worst_atoms": None,
+                "max_distance": None,
                 "half_box": None if half_box is None else float(np.min(half_box)),
             }
 
-            # consecutive, sequence-adjacent CA-bearing residues
-            resids = protein.resid_with_CA
-            pairs = [(a, b) for a, b in zip(resids[:-1], resids[1:]) if b == a + 1]
-            if not usable_box or len(pairs) == 0:
+            top = protein.topology
+            if top.n_bonds > 0:
+                # every intra-residue and sequence-adjacent bond, so a split
+                # sidechain or cap is caught as well as a split backbone
+                atom_pairs = [
+                    [a.index, b.index]
+                    for a, b in top.bonds
+                    if _bonded_neighbours(a.residue, b.residue)
+                ]
+            else:
+                # no bonds recorded: fall back to consecutive CA atoms
+                resids = protein.resid_with_CA
+                atom_pairs = [
+                    [protein.get_CA_index(a), protein.get_CA_index(b)]
+                    for a, b in zip(resids[:-1], resids[1:])
+                    if _bonded_neighbours(top.residue(a), top.residue(b))
+                ]
+
+            if not usable_box or len(atom_pairs) == 0:
                 report.append(entry)
                 continue
 
-            atom_pairs = np.array(
-                [[protein.get_CA_index(a), protein.get_CA_index(b)] for a, b in pairs]
-            )
+            atom_pairs = np.array(atom_pairs)
 
             entry["tested"] = True
             n_frames = protein.n_frames
             frames_split = np.zeros(n_frames, dtype=bool)
             max_d, worst = -1.0, (None, None)
-            for start in range(0, n_frames, int(chunk_size)):
-                stop = min(start + int(chunk_size), n_frames)
+            for start in range(0, n_frames, chunk_size):
+                stop = min(start + chunk_size, n_frames)
                 d = 10.0 * md.compute_distances(
                     protein.traj[start:stop], atom_pairs, periodic=False
                 )
@@ -1003,11 +1118,18 @@ class SSTrajectory:
                     f, p = np.unravel_index(np.argmax(d), d.shape)
                     worst = (start + int(f), int(p))
 
+            atom_a = top.atom(int(atom_pairs[worst[1], 0]))
+            atom_b = top.atom(int(atom_pairs[worst[1], 1]))
+            # report the pair in sequence order
+            if atom_b.residue.index < atom_a.residue.index:
+                atom_a, atom_b = atom_b, atom_a
+
             entry["split"] = bool(frames_split.any())
             entry["n_frames_split"] = int(frames_split.sum())
-            entry["max_ca_distance"] = max_d
+            entry["max_distance"] = max_d
             entry["worst_frame"] = worst[0]
-            entry["worst_pair"] = pairs[worst[1]]
+            entry["worst_pair"] = (atom_a.residue.index, atom_b.residue.index)
+            entry["worst_atoms"] = (atom_a.name, atom_b.name)
             report.append(entry)
 
         return report
@@ -1024,11 +1146,13 @@ class SSTrajectory:
         lines = []
         for r in split:
             a, b = r["worst_pair"]
+            name_a, name_b = r["worst_atoms"]
+            where = f"residue {a}" if a == b else f"residues {a}-{b}"
             lines.append(
-                f"protein {r['protein']}: residues {a}-{b} are {r['max_ca_distance']:.1f} A "
-                f"apart in frame {r['worst_frame']} (half the shortest box vector is "
-                f"{r['half_box']:.1f} A); {r['n_frames_split']} of "
-                f"{self.n_frames} frames affected"
+                f"protein {r['protein']}: bonded atoms {name_a} and {name_b} ({where}) "
+                f"are {r['max_distance']:.1f} A apart in frame {r['worst_frame']} (half "
+                f"the shortest box vector is {r['half_box']:.1f} A); "
+                f"{r['n_frames_split']} of {self.n_frames} frames affected"
             )
         message = (
             "Protein chain(s) appear to be split across the periodic boundary - "
@@ -1036,8 +1160,9 @@ class SSTrajectory:
             + ". SOURSOP applies no periodic-boundary corrections and expects whole "
             "molecules, so sizes, distances and contacts computed from this trajectory "
             "will be wrong. Make the molecules whole before loading (e.g. "
-            "'gmx trjconv -pbc mol -center', or traj.make_molecules_whole() / "
-            "traj.image_molecules() in mdtraj), or pass check_whole_molecules=False "
+            "'gmx trjconv -pbc mol -center', or traj = traj.make_molecules_whole() / "
+            "traj = traj.image_molecules() in mdtraj - both return a new trajectory "
+            "rather than editing in place), or pass check_whole_molecules=False "
             "to skip this check."
         )
         if raise_on_split:
@@ -1121,7 +1246,9 @@ class SSTrajectory:
         >>> asph_all = traj.get_overall_asphericity()
         """
 
-        return self.__single_protein_traj.get_asphericity(weights=weights, etol=etol)
+        return self.__single_protein_traj.get_asphericity(
+            verbose=False, weights=weights, etol=etol
+        )
 
     # oxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxo
     #
@@ -1196,9 +1323,10 @@ class SSTrajectory:
             * ``'CA'`` (default) - distances between alpha-carbon atoms.
             * ``'COM'`` - distances between residue centres of mass.
         periodic : bool, optional
-            If True, apply the minimum-image convention. Requires a
-            recorded periodic box and a cubic cell. Generally it is better
-            to centre the molecule first and leave this False. Default
+            If True, apply the minimum-image convention using each frame's
+            own box. Requires a recorded rectangular (orthorhombic) periodic
+            box; triclinic boxes raise. Generally it is better to make the
+            system whole and centred first and leave this False. Default
             False.
         weights : array_like or False, optional
             Per-frame re-weighting vector (validated against the shared
@@ -1225,8 +1353,12 @@ class SSTrajectory:
         ssutils.validate_keyword_option(mode, ["CA", "COM"], "mode")
 
         # get SSProtein objects for the two IDs passed (could be the same)
-        P1 = self.proteinTrajectoryList[proteinID1]
-        P2 = self.proteinTrajectoryList[proteinID2]
+        P1 = self.__validated_protein(
+            proteinID1, "proteinID1", "get_interchain_distance_map"
+        )
+        P2 = self.__validated_protein(
+            proteinID2, "proteinID2", "get_interchain_distance_map"
+        )
 
         # optional deterministic per-frame re-weighting of every pair's
         # mean/std (validated against the shared trajectory frame count).
@@ -1260,41 +1392,115 @@ class SSTrajectory:
         p1_indices = list(range(len(p1_residues)))
         p2_indices = list(range(len(p2_residues)))
 
+        # minimum image in a rectangular box, using each frame's own box
+        # lengths. Prior to 2.0.6 this assumed a cube with frame 0's x length
+        # and only handled separations below 1.5 box lengths, so slab boxes,
+        # NPT boxes and chains that had drifted out of the primary cell all
+        # gave silently wrong distances
         if periodic:
-            # preserve the exact original per-pair minimum-image call
-            for i, COM_1 in enumerate(com1):
-                p1_index = p1_indices[i]
-                for j, COM_2 in enumerate(com2):
-                    d = sstools.get_distance_periodic(
-                        COM_1, COM_2, self.unitcell[0], "cube"
-                    )
-                    if wv is False:
-                        distanceMap[p1_index, p2_indices[j]] = np.mean(d, 0)
-                        stdMap[p1_index, p2_indices[j]] = np.std(d, 0)
-                    else:
-                        d = np.asarray(d)
-                        distanceMap[p1_index, p2_indices[j]] = ssutils.weighted_mean(
-                            d, wv
-                        )
-                        stdMap[p1_index, p2_indices[j]] = ssutils.weighted_std(d, wv)
-        else:
-            # com2 stacked once -> (n2, F, 3); broadcasting COM_1 (F, 3)
-            # against it reproduces the per-pair np.linalg.norm exactly.
-            com2_stack = np.stack(com2, axis=0)
-            for i, COM_1 in enumerate(com1):
-                d = np.linalg.norm(COM_1 - com2_stack, axis=-1)  # (n2, F)
-                if wv is False:
-                    row_mean = np.mean(d, axis=1)
-                    row_std = np.std(d, axis=1)
-                else:
-                    row_mean = ssutils.weighted_mean(d, wv, axis=1)
-                    row_std = ssutils.weighted_std(d, wv, axis=1)
-                p1_index = p1_indices[i]
-                for j, p2_index in enumerate(p2_indices):
-                    distanceMap[p1_index, p2_index] = row_mean[j]
-                    stdMap[p1_index, p2_index] = row_std[j]
+            box = self.__orthorhombic_box_lengths("get_interchain_distance_map")
+
+        # com2 stacked once -> (n2, F, 3); broadcasting COM_1 (F, 3)
+        # against it reproduces the per-pair np.linalg.norm exactly.
+        com2_stack = np.stack(com2, axis=0)
+        for i, COM_1 in enumerate(com1):
+            delta = COM_1 - com2_stack  # (n2, F, 3)
+            if periodic:
+                delta = delta - box * np.round(delta / box)
+            d = np.linalg.norm(delta, axis=-1)  # (n2, F)
+            if wv is False:
+                row_mean = np.mean(d, axis=1)
+                row_std = np.std(d, axis=1)
+            else:
+                row_mean = ssutils.weighted_mean(d, wv, axis=1)
+                row_std = ssutils.weighted_std(d, wv, axis=1)
+            p1_index = p1_indices[i]
+            for j, p2_index in enumerate(p2_indices):
+                distanceMap[p1_index, p2_index] = row_mean[j]
+                stdMap[p1_index, p2_index] = row_std[j]
 
         return (distanceMap, stdMap)
+
+    # oxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxo
+    #
+    #
+    def __validated_protein(self, proteinID, label, function_name):
+        """Return ``proteinTrajectoryList[proteinID]`` after validating the ID.
+
+        Negative indices used to wrap silently to the end of the list, and
+        an out-of-range index raised a bare ``IndexError`` in some methods.
+
+        Parameters
+        ----------
+        proteinID : int
+            Index into ``self.proteinTrajectoryList``.
+        label : str
+            Name of the argument, used in the error message.
+        function_name : str
+            Name of the calling method, used in the error message.
+
+        Returns
+        -------
+        SSProtein
+            The selected protein.
+
+        Raises
+        ------
+        SSException
+            If ``proteinID`` is not an integer in
+            ``[0, len(proteinTrajectoryList) - 1]``.
+        """
+        n_proteins = len(self.proteinTrajectoryList)
+        if isinstance(proteinID, bool) or not isinstance(proteinID, (int, np.integer)):
+            raise SSException(
+                f"In {function_name}(): {label} must be an integer; received {proteinID!r}"
+            )
+        if not (0 <= proteinID < n_proteins):
+            raise SSException(
+                f"In {function_name}(): {label}={proteinID} is out of range; valid indices are 0..{n_proteins - 1}"
+            )
+        return self.proteinTrajectoryList[proteinID]
+
+    # oxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxo
+    #
+    #
+    def __orthorhombic_box_lengths(self, function_name):
+        """Per-frame box lengths (Angstroms) for a rectangular periodic box.
+
+        Parameters
+        ----------
+        function_name : str
+            Name of the calling method, used in error messages.
+
+        Returns
+        -------
+        np.ndarray
+            Array of shape ``(n_frames, 3)`` holding each frame's
+            ``(Lx, Ly, Lz)`` in Angstroms.
+
+        Raises
+        ------
+        SSException
+            If the trajectory has no unit cell, if any box length is not
+            positive, or if the box is not rectangular (any angle differs
+            from 90 degrees by more than 0.001 degrees).
+        """
+        lengths = self.traj.unitcell_lengths
+        angles = self.traj.unitcell_angles
+        if lengths is None or angles is None:
+            raise SSException(
+                f"{function_name}(): periodic=True needs a periodic box, but this trajectory has no unit cell information."
+            )
+        if not np.allclose(angles, 90.0, rtol=0, atol=1e-3):
+            raise SSException(
+                f"{function_name}(): periodic=True only supports rectangular (orthorhombic) boxes, but this trajectory has box angles {angles[0]}. Make the molecules whole and use periodic=False instead."
+            )
+        lengths = 10.0 * np.asarray(lengths, dtype=np.float64)
+        if np.any(lengths <= 0):
+            raise SSException(
+                f"{function_name}(): periodic=True needs positive box lengths, but at least one frame has a zero or negative box length."
+            )
+        return lengths
 
     # oxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxo
     #
@@ -1313,13 +1519,29 @@ class SSTrajectory:
     ):
         """Inter-chain contact-fraction map between two protein chains.
 
-        Returns an ``(n_res_P1, n_res_P2)`` matrix where entry ``[i, j]`` is
-        the fraction of (strided) frames in which residue ``i`` of chain
-        ``proteinID1`` is within ``threshold`` Angstroms of residue ``j``
-        of chain ``proteinID2`` under the chosen distance mode. Calling
-        with ``proteinID1 == proteinID2`` produces the chain's intra-chain
-        contact map (caps and glycines contribute zero rows/columns for
-        modes that can't be evaluated for them).
+        Returns an ``(n_CA_P1, n_CA_P2)`` matrix where entry ``[i, j]`` is
+        the fraction of (strided) frames in which the ``i``-th CA-bearing
+        residue of chain ``proteinID1`` is within ``threshold`` Angstroms of
+        the ``j``-th CA-bearing residue of chain ``proteinID2`` under the
+        chosen distance mode. Calling with ``proteinID1 == proteinID2``
+        produces the chain's intra-chain contact map.
+
+        Rows and columns follow ``resid_with_CA`` of each chain, so caps
+        (ACE, NME, FOR, NH2, ...) and any other residue without a CA atom are
+        excluded - the same convention as :meth:`get_interchain_distance_map`
+        and :meth:`SSProtein.get_contact_map`. Row ``k`` is therefore residue
+        ``P.resid_with_CA[k]``, not resid ``k``. **Breaking change in
+        2.0.6:** earlier versions indexed every residue by resid, caps
+        included, returning an ``(n_residues, n_residues)`` matrix whose rows
+        were offset by one from the other per-residue maps on a chain with an
+        N-terminal cap.
+
+        A residue for which the chosen mode cannot be evaluated (e.g. one
+        lacking the atom named by ``A1``/``A2`` in ``mode='atom'``, or a
+        coarse-grained bead with a sidechain mode) contributes a row/column
+        of zeros. Note that for the ``'sidechain'`` modes mdtraj uses a
+        glycine's HA atoms as its sidechain, so glycine rows are generally
+        not zero.
 
         Parameters
         ----------
@@ -1340,9 +1562,9 @@ class SSTrajectory:
         A2 : str, optional
             Atom name in residue R2 when ``mode='atom'``. Default ``'CA'``.
         periodic : bool, optional
-            If True, apply the minimum-image convention to the
-            mdtraj-driven modes (closest, closest-heavy, sidechain,
-            sidechain-heavy). Default False.
+            If True, apply the minimum-image convention (using each frame's
+            own box) for every mode. Requires a recorded periodic box.
+            Default False.
         stride : int, optional
             Use every ``stride``-th frame when computing the per-pair
             distances; the contact fraction is then
@@ -1354,15 +1576,18 @@ class SSTrajectory:
         Returns
         -------
         np.ndarray
-            Array of shape ``(n_res_P1, n_res_P2)`` of contact fractions in
-            ``[0, 1]``.
+            Array of shape ``(n_CA_P1, n_CA_P2)`` of contact fractions in
+            ``[0, 1]``, where ``n_CA`` is ``len(P.resid_with_CA)`` for each
+            chain.
 
         Raises
         ------
         SSException
-            If either ``proteinID`` is out of range, ``mode`` is invalid,
-            ``stride`` is not a positive integer, or every per-residue
-            inner call failed (e.g. an invalid atom name was supplied).
+            If either ``proteinID`` is not a valid index, ``mode`` is
+            invalid, ``stride`` is invalid, ``periodic=True`` is requested
+            without a periodic box, either chain has no CA-bearing residues,
+            or every per-residue inner call failed (e.g. an invalid atom name
+            was supplied).
 
         Example
         -------
@@ -1373,13 +1598,8 @@ class SSTrajectory:
 
         # Eagerly validate proteinIDs so an out-of-range value raises
         # SSException up front instead of an IndexError partway through.
-        n_proteins = len(self.proteinTrajectoryList)
-        for label, pid in (("proteinID1", proteinID1), ("proteinID2", proteinID2)):
-            if not (0 <= pid < n_proteins):
-                raise SSException(
-                    f"In get_interchain_contact_map(): {label}={pid} is out of "
-                    f"range; valid indices are 0..{n_proteins - 1}"
-                )
+        self.__validated_protein(proteinID1, "proteinID1", "get_interchain_contact_map")
+        self.__validated_protein(proteinID2, "proteinID2", "get_interchain_contact_map")
 
         # Validate the mode keyword up front. Doing this here avoids the
         # silent all-zero matrix that would otherwise be produced by the
@@ -1399,18 +1619,37 @@ class SSTrajectory:
                 f"{allowed_modes}. Provided keyword was [{mode}]"
             )
 
-        if not (isinstance(stride, (int, np.integer)) and stride >= 1):
-            raise SSException(
-                f"In get_interchain_contact_map(): stride must be a positive "
-                f"integer, got {stride!r}"
-            )
+        # the shared stride check (also rejects bools and strides longer than
+        # the trajectory, which used to be accepted here)
+        stride = ssutils.validate_stride(stride, self.n_frames)
 
-        # get number of residues/bases for the two proteins
-        n_res_P1 = self.proteinTrajectoryList[proteinID1].n_residues
-        n_res_P2 = self.proteinTrajectoryList[proteinID2].n_residues
+        # check this up front; otherwise every per-pair call fails, is
+        # zero-filled, and the error blames the mode/atom selection
+        if periodic and self.traj.unitcell_vectors is None:
+            raise SSException(
+                "In get_interchain_contact_map(): periodic=True needs a periodic box, but this trajectory has no unit cell information."
+            )
 
         P1 = self.proteinTrajectoryList[proteinID1]
         P2 = self.proteinTrajectoryList[proteinID2]
+
+        # Rows/columns are the CA-bearing residues of each chain (caps and any
+        # other CA-less residue excluded), matching get_interchain_distance_map
+        # and SSProtein.get_contact_map. Prior to 2.0.6 every residue was
+        # included and the map was indexed by resid, caps and all.
+        res_P1 = list(P1.resid_with_CA)
+        res_P2 = list(P2.resid_with_CA)
+        for label, pid, res in (
+            ("proteinID1", proteinID1, res_P1),
+            ("proteinID2", proteinID2, res_P2),
+        ):
+            if len(res) == 0:
+                raise SSException(
+                    f"In get_interchain_contact_map(): protein {pid} ({label}) has no "
+                    "CA-bearing residues, so the contact map has no rows/columns."
+                )
+        n_res_P1 = len(res_P1)
+        n_res_P2 = len(res_P2)
 
         # Fast path: for mode='atom' (non-periodic) the named-atom
         # position of a residue is independent of the residue it is
@@ -1425,15 +1664,15 @@ class SSTrajectory:
         # its behaviour is byte-for-byte unchanged.
         if mode == "atom" and not periodic:
 
-            def _residue_atom_positions(P, n_res, atom_name):
-                # positions[r] = 10x-COM (F,3) of the named atom of
-                # residue r over the strided frames; ok[r] mirrors the
-                # exact success/failure of the original
+            def _residue_atom_positions(P, residues, atom_name):
+                # positions[k] = 10x-COM (F,3) of the named atom of the k-th
+                # residue in `residues` over the strided frames; ok[k]
+                # mirrors the exact success/failure of the original
                 # get_interchain_distance() 'atom' selection for that
                 # residue (the conditions the caller's except catches).
-                positions = [None] * n_res
-                ok = [False] * n_res
-                for r in range(n_res):
+                positions = [None] * len(residues)
+                ok = [False] * len(residues)
+                for k, r in enumerate(residues):
                     try:
                         sel = P.topology.select("resid %i" % r)
                         if len(sel) == 0:
@@ -1444,14 +1683,14 @@ class SSTrajectory:
                         a = sub.topology.select('resid 0 and name "%s"' % atom_name)
                         if len(a) != 1:
                             continue
-                        positions[r] = 10 * md.compute_center_of_mass(sub.atom_slice(a))
-                        ok[r] = True
+                        positions[k] = 10 * md.compute_center_of_mass(sub.atom_slice(a))
+                        ok[k] = True
                     except (SSException, ValueError, IndexError):
                         continue
                 return positions, ok
 
-            pos1, ok1 = _residue_atom_positions(P1, n_res_P1, A1)
-            pos2, ok2 = _residue_atom_positions(P2, n_res_P2, A2)
+            pos1, ok1 = _residue_atom_positions(P1, res_P1, A1)
+            pos2, ok2 = _residue_atom_positions(P2, res_P2, A2)
 
             # The original per-pair loop succeeds for a pair iff both
             # residues' atom selections succeed (independently), so the
@@ -1489,26 +1728,24 @@ class SSTrajectory:
         # poly-glycine chain) we raise rather than return a silent zero matrix.
         success_count = 0
 
-        # cycle over each residue in protein 1
-        for p1_res_idx in range(0, n_res_P1):
+        # cycle over each CA-bearing residue in protein 1
+        for k1, p1_res_idx in enumerate(res_P1):
             if verbose:
-                print(f"On {p1_res_idx} of {n_res_P1}")
+                print(f"On {k1} of {n_res_P1}")
 
             tmp = []
 
-            # cycle over each residue in protein 2
-            for p2_res_idx in range(0, n_res_P2):
-                # Per-residue computations can legitimately fail in two cases:
-                #   1. Cap residues (ACE / NME) lack a CA atom, so mode='atom'
-                #      with A1='CA' (default) and mode='ca' both raise.
-                #   2. Glycines lack a sidechain, so mode='sidechain' and
-                #      mode='sidechain-heavy' raise (and mdtraj's empty
-                #      sidechain selector emits a ValueError further down
-                #      the stack).
-                # In both cases the correct contact fraction is 0 — there is
-                # nothing to be in contact via the requested mode. Catch and
-                # zero-fill so the matrix shape (n_res_P1, n_res_P2) is
-                # preserved and the rest of the matrix still works.
+            # cycle over each CA-bearing residue in protein 2
+            for p2_res_idx in res_P2:
+                # Per-residue computations can legitimately fail when a
+                # residue lacks the atoms the mode needs: e.g. a residue
+                # without a sidechain atom mdtraj recognises (such as a
+                # coarse-grained bead) makes the sidechain modes raise. Note
+                # mdtraj treats a glycine's HA atoms as its "sidechain", so
+                # glycine rows are generally NOT zero. In the failing cases
+                # the contact fraction is set to 0 - there is nothing to be in
+                # contact via the requested mode - so the matrix shape
+                # (n_CA_P1, n_CA_P2) is preserved.
                 try:
                     distances = self.get_interchain_distance(
                         proteinID1,
@@ -1586,8 +1823,9 @@ class SSTrajectory:
             :meth:`SSProtein.get_inter_residue_atomic_distance` for full
             descriptions. Default ``'atom'``.
         periodic : bool, optional
-            If True, apply the minimum-image convention for the
-            mdtraj-driven modes. Default False.
+            If True, apply the minimum-image convention using each frame's
+            own box (triclinic boxes included), for every mode. Requires a
+            recorded periodic box. Default False.
         stride : int, optional
             Use every ``stride``-th frame. Returned array has length
             ``ceil(n_frames / stride)``. Must be a positive integer.
@@ -1602,9 +1840,12 @@ class SSTrajectory:
         Raises
         ------
         SSException
-            If ``mode`` is invalid, a protein ID is out of range, a resid
-            has no atoms, an atom name cannot be found, or ``stride`` is
-            not a positive integer.
+            If ``mode`` is invalid, a protein ID or resid is not an integer
+            or is out of range, a resid has no atoms, an atom name cannot be
+            found, mdtraj cannot compute the requested mode for the two
+            residues (e.g. a sidechain mode on glycine or a coarse-grained
+            bead), ``periodic=True`` is requested without a periodic box, or
+            ``stride`` is invalid.
 
         Example
         -------
@@ -1629,15 +1870,28 @@ class SSTrajectory:
             )
 
         # get SSProtein objects for the two IDs passed (could be the same)
-        try:
-            P1 = self.proteinTrajectoryList[proteinID1]
-            P2 = self.proteinTrajectoryList[proteinID2]
+        P1 = self.__validated_protein(
+            proteinID1, "proteinID1", "get_interchain_distance"
+        )
+        P2 = self.__validated_protein(
+            proteinID2, "proteinID2", "get_interchain_distance"
+        )
 
-        except IndexError:
-            raise SSException(
-                "In get_interchain_distance(): When selecting protein indices %i and %i at least one of these was out of range (indices are from 0...%i)"
-                % (proteinID1, proteinID2, len(self.proteinTrajectoryList) - 1)
-            )
+        # validate the residue indices; a float used to be truncated by the
+        # "%i" selection string and a negative one reached mdtraj's parser
+        for label, R, P in (("R1", R1, P1), ("R2", R2, P2)):
+            if isinstance(R, bool) or not isinstance(R, (int, np.integer)):
+                raise SSException(
+                    f"In get_interchain_distance(): {label} must be an integer residue index; received {R!r}"
+                )
+            if not (0 <= R < P.n_residues):
+                raise SSException(
+                    f"In get_interchain_distance(): {label}={R} is out of range; valid indices are 0..{P.n_residues - 1}"
+                )
+
+        # the shared stride check (also rejects bools and strides longer than
+        # the trajectory, which used to be accepted here)
+        stride = ssutils.validate_stride(stride, self.n_frames)
 
         # next build a new trajectory that contains ONLY the two residues selected
         local_atoms1 = P1.topology.select("resid %i" % (R1))
@@ -1661,11 +1915,6 @@ class SSTrajectory:
         # Apply frame stride before any expensive mdtraj compute so the
         # downstream COM / compute_contacts / compute_distances calls operate
         # on n_frames // stride frames rather than the full trajectory.
-        if not (isinstance(stride, (int, np.integer)) and stride >= 1):
-            raise SSException(
-                f"In get_interchain_distance(): stride must be a positive "
-                f"integer, got {stride!r}"
-            )
         if stride > 1:
             subtraj_p1 = subtraj_p1[::stride]
             subtraj_p2 = subtraj_p2[::stride]
@@ -1702,15 +1951,17 @@ class SSTrajectory:
 
             # finally compute distances. Use minimum image convention if the periodic keyword is passed
             if periodic:
-                # get_distance_periodic() hands back a list, so coerce to an
-                # array to keep the return type consistent with the
-                # non-periodic branch (and so downstream comparisons work)
-                distances = np.asarray(
-                    sstools.get_distance_periodic(
-                        COM_1, COM_2, self.unitcell[0], "cube"
-                    ),
-                    dtype=float,
-                )
+                # let mdtraj apply the minimum image: it uses each frame's
+                # own box and handles triclinic cells. Prior to 2.0.6 this
+                # assumed a cube with frame 0's x length and only handled
+                # separations below 1.5 box lengths
+                if full_subtraj.unitcell_vectors is None:
+                    raise SSException(
+                        "In get_interchain_distance(): periodic=True needs a periodic box, but this trajectory has no unit cell information."
+                    )
+                distances = 10 * md.compute_distances(
+                    full_subtraj, [[atom1[0], atom2[0]]], periodic=True
+                )[:, 0].astype(float)
 
             else:
                 # revised way
@@ -1720,15 +1971,25 @@ class SSTrajectory:
                 # distances = np.sqrt(np.square(np.transpose(COM_1)[0] - np.transpose(COM_2)[0]) + np.square(np.transpose(COM_1)[1] - np.transpose(COM_2)[1])+np.square(np.transpose(COM_1)[2] - np.transpose(COM_2)[2]))
 
         else:
-            # TODO: Documentation missing!
-            # use the compute_contacts() function from mdtraj, multiplying by 10 because this will
-            # by default give you numbers that...
-            distances = (
-                10
-                * md.compute_contacts(
-                    full_subtraj, [[0, 1]], scheme=mode, periodic=periodic
-                )[0].ravel()
-            )
+            # use the compute_contacts() function from mdtraj (which works in
+            # nm, hence the factor of 10). mdtraj raises a bare ValueError when
+            # a residue lacks the atoms a scheme needs (e.g. sidechain modes on
+            # glycine, caps or coarse-grained beads), so translate that
+            if periodic and full_subtraj.unitcell_vectors is None:
+                raise SSException(
+                    "In get_interchain_distance(): periodic=True needs a periodic box, but this trajectory has no unit cell information."
+                )
+            try:
+                distances = (
+                    10
+                    * md.compute_contacts(
+                        full_subtraj, [[0, 1]], scheme=mode, periodic=periodic
+                    )[0].ravel()
+                )
+            except ValueError as e:
+                raise SSException(
+                    f"In get_interchain_distance(): mdtraj could not compute a '{mode}' distance between residue {R1} of protein {proteinID1} ({full_subtraj_residues[0].name}) and residue {R2} of protein {proteinID2} ({full_subtraj_residues[1].name}); one of them probably lacks the atoms this mode needs (e.g. a sidechain). mdtraj said: {e}"
+                ) from None
 
         return distances
 
@@ -1766,10 +2027,12 @@ def parallel_load_trjs(trj_filenames, top_filenames, n_procs=None, **kwargs):
 
     Parameters
     ----------
-    trj_filenames : list of str
-        A list of strings containing the trajectory file paths to be loaded.
-    top_filenames : list of str
-        A list of strings containing the topology file paths corresponding to the trajectories.
+    trj_filenames : list of str or pathlib.Path
+        The trajectory file paths to be loaded. A single path (str or
+        ``pathlib.Path``) is treated as a one-element list.
+    top_filenames : str, pathlib.Path, or list of these
+        The topology file paths corresponding to the trajectories. A single
+        path (or a one-element list) is used for every trajectory.
     n_procs : int, optional
         Number of separate processors to use for loading, by default None.
         If None, it will use the number of available CPU cores.
@@ -1784,13 +2047,21 @@ def parallel_load_trjs(trj_filenames, top_filenames, n_procs=None, **kwargs):
     if n_procs is None:
         n_procs = cpu_count()
 
+    # A bare path used to be iterated character by character (str) or
+    # raise a TypeError (pathlib.Path), so wrap single paths in a list
+    if isinstance(trj_filenames, (str, os.PathLike)):
+        trj_filenames = [trj_filenames]
+    trj_filenames = [os.fspath(f) for f in trj_filenames]
+
     # Normalize the topology argument. Accept either a single shared
-    # topology (str) or a per-trajectory list. A single string -- or a
+    # topology (str / Path) or a per-trajectory list. A single path -- or a
     # one-element list -- is broadcast across all trajectories.
-    if isinstance(top_filenames, str):
-        top_filenames = [top_filenames] * len(trj_filenames)
+    if isinstance(top_filenames, (str, os.PathLike)):
+        top_filenames = [os.fspath(top_filenames)] * len(trj_filenames)
     elif len(top_filenames) == 1 and len(trj_filenames) > 1:
         top_filenames = list(top_filenames) * len(trj_filenames)
+
+    top_filenames = [os.fspath(f) for f in top_filenames]
 
     if len(top_filenames) != len(trj_filenames):
         raise SSException(

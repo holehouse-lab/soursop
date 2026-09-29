@@ -33,7 +33,7 @@ Comparing dihedral distributions from a full-Hamiltonian (FH) simulation to the 
 SOURSOP provides two routes to the EV reference:
 
 1. **Run your own EV simulations** and supply the resulting trajectory files as ``reference_list`` to :class:`SamplingQuality`.
-2. **Use precomputed distributions** (the default). SOURSOP ships with tabulated EV dihedral angle distributions for all 8000 possible amino-acid tripeptide contexts (all 20³ combinations of i-1, i, i+1). The :class:`PrecomputedDihedralInterface` class handles look-up and sampling from these tables, eliminating the need for bespoke EV runs.
+2. **Use precomputed distributions** (the default). SOURSOP ships with tabulated EV dihedral angle distributions for each of the 20 amino acids in three coarse-grained neighbour contexts (ALA-, LEU- and PRO-like, via ``EV_RESIDUE_MAPPER``): phi is conditioned on the class of the preceding residue (i-1) and psi on the class of the following residue (i+1). The :class:`PrecomputedDihedralInterface` class handles look-up and sampling from these tables, eliminating the need for bespoke EV runs.
 
 The precomputed route resamples each residue's tabulated distribution (4000 angles per context) by inverse-CDF sampling on the histogram grid, drawing as many synthetic frames as there are frames in your trajectories. Each draw picks a bin in proportion to its mass and then a uniform position within that bin, so the resampled histogram reproduces the tabulated one (including the bins at ±180°) up to sampling noise. Because this is a random draw, the resulting Hellinger distances vary slightly from run to run; pass ``seed=<int>`` to :class:`SamplingQuality` to make the EV reference, and everything computed from it, reproducible. The tables only cover the 20 standard amino acids, so a chain containing a non-standard residue raises an :class:`~soursop.ssexceptions.SSException` naming that residue; supply your own EV trajectories in that case.
 
@@ -72,7 +72,7 @@ Typical workflow
 
 Every dihedral array is restricted to residues that carry both a phi and a psi (all non-cap residues of a capped chain, the interior residues of an uncapped one); the residue index of each column is available as ``SamplingQuality.residue_indices``.
 
-Most users will interact with :class:`SamplingQuality`, which accepts a list of replicate trajectory files and (optionally) a list of reference trajectories. If no reference is provided it falls back to the precomputed EV distributions via :class:`PrecomputedDihedralInterface`::
+Most users will interact with :class:`SamplingQuality`, which accepts a list of replicate trajectory files and (optionally) a list of reference trajectories. If no reference is provided it falls back to the precomputed EV distributions via :class:`PrecomputedDihedralInterface`. With more than one trajectory the files are read in parallel with ``multiprocessing``, so in a script the call must sit under an ``if __name__ == "__main__":`` guard (required on macOS and Windows, where worker processes re-import the script); alternatively pass ``force_sequential=True``::
 
     from soursop.sssampling import SamplingQuality
 

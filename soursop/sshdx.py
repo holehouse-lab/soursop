@@ -51,13 +51,22 @@ COPER reweighters. The optional ``weights`` argument collapses the frame
 axis to a single per-residue ensemble mean (per the package-wide
 :func:`soursop.ssutils.validate_weights` contract).
 
-Proline (no backbone H), capping groups (ACE, NME, NMA, NH2 - these are
-not amino acids and do not carry an exchangeable backbone amide), a free
-N-terminal residue (whose N carries an NH3+ group rather than an amide
-N-H) and any residue lacking a recognisable backbone amide H are dropped
-from the residue list; the function returns the residue indices it
-covered alongside the data array. Note that an N-terminal residue
-preceded by an ACE cap is a genuine amide and is retained.
+Proline (no backbone H), capping groups (ACE, NME, NMA, NAC, NH2, NHE,
+FOR, or any other residue without a CA atom - these are not amino acids
+and do not carry an exchangeable backbone amide), a free N-terminal
+residue (whose N carries an NH3+ group rather than an amide N-H) and any
+residue lacking a recognisable backbone amide H are dropped from the
+residue list; the function returns the residue indices it covered
+alongside the data array. Note that an N-terminal residue preceded by an
+ACE or FOR cap is a genuine amide and is retained.
+
+All distance cutoffs in this module are in **nanometres** (mdtraj's
+convention), unlike most SOURSOP functions, which take Angstroms. The
+sequence-separation exclusions only apply within a chain: contacts and
+H-bonds between different chains of a multi-chain ``SSProtein`` (built
+with ``protein_grouping``) are always counted. Note that an ordinary
+``SSProtein`` holds a single chain, so partner chains in a complex are
+not seen at all; group the chains into one protein to include them.
 
 Public entry points
 -------------------
@@ -79,10 +88,12 @@ References
 **Author(s):** Alex Holehouse
 """
 
+import numbers
+
 import mdtraj as md
 import numpy as np
 
-from .ssexceptions import SSException
+from .ssexceptions import SSException, SSWarning
 from .ssutils import (
     validate_keyword_option,
     validate_stride,
@@ -114,14 +125,19 @@ DEFAULT_HBOND_CUTOFF_NM = 0.24
 HBOND_METHODS = ("distance", "wernet-nilsson")
 
 #: Atom-name fallbacks for the backbone amide hydrogen across common
-#: force fields (CHARMM/AMBER use ``H`` or ``HN``; some N-terminal
-#: parameterisations use ``H1``).
-_BACKBONE_H_NAMES = ("H", "HN", "H1")
+#: force fields (CHARMM/AMBER use ``H`` or ``HN``). ``H1`` used to be
+#: accepted too, but on a residue that is not a free N-terminus (those are
+#: excluded by position) it only ever matched a cap's hydrogen, e.g.
+#: AMBER's amidated C-terminus ``NHE``.
+_BACKBONE_H_NAMES = ("H", "HN")
 
 #: Residue names treated as capping groups. These carry no exchangeable
-#: backbone amide and are never reported (mirrors the cap names in
-#: :mod:`soursop.ssdata`).
-_CAP_RESIDUE_NAMES = ("ACE", "NME", "NMA", "NH2", "FOR")
+#: backbone amide and are never reported. Any other residue without a CA
+#: atom is treated as a cap as well, as everywhere else in SOURSOP.
+_CAP_RESIDUE_NAMES = ("ACE", "NME", "NMA", "NAC", "NH2", "NHE", "FOR")
+
+#: Above this (in nm) a cutoff was almost certainly given in Angstroms.
+_SUSPICIOUS_CUTOFF_NM = 1.5
 
 
 # ----------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -154,6 +170,11 @@ def _backbone_nh_map(topology):
         if residue.name == "PRO":
             continue
         if residue.name.upper() in _CAP_RESIDUE_NAMES:
+            continue
+        # a residue without a CA is a cap (or other non-amino-acid group)
+        # whatever it is called; prior to 2.0.6 unrecognised cap names such
+        # as NAC or NHE were reported as exchangeable amides
+        if not any(a.name == "CA" for a in residue.atoms):
             continue
         try:
             n_atom = next(a for a in residue.atoms if a.name == "N")
@@ -216,14 +237,64 @@ def _oxygen_atom_map(topology):
 
 
 def _heavy_atom_residue_map(topology):
-    """Atom indices and residue indices of all non-hydrogen atoms."""
+    """Atom indices and residue indices of all non-hydrogen atoms.
+
+    Hydrogen is identified by atomic number (``<= 1``), not by the element
+    symbol, so deuterium (symbol ``D``) and virtual sites are excluded
+    too; prior to 2.0.6 a topology whose element column said ``D``
+    counted every deuteron as a heavy atom.
+    """
     atom_idx, res_idx = [], []
     for a in topology.atoms:
-        if a.element is None or a.element.symbol == "H":
+        if a.element is None or a.element.atomic_number <= 1:
             continue
         atom_idx.append(a.index)
         res_idx.append(a.residue.index)
     return np.asarray(atom_idx, dtype=int), np.asarray(res_idx, dtype=int)
+
+
+def _residue_chain_index(topology):
+    """Array mapping residue index -> chain index."""
+    return np.array([r.chain.index for r in topology.residues], dtype=int)
+
+
+def _outside_exclusion(res_j, res_i, chain_of, exclude_neighbours):
+    """Mask of partners ``res_j`` not excluded by sequence separation from ``res_i``.
+
+    The ``|i - j| <= exclude_neighbours`` exclusion only makes sense within
+    a chain; residues in a different chain are never excluded (prior to
+    2.0.6 the topology-wide residue index was used, so the ends of two
+    chains grouped into one SSProtein excluded each other's contacts).
+    """
+    same_chain = chain_of[res_j] == chain_of[res_i]
+    return (~same_chain) | (np.abs(res_j - res_i) > exclude_neighbours)
+
+
+def _check_cutoff(value, name):
+    """Validate a distance cutoff given in nm; warn if it looks like Angstroms."""
+    try:
+        ok = bool(np.isfinite(value)) and value > 0
+    except TypeError:
+        ok = False
+    if not ok:
+        raise SSException(f"{name} must be a positive number (in nm), got {value!r}")
+    if value > _SUSPICIOUS_CUTOFF_NM:
+        SSWarning(
+            f"{name}={value} nm is unusually large for an H/D-exchange cutoff; sshdx "
+            "cutoffs are in nanometres (e.g. 0.65 for 6.5 A), not Angstroms."
+        )
+
+
+def _check_exclusion(value, name, allow_none=False):
+    """Validate a sequence-separation exclusion radius."""
+    if value is None and allow_none:
+        return
+    if isinstance(value, bool) or not isinstance(value, numbers.Integral) or value < 0:
+        raise SSException(
+            f"{name} must be a non-negative integer"
+            + (" or None" if allow_none else "")
+            + f", got {value!r}"
+        )
 
 
 # ----------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -251,7 +322,8 @@ def compute_Nc(
         Distance cutoff in nm. Default ``0.65`` (= 6.5 A,
         Best-Vendruscolo).
     exclude_neighbours : int, optional
-        Sequence-separation exclusion radius. Default ``2``.
+        Sequence-separation exclusion radius (applied within a chain
+        only). Must be a non-negative integer. Default ``2``.
     stride : int, optional
         Frame subsample. Default ``1``.
 
@@ -268,11 +340,18 @@ def compute_Nc(
     Raises
     ------
     SSException
-        If the protein has no recognisable backbone amide N+H residues.
+        If the protein has no recognisable backbone amide N+H residues, if
+        ``contact_cutoff`` is not positive, or if ``exclude_neighbours`` is
+        not a non-negative integer. A cutoff above 1.5 nm (probably given
+        in Angstroms) triggers a warning.
     """
+    _check_cutoff(contact_cutoff, "contact_cutoff")
+    _check_exclusion(exclude_neighbours, "exclude_neighbours")
+
     top = protein.traj.topology
     res_NH, n_atom_idx, _ = _backbone_nh_map(top)
     heavy_atom_idx, heavy_res_idx = _heavy_atom_residue_map(top)
+    chain_of = _residue_chain_index(top)
     if len(res_NH) == 0:
         raise SSException("compute_Nc: no residues with a backbone amide N+H found")
 
@@ -282,7 +361,7 @@ def compute_Nc(
 
     Nc = np.zeros((n_frames, len(res_NH)), dtype=int)
     for k, (i_res, n_idx) in enumerate(zip(res_NH, n_atom_idx)):
-        mask = np.abs(heavy_res_idx - i_res) > exclude_neighbours
+        mask = _outside_exclusion(heavy_res_idx, i_res, chain_of, exclude_neighbours)
         eligible = heavy_atom_idx[mask]
         if len(eligible) == 0:
             continue
@@ -334,10 +413,10 @@ def compute_Nh(
     ----------
     protein : soursop.ssprotein.SSProtein
     exclude_neighbours : int or None, optional
-        Acceptors in residues with ``|i - j| <= exclude_neighbours`` are
-        ignored. ``None`` (default) uses the method's own convention: no
-        exclusion for ``'distance'`` (Best-Vendruscolo), ``2`` for
-        ``'wernet-nilsson'``.
+        Acceptors in residues of the same chain with
+        ``|i - j| <= exclude_neighbours`` are ignored. ``None`` (default)
+        uses the method's own convention: no exclusion for ``'distance'``
+        (Best-Vendruscolo), ``2`` for ``'wernet-nilsson'``.
     stride : int, optional
         Frame subsample. Default ``1``.
     hbond_method : {'distance', 'wernet-nilsson'}, optional
@@ -358,11 +437,15 @@ def compute_Nh(
     SSException
         If the protein has no recognisable backbone amide N+H residues
         (e.g. a hydrogen-free or coarse-grained topology), if
-        ``hbond_method`` is unknown, or if ``stride`` is invalid.
+        ``hbond_method`` is unknown, if ``stride``, ``hbond_cutoff`` or
+        ``exclude_neighbours`` is invalid, or if ``'wernet-nilsson'`` is
+        used on a topology without bonds.
     """
     validate_keyword_option(hbond_method, list(HBOND_METHODS), "hbond_method")
+    _check_exclusion(exclude_neighbours, "exclude_neighbours", allow_none=True)
 
     top = protein.traj.topology
+    chain_of = _residue_chain_index(top)
     res_NH, _, h_atom_idx = _backbone_nh_map(top)
     if len(res_NH) == 0:
         raise SSException("compute_Nh: no residues with a backbone amide N+H found")
@@ -374,16 +457,15 @@ def compute_Nh(
     Nh = np.zeros((n_frames, len(res_NH)), dtype=int)
 
     if hbond_method == "distance":
-        if hbond_cutoff <= 0:
-            raise SSException(
-                f"hbond_cutoff must be positive (in nm), got {hbond_cutoff}"
-            )
+        _check_cutoff(hbond_cutoff, "hbond_cutoff")
         o_atom_idx, o_res_idx = _oxygen_atom_map(top)
         for k, (i_res, h_idx) in enumerate(zip(res_NH, h_atom_idx)):
             if exclude_neighbours is None:
                 eligible = o_atom_idx
             else:
-                eligible = o_atom_idx[np.abs(o_res_idx - i_res) > exclude_neighbours]
+                eligible = o_atom_idx[
+                    _outside_exclusion(o_res_idx, i_res, chain_of, exclude_neighbours)
+                ]
             if len(eligible) == 0:
                 continue
             pairs = np.column_stack(
@@ -403,7 +485,15 @@ def compute_Nh(
     o_to_res = dict(zip(o_atom_idx.tolist(), res_O.tolist()))
     res_to_k = {int(r): k for k, r in enumerate(res_NH)}
 
-    hbonds_per_frame = md.wernet_nilsson(traj, periodic=False)
+    try:
+        hbonds_per_frame = md.wernet_nilsson(traj, periodic=False)
+    except ValueError as e:
+        # e.g. "No bonds found" for a topology read without bond records
+        raise SSException(
+            f"compute_Nh(hbond_method='wernet-nilsson'): mdtraj could not detect "
+            f"H-bonds ({e}). This method needs a topology with bonds; use "
+            "hbond_method='distance' instead."
+        ) from None
     # mdtraj returns a list of length n_frames; each entry is an
     # ``(n_hbonds, 3)`` int array: (donor_heavy_idx, h_idx, acceptor_heavy_idx).
     for f, hb in enumerate(hbonds_per_frame):
@@ -414,7 +504,10 @@ def compute_Nh(
             j_res = o_to_res.get(int(a_idx))
             if i_res is None or j_res is None:
                 continue
-            if abs(i_res - j_res) > exclude_neighbours:
+            if (
+                chain_of[i_res] != chain_of[j_res]
+                or abs(i_res - j_res) > exclude_neighbours
+            ):
                 Nh[f, res_to_k[i_res]] += 1
 
     return res_NH, Nh

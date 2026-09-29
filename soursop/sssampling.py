@@ -37,10 +37,11 @@ def compute_joint_hellinger_distance(p, q):
 
     Defined via the Bhattacharyya coefficient
     :math:`BC = \\sum_i \\sqrt{p_i q_i}` as
-    :math:`H = \\sqrt{1 - BC}`. The normalisation factor of
-    :math:`1/\\sqrt{2}` used in :func:`hellinger_distance` is omitted here
-    because the inputs are already joint (2D) probability surfaces that
-    sum to 1.
+    :math:`H = \\sqrt{1 - BC}`. For any pair of normalised distributions
+    this is algebraically identical to the
+    :math:`\\frac{1}{\\sqrt{2}}\\lVert\\sqrt{p} - \\sqrt{q}\\rVert_2` form used
+    in :func:`hellinger_distance` (nothing is omitted); the 2D inputs are
+    simply summed over both axes.
 
     Parameters
     ----------
@@ -150,8 +151,10 @@ def smooth_pdf(pdf: np.ndarray, pseudocount: float = 1e-6) -> np.ndarray:
     array([0.75, 0.25])
     """
     pdf = np.asarray(pdf, dtype=float)
-    if pseudocount < 0:
-        raise SSException(f"pseudocount must be non-negative. Received {pseudocount}")
+    if not np.isfinite(pseudocount) or pseudocount < 0:
+        raise SSException(
+            f"pseudocount must be a finite, non-negative number. Received {pseudocount}"
+        )
     if pseudocount == 0:
         return pdf
     smoothed = pdf + pseudocount
@@ -192,8 +195,8 @@ def rel_entropy(p: np.ndarray, q: np.ndarray) -> np.ndarray:
     >>> from soursop.sssampling import rel_entropy
     >>> rel_entropy(np.array([0.5, 0.5]), np.array([0.5, 0.5]))
     0.0
-    >>> rel_entropy(np.array([0.9, 0.1]), np.array([0.5, 0.5]))
-    0.368
+    >>> round(float(rel_entropy(np.array([0.9, 0.1]), np.array([0.5, 0.5]))), 4)
+    0.3681
     """
     p = np.asarray(p)
     q = np.asarray(q)
@@ -253,10 +256,10 @@ class SamplingQuality:
             Histogram strategy used when computing Hellinger distances and
             relative entropies. Default ``'2D angle distributions'``.
         bwidth : float, optional
-            Histogram bin width in radians. Must lie in ``(0, 2*pi]`` and
-            divide 360 degrees into an integer number of bins (so 15, 10,
-            7.5 or 5 degrees are fine, 7 degrees is not). Default
-            ``deg2rad(15)``.
+            Histogram bin width in radians. Must lie in ``(0, pi]`` (at
+            least two bins) and divide 360 degrees into an integer number
+            of bins (so 15, 10, 7.5 or 5 degrees are fine, 7 degrees is
+            not). Default ``deg2rad(15)``.
         proteinID : int, optional
             Index into each trajectory's ``proteinTrajectoryList`` that
             picks the chain to analyse. Default 0.
@@ -298,16 +301,24 @@ class SamplingQuality:
         ------
         SSException
             If ``method`` is not one of the allowed options; if ``bwidth``
-            is outside ``(0, 2*pi]`` or does not divide 360 degrees into a
+            is outside ``(0, pi]`` or does not divide 360 degrees into a
             whole number of bins; if ``traj_list`` is empty; if
+            ``reference_list`` is given without ``ref_top``; if
             ``reference_list`` (or a per-trajectory ``top_file`` /
             ``ref_top`` list) does not match the length of ``traj_list``;
-            or if the loaded trajectories do not all have the same number of
-            frames and ``truncate`` is False.
+            if ``seed`` is not None or a non-negative integer; if
+            ``proteinID`` does not index a protein in every loaded
+            trajectory; if the trajectories (and references) are not all
+            the same chain with the same caps; or if the loaded trajectories
+            do not all have the same number of frames and ``truncate`` is
+            False.
 
         Example
         -------
         >>> from soursop.sssampling import SamplingQuality
+        >>> # the default loader uses multiprocessing; in a script, guard the
+        >>> # call with `if __name__ == "__main__":` (needed on macOS and
+        >>> # Windows), or pass force_sequential=True
         >>> sq = SamplingQuality(
         ...     traj_list=['rep0/traj.xtc', 'rep1/traj.xtc'],
         ...     top_file='topology.pdb',
@@ -340,6 +351,11 @@ class SamplingQuality:
 
         self.__load_trajectories()
 
+        # proteinID can only be checked once we know how many proteins each
+        # trajectory holds; an out-of-range value used to raise a bare
+        # IndexError deep inside the dihedral code
+        self.__check_protein_id(self.proteinID)
+
         self.__check_frame_counts()
 
         # if reference trajectories have been provided
@@ -348,13 +364,9 @@ class SamplingQuality:
             # if truncate is True,
             # then match the lengths of the trajectories before computing dihedrals
             if self.truncate:
+                # rebuilds every trajectory with the same proteins, so
+                # proteinID still refers to the same chain
                 self.trajs, self.ref_trajs = self.__truncate_trajectories()
-                # __truncate_trajectories rebuilds each trajectory from the
-                # single selected protein, so after truncation that protein is
-                # at index 0 of the new proteinTrajectoryList. Reset proteinID
-                # so downstream indexing (dihedrals, sequence) is not out of
-                # range for the original proteinID > 0.
-                self.proteinID = 0
 
             # compute all dihedrals from trajectories and ref trajectories
             (
@@ -368,9 +380,6 @@ class SamplingQuality:
         else:
             if self.truncate:
                 self.trajs, self.ref_trajs = self.__truncate_trajectories()
-                # see note above: after truncation the selected protein is at
-                # index 0 of every rebuilt trajectory.
-                self.proteinID = 0
 
             (self.psi_angles, self.phi_angles) = self.__compute_dihedrals(
                 proteinID=self.proteinID, precomputed=True
@@ -387,8 +396,9 @@ class SamplingQuality:
                 .get_amino_acid_sequence(oneletter=True)
             )
 
-            # remove caps from sequence if present
-            sequence = sequence.replace(">", "").replace("<", "")
+            # remove caps from sequence if present: ACE '<', NME '>', and the
+            # FOR '(' / NH2 ')' caps, which used to be left in
+            sequence = "".join(c for c in sequence if c not in "<>()")
 
             precomputed_interface = PrecomputedDihedralInterface(
                 sequence,
@@ -410,10 +420,52 @@ class SamplingQuality:
             self.ref_phi_angles = precomputed_interface.ref_phi_angles[:, rows, :]
             self.ref_psi_angles = precomputed_interface.ref_psi_angles[:, rows, :]
 
+    def __check_protein_id(self, proteinID):
+        """Raise unless ``proteinID`` indexes a protein in every trajectory."""
+        if isinstance(proteinID, bool) or not isinstance(proteinID, (int, np.integer)):
+            raise SSException(f"proteinID must be an integer. Received {proteinID!r}")
+        all_trajs = list(self.trajs)
+        if self.reference_list:
+            all_trajs.extend(self.ref_trajs)
+        for trj in all_trajs:
+            n_proteins = len(trj.proteinTrajectoryList)
+            if not 0 <= proteinID < n_proteins:
+                raise SSException(
+                    f"proteinID={proteinID} is out of range: a loaded trajectory has "
+                    f"{n_proteins} protein(s), so valid values are 0..{n_proteins - 1}."
+                )
+
     def __validate_arguments(self):
         ssutils.validate_keyword_option(
             self.method, ["2D angle distributions", "1D angle distributions"], "method"
         )
+
+        # a single path is a one-element list; a bare string used to be
+        # iterated character by character
+        if isinstance(self.traj_list, (str, os.PathLike)):
+            self.traj_list = [self.traj_list]
+        if isinstance(self.reference_list, (str, os.PathLike)):
+            self.reference_list = [self.reference_list]
+        self.traj_list = [os.fspath(t) for t in self.traj_list]
+        if self.reference_list:
+            self.reference_list = [os.fspath(t) for t in self.reference_list]
+
+        # numpy's generator needs a non-negative integer seed; checking here
+        # means a bad seed fails before any trajectory has been loaded
+        if self.seed is not None and (
+            isinstance(self.seed, bool)
+            or not isinstance(self.seed, (int, np.integer))
+            or self.seed < 0
+        ):
+            raise SSException(
+                f"seed must be None or a non-negative integer. Received {self.seed!r}"
+            )
+
+        if self.reference_list and self.ref_top is None:
+            raise SSException(
+                "reference_list was given without ref_top: a topology file is needed "
+                "to read the reference trajectories."
+            )
 
         if (
             not np.isfinite(self.bwidth)
@@ -429,6 +481,13 @@ class SamplingQuality:
         # ragged final bin or (previously) got silently rounded to whole
         # degrees.
         n_bins = 2 * np.pi / self.bwidth
+        # a single bin puts every angle in the same place, so every distance
+        # is trivially zero
+        if np.round(n_bins) < 2:
+            raise SSException(
+                "The bwidth parameter must give at least two bins (bwidth <= pi). "
+                f"Received {np.rad2deg(self.bwidth):.6g} degrees."
+            )
         if abs(n_bins - np.round(n_bins)) > 1e-6:
             raise SSException(
                 "The bwidth parameter must divide 360 degrees into a whole "
@@ -458,7 +517,13 @@ class SamplingQuality:
                 f"len(reference_list)={len(self.reference_list)}."
             )
 
-        # per-trajectory topology lists must line up with the trajectories
+        # per-trajectory topology lists must line up with the trajectories. A
+        # single str or pathlib.Path is shared by every trajectory (prior to
+        # 2.0.6 a Path was mistaken for a list and raised a TypeError)
+        if isinstance(self.top, os.PathLike):
+            self.top = os.fspath(self.top)
+        if isinstance(self.ref_top, os.PathLike):
+            self.ref_top = os.fspath(self.ref_top)
         if not isinstance(self.top, str) and len(self.top) != len(self.traj_list):
             raise SSException(
                 "top_file must be a single path or a list with one entry per "
@@ -594,53 +659,41 @@ class SamplingQuality:
             The second corresonds to the reference model - e.g.,
             the polymer limiting model.
         """
-        lengths = []
-        # TODO: Make this work with Precomputed dihedrals
-        if not self.reference_list:
-            for trj in self.trajs:
-                lengths.append(trj.n_frames)
-            self.min_length = np.min(lengths)
+        # Rebuild each trajectory from the first min_length frames of the
+        # *whole* system, with the same protein-definition options it was
+        # loaded with. Prior to 2.0.6 only the selected protein was kept and
+        # the SSTrajectory keywords (protein_grouping,
+        # extra_valid_residue_names, ...) were dropped, so chain detection
+        # re-ran on the sliced protein: a protein_grouping protein spanning
+        # two chains lost half its residues, and proteinID had to be reset
+        # to 0, making self.trajs differ in structure depending on truncate.
+        rebuild_keys = (
+            "protein_grouping",
+            "debug",
+            "extra_valid_residue_names",
+            "explicit_residue_checking",
+            "swan_trajectory",
+            "check_whole_molecules",
+        )
+        rebuild_kwargs = {k: v for k, v in self.kwargs.items() if k in rebuild_keys}
+        # the full trajectories were already checked for split molecules on
+        # load, so don't warn a second time for their first min_length frames
+        rebuild_kwargs.setdefault("check_whole_molecules", False)
 
-            temp_trajs = []
-            for trj in self.trajs:
-                temp_trajs.append(
-                    SSTrajectory(
-                        TRJ=trj.proteinTrajectoryList[self.proteinID].traj[
-                            0 : self.min_length
-                        ]
-                    )
-                )
-            if self.verbose:
-                print(
-                    f"Successfully truncated.\n\
-                    The shortest trajectory is: {self.min_length} frames.\
-                    All trajectories truncated to {self.min_length}"
-                )
-            return (temp_trajs, None)
+        def _truncated(trj):
+            return SSTrajectory(TRJ=trj.traj[0 : self.min_length], **rebuild_kwargs)
 
-        for trj, ref_trj in zip(self.trajs, self.ref_trajs):
-            lengths.append([trj.n_frames, ref_trj.n_frames])
+        lengths = [trj.n_frames for trj in self.trajs]
+        if self.reference_list:
+            lengths.extend(ref_trj.n_frames for ref_trj in self.ref_trajs)
+        self.min_length = int(np.min(lengths))
 
-        # shift frames for np.array indexing purposes
-        self.min_length = np.min(lengths)
-
-        temp_trajs = []
-        temp_ref_trjs = []
-        for trj, ref_trj in zip(self.trajs, self.ref_trajs):
-            temp_trajs.append(
-                SSTrajectory(
-                    TRJ=trj.proteinTrajectoryList[self.proteinID].traj[
-                        0 : self.min_length
-                    ]
-                )
-            )
-            temp_ref_trjs.append(
-                SSTrajectory(
-                    TRJ=ref_trj.proteinTrajectoryList[self.proteinID].traj[
-                        0 : self.min_length
-                    ]
-                )
-            )
+        temp_trajs = [_truncated(trj) for trj in self.trajs]
+        temp_ref_trjs = (
+            [_truncated(ref_trj) for ref_trj in self.ref_trajs]
+            if self.reference_list
+            else None
+        )
 
         if self.verbose:
             print(
@@ -724,19 +777,27 @@ class SamplingQuality:
         psi_angles, phi_angles = [], []
         ref_psi_angles, ref_phi_angles = [], []
 
+        # Column k must be the same residue in every array. Matching residue
+        # index lists is not enough on its own: e.g. an ACE-capped,
+        # C-terminally uncapped chain and an uncapped, NME-capped one both
+        # give [1, ..., n-2] but are offset by one residue, so the cap state
+        # has to match as well. Residue *names* are deliberately not compared
+        # (a wild-type reference for a mutant is a documented use).
         self.residue_indices = None
+        caps = None
         for k, trj in enumerate(self.trajs):
-            phi, psi, resids = self.__aligned_dihedrals(
-                trj.proteinTrajectoryList[proteinID]
-            )
+            protein = trj.proteinTrajectoryList[proteinID]
+            phi, psi, resids = self.__aligned_dihedrals(protein)
             if self.residue_indices is None:
                 self.residue_indices = resids
-            elif resids != self.residue_indices:
+                caps = (protein.ncap, protein.ccap)
+            elif resids != self.residue_indices or (protein.ncap, protein.ccap) != caps:
                 raise SSException(
-                    f"Trajectory {k} ({self.traj_list[k]}) has {len(resids)} residues "
-                    f"with both phi and psi, but trajectory 0 has "
-                    f"{len(self.residue_indices)}. Every trajectory must be of the same "
-                    "chain so that column k of the dihedral arrays is the same residue."
+                    f"Trajectory {k} ({self.traj_list[k]}) has phi/psi residues "
+                    f"{resids} (N-cap {protein.ncap}, C-cap {protein.ccap}), but "
+                    f"trajectory 0 has {self.residue_indices} (N-cap {caps[0]}, "
+                    f"C-cap {caps[1]}). Every trajectory must be of the same chain so "
+                    "that column k of the dihedral arrays is the same residue."
                 )
             phi_angles.append(phi)
             psi_angles.append(psi)
@@ -745,18 +806,23 @@ class SamplingQuality:
             return np.array((psi_angles, phi_angles))
 
         for k, ref_trj in enumerate(self.ref_trajs):
-            phi, psi, resids = self.__aligned_dihedrals(
-                ref_trj.proteinTrajectoryList[proteinID]
-            )
+            ref_protein = ref_trj.proteinTrajectoryList[proteinID]
+            phi, psi, resids = self.__aligned_dihedrals(ref_protein)
             # the reference is compared residue by residue, so it must carry
-            # the same residues; previously a length mismatch surfaced as an
-            # inhomogeneous-shape ValueError from numpy
-            if resids != self.residue_indices:
+            # the same residues (and the same caps, see above); previously a
+            # length mismatch surfaced as an inhomogeneous-shape ValueError
+            # from numpy
+            if (
+                resids != self.residue_indices
+                or (ref_protein.ncap, ref_protein.ccap) != caps
+            ):
                 raise SSException(
-                    f"Reference trajectory {k} ({self.reference_list[k]}) has "
-                    f"{len(resids)} residues with both phi and psi, but the "
-                    f"trajectories have {len(self.residue_indices)}. References must "
-                    "be of the same chain as the trajectories they are paired with."
+                    f"Reference trajectory {k} ({self.reference_list[k]}) has phi/psi "
+                    f"residues {resids} (N-cap {ref_protein.ncap}, C-cap "
+                    f"{ref_protein.ccap}), but the trajectories have "
+                    f"{self.residue_indices} (N-cap {caps[0]}, C-cap {caps[1]}). "
+                    "References must be of the same chain as the trajectories they "
+                    "are paired with."
                 )
             ref_phi_angles.append(phi)
             ref_psi_angles.append(psi)
@@ -797,38 +863,40 @@ class SamplingQuality:
         -------
         >>> trj_h, ref_h = sq.compute_frac_helicity()
         """
-        selectors = ("trj_helicity", "ref_helicity")
-        if not recompute and all(
-            selector in self.__precomputed for selector in selectors
-        ):
-            return self.__precomputed["trj_helicity"], self.__precomputed[
-                "ref_helicity"
-            ]
-
         # Default to the chain this SamplingQuality instance was built on.
         if proteinID is None:
             proteinID = self.proteinID
+        self.__check_protein_id(proteinID)
 
-        trj_helicity = [
-            trj.proteinTrajectoryList[proteinID].get_secondary_structure_DSSP()[1]
-            for trj in self.trajs
-        ]
+        # the cache is keyed on the chain; prior to 2.0.6 a single entry was
+        # shared, so asking for a second chain returned the first chain's
+        # helicity (and vice versa for quality_plot)
+        key = ("helicity", int(proteinID))
+        if not recompute and key in self.__precomputed:
+            return self.__precomputed[key]
 
-        self.__precomputed["trj_helicity"] = np.array(trj_helicity)
+        trj_helicity = np.array(
+            [
+                trj.proteinTrajectoryList[proteinID].get_secondary_structure_DSSP()[1]
+                for trj in self.trajs
+            ]
+        )
 
         if self.reference_list:
-            reference_helicity = [
-                ref_trj.proteinTrajectoryList[proteinID].get_secondary_structure_DSSP()[
-                    1
+            reference_helicity = np.array(
+                [
+                    ref_trj.proteinTrajectoryList[
+                        proteinID
+                    ].get_secondary_structure_DSSP()[1]
+                    for ref_trj in self.ref_trajs
                 ]
-                for ref_trj in self.ref_trajs
-            ]
+            )
         else:
-            reference_helicity = np.zeros_like(self.__precomputed["trj_helicity"])
+            reference_helicity = np.zeros_like(trj_helicity)
 
-        self.__precomputed["ref_helicity"] = np.array(reference_helicity)
+        self.__precomputed[key] = (trj_helicity, reference_helicity)
 
-        return self.__precomputed["trj_helicity"], self.__precomputed["ref_helicity"]
+        return self.__precomputed[key]
 
     def compute_dihedral_hellingers(self) -> np.ndarray:
         """Per-residue Hellinger distance between simulated and reference dihedrals.
@@ -858,8 +926,8 @@ class SamplingQuality:
         Example
         -------
         >>> H = sq.compute_dihedral_hellingers()
-        >>> H.shape         # for 2D angle distributions
-        (3, 56)
+        >>> H.shape         # 2D method, 3 trajectories of NTL9 (54 phi/psi residues)
+        (3, 54)
         """
         if self.method == "2D angle distributions":
             data = np.array([self.phi_angles, self.psi_angles])
@@ -975,8 +1043,8 @@ class SamplingQuality:
         Example
         -------
         >>> rel_e = sq.compute_dihedral_rel_entropy()
-        >>> rel_e.shape
-        (2, 3, 56)
+        >>> rel_e.shape     # 3 trajectories of NTL9 (54 phi/psi residues)
+        (2, 3, 54)
         """
 
         phi_trj_pdfs = self.compute_pdf(self.phi_angles, bins=self.bins)
@@ -1047,17 +1115,17 @@ class SamplingQuality:
                 # Get the joint phi/psi angles for the current trajectory and residue
                 angles = data[:, traj_idx, residue_idx, :]
 
-                # Compute the 2D histogram for the joint phi/psi angles
+                # Compute the 2D histogram for the joint phi/psi angles. The
+                # edges are passed once per axis: a bare length-2 array (one
+                # bin) would otherwise be read as [nx, ny] bin *counts*
                 hist, x_edges, y_edges = np.histogram2d(
-                    angles[0], angles[1], bins=bins, density=True
+                    angles[0], angles[1], bins=[bins, bins], density=True
                 )
 
-                # Compute the bin widths along each dimension
-                bin_width_phi = x_edges[1] - x_edges[0]
-                bin_width_psi = y_edges[1] - y_edges[0]
-
-                # Multiply the histogram values by the bin widths to obtain the PDF
-                pdf = hist * (bin_width_phi * bin_width_psi)
+                # Multiply each density by the area of its own bin to obtain
+                # the per-bin probability (prior to 2.0.6 the first bin's area
+                # was used for every bin, so non-uniform bins did not sum to 1)
+                pdf = hist * np.outer(np.diff(x_edges), np.diff(y_edges))
 
                 traj_histograms.append(pdf)
 
@@ -1081,7 +1149,10 @@ class SamplingQuality:
             2D or 3D angle array. The last axis is the frame axis.
         bins : np.ndarray
             1D array of bin edges (in the same units as ``arr``). Need not
-            match ``self.bins``.
+            match ``self.bins``, but note that the precomputed EV reference
+            angles are drawn uniformly *within* ``self.bins`` bins, so a
+            finer histogram of ``ref_phi_angles`` / ``ref_psi_angles`` shows
+            a staircase rather than extra detail.
 
         Returns
         -------
@@ -1152,7 +1223,10 @@ class SamplingQuality:
         -------
         np.ndarray
             Shape ``(n_combinations, n_residues)`` of pairwise per-residue
-            Hellinger distances in ``[0, 1]``.
+            Hellinger distances in ``[0, 1]``. Rows follow
+            ``itertools.combinations`` order, i.e. ``(0, 1), (0, 2), ...,
+            (1, 2), ...``; column ``k`` is residue
+            ``self.residue_indices[k]``.
 
         Raises
         ------
@@ -1162,8 +1236,8 @@ class SamplingQuality:
         Example
         -------
         >>> mat = sq.get_all_to_all_2d_trj_comparison()
-        >>> mat.shape   # 3 trajs -> C(3,2) == 3 pairs
-        (3, 56)
+        >>> mat.shape   # 3 trajs -> C(3,2) == 3 pairs; NTL9 has 54 phi/psi residues
+        (3, 54)
         """
         if metric != "hellingers":
             raise SSException(
@@ -1263,7 +1337,12 @@ class SamplingQuality:
         tuple of (pd.DataFrame, pd.DataFrame)
             ``(phi_df, psi_df)`` each of shape
             ``(n_combinations, n_residues)`` containing the chosen metric
-            for every pairwise comparison.
+            for every pairwise comparison. Rows follow
+            ``itertools.combinations`` order, i.e. ``(0, 1), (0, 2), ...,
+            (1, 2), ...``, and for ``'relative entropy'`` row ``(i, j)`` is
+            :math:`D_{KL}(P_i \\| P_j)` with ``i < j``. The DataFrame columns
+            are 0-based column positions, not residue indices: column ``k``
+            is residue ``self.residue_indices[k]``.
 
         Raises
         ------
@@ -1410,7 +1489,7 @@ class SamplingQuality:
             ``<save_dir>/<dihedral>_<figname>`` (e.g.
             ``figs/2D_hellingers.pdf``). Default None (no file written;
             figure is returned only).
-        dihedral : {'2D', 'phi', 'psi'} or None, optional
+        dihedral : {'2D', 'phi', 'psi'}, optional
             Which dihedral comparison to plot. ``'2D'`` requires
             ``method='2D angle distributions'``. Default ``'2D'``.
         figname : str, optional
@@ -1433,7 +1512,9 @@ class SamplingQuality:
 
         Example
         -------
-        >>> fig, axd = sq.quality_plot(dihedral='phi', save_dir='./figs')
+        >>> fig, axd = sq.quality_plot(save_dir='./figs')   # default 2D method
+        >>> # 'phi' / 'psi' panels need method='1D angle distributions'
+        >>> fig, axd = sq_1d.quality_plot(dihedral='phi')
         """
 
         fig, axd = plt.subplot_mosaic(
@@ -1797,7 +1878,9 @@ class SamplingQuality:
         -------
         >>> H = sq.hellingers_distances()
         """
-        selector = "hellingers"
+        # keyed on method so changing self.method after construction does not
+        # hand back an array of the other method's shape
+        selector = ("hellingers", self.method)
 
         if selector not in self.__precomputed or recompute is True:
             self.__precomputed[selector] = self.compute_dihedral_hellingers()
@@ -1827,19 +1910,7 @@ class SamplingQuality:
         -------
         >>> trj_h, ref_h = sq.fractional_helicity()
         """
-        selectors = ("trj_helicity", "ref_helicity")
-        if not recompute and all(
-            selector in self.__precomputed for selector in selectors
-        ):
-            return self.__precomputed["trj_helicity"], self.__precomputed[
-                "ref_helicity"
-            ]
-
-        trj_helicity, ref_helicity = self.compute_frac_helicity(
-            proteinID=self.proteinID, recompute=recompute
-        )
-
-        return trj_helicity, ref_helicity
+        return self.compute_frac_helicity(proteinID=self.proteinID, recompute=recompute)
 
 
 # Interface to separate computation of dihedrals from SamplingQuality class
@@ -1963,15 +2034,18 @@ class PrecomputedDihedralInterface:
         >>> ev.sample_angles('phi').shape
         (8, 1000)
         """
-        dist_selector = {
-            "phi": self.gather_phi_reference_dihedrals(self.sequence),
-            "psi": self.gather_psi_reference_dihedrals(self.sequence),
-        }
+        # only phi and psi have EV tables (anything else used to raise a
+        # bare KeyError); only the requested angle is gathered
+        ssutils.validate_keyword_option(angle, ["phi", "psi"], "angle")
+        if angle == "phi":
+            reference = self.gather_phi_reference_dihedrals(self.sequence)
+        else:
+            reference = self.gather_psi_reference_dihedrals(self.sequence)
 
         dihedral_hist = []
 
-        for dihedral in range(dist_selector[angle].shape[0]):
-            dihedral_angles = dist_selector[angle][dihedral, :]
+        for dihedral in range(reference.shape[0]):
+            dihedral_angles = reference[dihedral, :]
 
             # GOAL: Generate samples that adhere to the underlying distribution
             # Step 1: Compute the histogram and its CDF on self.bins
@@ -2010,9 +2084,15 @@ class PrecomputedDihedralInterface:
         survived caps stripping) is reported by name and position rather
         than surfacing as a bare KeyError.
         """
-        try:
-            return ONE_TO_THREE[residue]
-        except KeyError:
+        # ONE_TO_THREE also maps the cap symbols (<, >, (, )), but the EV
+        # tables only cover the 20 standard residues, so check against those
+        # (prior to 2.0.6 an NH2/FOR cap slipped through here and the
+        # defaultdict tables raised a bare KeyError after gaining an empty
+        # entry for the cap)
+        three = ONE_TO_THREE.get(residue)
+        if three is not None and three in EV_RESIDUE_MAPPER:
+            return three
+        else:
             raise SSException(
                 f"Residue '{residue}' at position {position} is not one of the "
                 "20 standard amino acids, so no precomputed excluded-volume "

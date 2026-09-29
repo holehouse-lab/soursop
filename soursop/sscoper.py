@@ -21,21 +21,26 @@ directly over the **N frame weights** in two steps:
 
 1. **Chi-squared minimisation / feasibility**: minimise chi-squared(w) over
    the simplex (``0 <= w_i <= 1``, ``sum w_i = 1``). If the minimum is below
-   the chosen limit, the minimiser is a feasible interior point; otherwise
-   the data cannot be satisfied by any reweighting and the problem **has
-   no solution** (a finding of the paper).
+   the chosen limit, the problem is feasible; otherwise the data cannot be
+   satisfied by any reweighting and the problem **has no solution** (a
+   finding of the paper). Infeasibility is only declared outright when a
+   Frank-Wolfe lower bound certifies it; otherwise step 2 also runs.
 2. **Entropy maximisation**: maximise the Shannon entropy
    ``S = -sum w_i ln w_i`` (generalised here to the relative entropy
    ``-KL(w || w0)`` for an arbitrary prior ``w0``), subject to a *hard*
    constraint ``chi-squared <= limit`` plus the simplex, starting from
-   the step-1 point.
+   the prior (which is returned unchanged if it already satisfies the
+   limit).
 
 There is no regularisation parameter ``theta`` (contrast :mod:`soursop.ssbme`,
 which solves the dual penalty ``L = (m/2) chi^2 - theta * S``); the knob
 is the chi-squared limit, default ``1`` (i.e. agreement with experiment
-within error). The entropy reduction ``delta_S = S(w) - S(w0) <= 0`` is a
-well-defined measure of the information content of the data, equal in
-magnitude to the mean free energy change ``<delta_G>/kT`` (paper eq 10).
+within error). For the uniform prior of the paper the entropy reduction
+``delta_S = S(w) - S(w0) = -KL(w || w0) <= 0`` is a well-defined measure of
+the information content of the data, equal in magnitude to the mean free
+energy change ``<delta_G>/kT`` (paper eq 10); for a non-uniform prior
+``delta_S`` can take either sign and ``mean_delta_G_kT = KL(w || w0)`` is
+the measure to use.
 Each frame's reweighting factor is ``r_i = w_i / w0_i`` (paper eq 9a).
 
 Two reweighters are provided:
@@ -120,6 +125,7 @@ from scipy.sparse.linalg import LinearOperator
 from .ssexceptions import SSException, SSWarning
 from .ssutils import (
     MIN_WEIGHT_THRESHOLD,
+    build_scan_grid,
     ExperimentalObservable,
     constraint_chi_squared,
     find_optimal_theta,
@@ -162,6 +168,64 @@ _TRUST_CONSTR_OPTIONS = {"xtol": 1e-7, "gtol": 1e-6, "verbose": 0}
 
 
 # ----------------------------------------------------------------------------------------------------------------------------------------------------------------
+# scipy.optimize.minimize methods that honour nonlinear constraints
+_CONSTRAINED_OPTIMIZERS = {"trust-constr", "slsqp", "cobyla", "cobyqa"}
+
+
+def _check_chi2_limit(chi2_limit) -> None:
+    """Raise unless ``chi2_limit`` is a finite, positive number.
+
+    ``chi2_limit <= 0`` alone let ``nan`` through, which was then reported
+    as the scientific finding "data infeasible".
+
+    Parameters
+    ----------
+    chi2_limit : float
+        The chi-squared limit.
+
+    Raises
+    ------
+    SSException
+        If ``chi2_limit`` is not finite and positive.
+    """
+    try:
+        ok = bool(np.isfinite(chi2_limit)) and chi2_limit > 0
+    except TypeError:
+        ok = False
+    if not ok:
+        raise SSException(
+            f"chi2_limit must be a finite, positive number, got {chi2_limit!r}"
+        )
+
+
+def _check_coper_optimizer(optimizer) -> None:
+    """Raise unless ``optimizer`` supports the nonlinear chi-squared constraint.
+
+    Unconstrained scipy methods (L-BFGS-B, BFGS, Nelder-Mead, ...) silently
+    ignore constraints, so they used to return the prior with
+    ``success=True, feasible=True`` and the limit violated.
+
+    Parameters
+    ----------
+    optimizer : str
+        scipy.optimize.minimize method name.
+
+    Raises
+    ------
+    SSException
+        If ``optimizer`` cannot handle nonlinear constraints.
+    """
+    if (
+        not isinstance(optimizer, str)
+        or optimizer.lower() not in _CONSTRAINED_OPTIMIZERS
+    ):
+        raise SSException(
+            f"optimizer '{optimizer}' cannot handle the nonlinear chi-squared "
+            "constraint. Use 'trust-constr' (default), 'SLSQP', 'COBYLA' or "
+            "'COBYQA'."
+        )
+
+
 def _shannon_entropy(weights: np.ndarray) -> float:
     """Shannon entropy ``-sum w_i ln w_i`` with a floor for zero weights.
 
@@ -199,15 +263,17 @@ class COPERResult:
         Reduced chi-squared at the prior (max over groups when per-data-type
         constraints are used).
     chi_squared_min : float
-        Smallest max-over-groups reduced chi-squared found in step 1.
-        Determines feasibility: ``feasible`` is True iff
-        ``chi_squared_min <= chi2_limit`` (up to ``FEASIBILITY_TOLERANCE``).
-        With a single group this is the true chi-squared minimum. With
-        several groups step 1 first minimises the summed chi-squared and, if
-        that point violates a group limit, additionally minimises the total
-        squared violation ``sum_a max(chi2_a - limit, 0)^2`` (whose zero set
-        is exactly the feasible region); ``metadata['feasibility_check']``
-        records which of the two settled the verdict.
+        Smallest max-over-groups reduced chi-squared found (step 1, or
+        step 2 if that found a lower value). ``feasible`` is True iff a
+        point with every group at or below ``chi2_limit`` (up to
+        ``FEASIBILITY_TOLERANCE``) was found. Step 1 minimises the summed
+        chi-squared and, with several groups, additionally the total squared
+        violation ``sum_a max(chi2_a - limit, 0)^2``; because it works
+        through a softmax it can stall above the true minimum, so a failed
+        step 1 is only accepted as proof of infeasibility when a Frank-Wolfe
+        bound certifies it (``metadata['infeasibility_certified']``), and
+        otherwise step 2 is run too. ``metadata['feasibility_check']``
+        records what settled the verdict.
     chi_squared_final : float
         Reduced chi-squared after the step-2 entropy maximisation (max over
         groups). Equal to ``chi_squared_min`` when ``feasible`` is False.
@@ -233,10 +299,13 @@ class COPERResult:
     phi : float
         Fraction of effective frames, ``exp(-KL(w || w0)) in (0, 1]``.
     n_iterations : int
-        Optimizer iterations of the step-2 (entropy) optimisation, or
-        step-1 when infeasible.
+        For COPER, optimizer iterations of the step-2 (entropy)
+        optimisation (step 1 when infeasibility was certified, 0 when the
+        prior was returned unchanged). For iCOPER, the number of iCOPER
+        (scale/offset + COPER) iterations.
     success : bool
-        Whether the optimisation succeeded.
+        Whether the optimisation succeeded and (for a feasible problem) the
+        returned weights satisfy the limit.
     message : str
         Optimizer / feasibility status message.
     observables : list of ExperimentalObservable
@@ -376,20 +445,25 @@ class COPERResult:
         ``neff_entropy`` (``N * phi``, the COPER ``<delta_G>/kT`` measure)
         and the Renyi-2 / participation ratio ``neff_renyi2``
         (``1 / sum w^2``), which is more sensitive to a few dominant
-        weights.
+        weights. ``N`` and the weight statistics refer to the frames with
+        non-zero *prior* weight, so frames the prior already excludes are
+        not reported as a loss of diversity. A failed fit is reported with
+        status ``'FAILED'``.
         """
         diag: dict = {}
         warnings: List[str] = []
-        n = len(self.weights)
+        support = np.asarray(self.initial_weights) > 0
+        w = self.weights[support]
+        n = int(np.sum(support))
 
         diag["neff_entropy"] = n * float(self.phi)
         diag["neff_entropy_fraction"] = float(self.phi)
-        diag["neff_renyi2"] = float(1.0 / np.sum(self.weights**2))
+        diag["neff_renyi2"] = float(1.0 / np.sum(w**2))
         diag["neff_renyi2_fraction"] = float(diag["neff_renyi2"] / n)
 
-        diag["weight_min"] = float(self.weights.min())
-        diag["weight_max"] = float(self.weights.max())
-        diag["weight_std"] = float(self.weights.std())
+        diag["weight_min"] = float(w.min())
+        diag["weight_max"] = float(w.max())
+        diag["weight_std"] = float(w.std())
         if diag["weight_min"] > 0:
             diag["weight_range_orders"] = float(
                 np.log10(diag["weight_max"] / diag["weight_min"])
@@ -397,7 +471,7 @@ class COPERResult:
         else:
             diag["weight_range_orders"] = float(np.inf)
 
-        rfac = self.reweighting_factors
+        rfac = self.reweighting_factors[support]
         diag["rfac_min"] = float(rfac.min())
         diag["rfac_max"] = float(rfac.max())
 
@@ -436,8 +510,21 @@ class COPERResult:
                 "orders of magnitude): a few frames dominate the ensemble."
             )
 
+        failed = (not self.success) or not (
+            np.isfinite(self.phi) and np.isfinite(self.chi_squared_final)
+        )
+        if failed:
+            warnings.insert(
+                0,
+                f"Fit failed ({self.message}); the weights are not a converged "
+                "reweighting.",
+            )
+
         diag["warnings"] = warnings
-        diag["status"] = "OK" if len(warnings) == 0 else "WARNING"
+        if failed:
+            diag["status"] = "FAILED"
+        else:
+            diag["status"] = "OK" if len(warnings) == 0 else "WARNING"
         return diag
 
     def print_diagnostics(self, warn_threshold: float = 0.5):
@@ -584,10 +671,10 @@ def chi2_limit_scan(
         Per-frame calculated values, shape ``(n_frames, n_observables)``.
     reweighter : str, optional
         ``"coper"`` (default) or ``"icoper"``.
-    chi2_limits : tuple or numpy.ndarray, optional
-        ``(min, max)`` for a generated grid of ``n_points``, or an explicit
-        1D array of limits. Default ``(0.25, 4.0)`` (the paper's error-
-        scaling range).
+    chi2_limits : tuple, list or numpy.ndarray, optional
+        A ``(min, max)`` tuple for a generated grid of ``n_points``, or an
+        explicit 1D list/array of limits (a list is always read as explicit
+        values). Default ``(0.25, 4.0)`` (the paper's error-scaling range).
     n_points : int, optional
         Number of grid points when ``chi2_limits`` is a tuple. Default 8.
     log_scale : bool, optional
@@ -620,26 +707,17 @@ def chi2_limit_scan(
             f"Unknown reweighter: {reweighter}, must be 'coper' or 'icoper'"
         )
 
-    if isinstance(chi2_limits, (tuple, list)):
-        if n_points < 1:
-            raise SSException(
-                f"n_points must be >= 1 for a tuple chi2_limits, got {n_points}"
-            )
-        if log_scale and (chi2_limits[0] <= 0 or chi2_limits[1] <= 0):
-            raise SSException(
-                "chi2_limits endpoints must be positive when log_scale=True, "
-                f"got {chi2_limits}"
-            )
-        if log_scale:
-            limits = np.logspace(
-                np.log10(chi2_limits[0]), np.log10(chi2_limits[1]), n_points
-            )
-        else:
-            limits = np.linspace(chi2_limits[0], chi2_limits[1], n_points)
-    else:
-        limits = np.asarray(chi2_limits, dtype=np.float64)
+    limits = build_scan_grid(chi2_limits, n_points, log_scale, "chi2_limits")
 
     fit_kwargs = dict(fit_kwargs) if fit_kwargs else {}
+    # these are set by the scan itself; passing them in fit_kwargs used to
+    # raise a raw "got multiple values for keyword argument" TypeError
+    reserved = {"chi2_limit", "verbose"} & set(fit_kwargs)
+    if reserved:
+        raise SSException(
+            f"chi2_limit_scan: fit_kwargs must not set {sorted(reserved)}; the scan "
+            "sets these itself"
+        )
 
     chi2_vals: List[float] = []
     phi_vals: List[float] = []
@@ -668,8 +746,16 @@ def chi2_limit_scan(
 
     # an infeasible limit has no maximum-entropy solution (its weights are the
     # chi-squared minimiser), so it must not be selected as the knee while a
-    # feasible limit exists
-    candidates = np.flatnonzero(feas_arr)
+    # feasible limit exists. A feasible limit whose fit failed (e.g. ran out of
+    # iterations with the limit violated) is excluded for the same reason.
+    success_arr = np.array([bool(r.success) for r in results], dtype=bool)
+    n_failed = int(np.sum(feas_arr & ~success_arr))
+    if n_failed > 0:
+        SSWarning(
+            f"chi2_limit_scan: {n_failed} feasible limit(s) had a failed fit and were "
+            "excluded from the knee selection (their results are kept in .results)."
+        )
+    candidates = np.flatnonzero(feas_arr & success_arr)
     if len(candidates) == 0:
         SSWarning(
             "chi2_limit_scan: no scanned chi-squared limit was feasible. The selected "
@@ -791,10 +877,19 @@ class COPER:
 
         # Build {group_name: [observable indices]}; ungrouped observables
         # are pooled into the default group "all".
+        # The default group is keyed by None internally so a user group that
+        # happens to be named "all" is not silently merged with the ungrouped
+        # observables; it is only labelled "all" for display.
         groups: dict = {}
         for i, obs in enumerate(self.observables):
-            key = obs.group if obs.group is not None else "all"
-            groups.setdefault(key, []).append(i)
+            groups.setdefault(obs.group, []).append(i)
+        if None in groups and "all" in groups:
+            raise SSException(
+                "An observable group is named 'all', which is the label COPER uses "
+                "for ungrouped observables; rename the group or give every "
+                "observable a group."
+            )
+        groups = {("all" if k is None else k): v for k, v in groups.items()}
         self._group_names = list(groups.keys())
         self._group_indices = [np.asarray(v, dtype=int) for v in groups.values()]
 
@@ -1102,8 +1197,8 @@ class COPER:
         ``weights`` are the step-1 chi-squared minimiser (the closest the
         prior ensemble can come to satisfying the data).
         """
-        if chi2_limit <= 0:
-            raise SSException(f"chi2_limit must be positive, got {chi2_limit}")
+        _check_chi2_limit(chi2_limit)
+        _check_coper_optimizer(optimizer)
         self._chi2_limit = float(chi2_limit)
         n = self.n_frames
 
@@ -1159,13 +1254,12 @@ class COPER:
         feasibility_check = "summed chi-squared"
 
         # With a single group the summed chi-squared IS the constrained
-        # quantity, so its minimiser settles feasibility exactly. With several
-        # groups it does not: the sum is happy to push one group far below the
-        # limit while another sits above it, even when a point satisfying every
-        # group exists (verified on small two-group examples, where this
-        # reported ~1% of feasible problems as infeasible). So if the summed
-        # minimiser fails, run a dedicated feasibility search that minimises the
-        # total squared violation, whose zero set is exactly the feasible region.
+        # quantity. With several groups it is not: the sum is happy to push
+        # one group far below the limit while another sits above it, even
+        # when a point satisfying every group exists. So if the summed
+        # minimiser fails, run a dedicated feasibility search that minimises
+        # the total squared violation, whose zero set is exactly the feasible
+        # region.
         if not feasible and len(self._group_indices) > 1:
             # aim a hair inside the limit: the squared hinge is flat at its
             # zero, so an optimiser targeting the limit itself stops with the
@@ -1189,12 +1283,47 @@ class COPER:
                 feasibility_check = "per-group violation"
             feasible = chi2_min <= chi2_limit + FEASIBILITY_TOLERANCE
         metadata["feasibility_check"] = feasibility_check
+        metadata["step1_converged"] = bool(opt1.success)
 
         if verbose:
             print(f"  Step 1 chi^2 (max over groups): {chi2_min:.4f}")
             print(f"  Feasible (<= limit + tol): {feasible}")
 
+        # If the prior already satisfies every group limit it is itself the
+        # maximum-entropy solution (KL = 0), so return it exactly. Running the
+        # interior-point step 2 anyway used to nudge the weights away from the
+        # prior (pushing chi-squared below its prior value) for no reason.
+        if chi2_initial <= chi2_limit:
+            metadata["feasibility_check"] = "prior already feasible"
+            self._result = self._make_result(
+                weights=w0,
+                chi_squared_initial=chi2_initial,
+                chi_squared_min=min(chi2_min, chi2_initial),
+                chi_squared_final=chi2_initial,
+                chi2_limit=chi2_limit,
+                feasible=True,
+                success=True,
+                message=(
+                    "The prior already satisfies every chi-squared limit; it is "
+                    "the maximum-entropy solution and is returned unchanged."
+                ),
+                n_iterations=0,
+                metadata=metadata,
+            )
+            return self._result
+
+        # Step 1 runs through a softmax, whose z-space objective is not convex
+        # (every face of the simplex is a stationary point), so on large or
+        # multi-group problems it can collapse onto a face and wrongly report
+        # a feasible problem as infeasible. Only accept the verdict outright
+        # when a Frank-Wolfe lower bound on the (convex, w-space) objective
+        # certifies it; otherwise let step 2 look for a feasible point too.
+        certified = False
         if not feasible:
+            certified = self._infeasibility_certified(w_min, chi2_limit)
+        metadata["infeasibility_certified"] = certified
+
+        if not feasible and certified:
             self._result = self._make_result(
                 weights=w_min,
                 chi_squared_initial=chi2_initial,
@@ -1217,20 +1346,26 @@ class COPER:
         # Only the per-group chi-squared upper bounds remain as explicit
         # constraints (the simplex is implicit in the softmax), so trust-constr
         # converges quickly.
+        is_trust_constr = optimizer.lower() == "trust-constr"
         nl_constraint = NonlinearConstraint(
             fun=lambda z: self._chi2_per_group_vec(self._softmax(z)),
             lb=-np.inf,
             ub=chi2_limit,
             jac=lambda z: self._chi2_per_group_jac_z(self._softmax(z)),
-            hess=self._constraint_hess_z,
+            hess=self._constraint_hess_z if is_trust_constr else None,
         )
-        # Start the entropy maximisation from the uniform prior (z0), the
+        # Start the entropy maximisation from the prior (z0), the
         # unconstrained max-entropy point, rather than from the step-1
         # chi-squared minimum (a heavily-reweighted, low-entropy point). The
         # problem is convex so the optimum is unique, but starting at the
         # max-entropy end and tightening toward the constraint is far better
         # conditioned and converges reliably to the true (highest-entropy)
-        # solution.
+        # solution. The Hessian and trust-constr options are only passed to
+        # trust-constr (other methods warned about unknown options).
+        step2_kwargs = dict(options={"maxiter": max_iterations})
+        if is_trust_constr:
+            step2_kwargs["hess"] = self._entropy_hess_z
+            step2_kwargs["options"].update(_TRUST_CONSTR_OPTIONS)
         opt2 = minimize(
             fun=lambda z: self._entropy_obj(self._softmax(z)),
             x0=z0,
@@ -1238,30 +1373,101 @@ class COPER:
             jac=lambda z: self._grad_w_to_z(
                 self._softmax(z), self._entropy_grad(self._softmax(z))
             ),
-            hess=self._entropy_hess_z,
             constraints=[nl_constraint],
-            options={"maxiter": max_iterations, **_TRUST_CONSTR_OPTIONS},
+            **step2_kwargs,
         )
         w_opt = self._softmax(opt2.x)
         chi2_final = float(np.max(self._chi2_per_group_vec(w_opt)))
+        satisfied = chi2_final <= chi2_limit + FEASIBILITY_TOLERANCE
+        n_iter2 = int(getattr(opt2, "nit", getattr(opt2, "nfev", -1)))
 
         if verbose:
             print(f"  Step 2 chi^2 (max over groups): {chi2_final:.4f}")
-            print(f"  Optimization successful: {bool(opt2.success)}")
+            print(f"  Optimization successful: {bool(opt2.success) and satisfied}")
+
+        if not feasible and not satisfied:
+            # neither step found a point inside the limit, but infeasibility
+            # was not certified either
+            step1_note = (
+                "" if opt1.success else " (the step-1 minimisation did not converge)"
+            )
+            best_w, best_chi2 = (
+                (w_min, chi2_min) if chi2_min <= chi2_final else (w_opt, chi2_final)
+            )
+            self._result = self._make_result(
+                weights=best_w,
+                chi_squared_initial=chi2_initial,
+                chi_squared_min=best_chi2,
+                chi_squared_final=best_chi2,
+                chi2_limit=chi2_limit,
+                feasible=False,
+                success=False,
+                message=(
+                    f"No reweighting found that satisfies chi2_limit={chi2_limit:.4g}: "
+                    f"smallest max-group chi^2 found was {best_chi2:.4g}{step1_note}. "
+                    "Infeasibility could not be certified, so the data may be "
+                    "only just out of reach, or the optimisation may need more "
+                    "iterations."
+                ),
+                n_iterations=n_iter2,
+                metadata=metadata,
+            )
+            return self._result
+
+        if not feasible:
+            # step 2 found a point that step 1 missed
+            metadata["feasibility_check"] = "entropy step"
 
         self._result = self._make_result(
             weights=w_opt,
             chi_squared_initial=chi2_initial,
-            chi_squared_min=chi2_min,
+            chi_squared_min=min(chi2_min, chi2_final),
             chi_squared_final=chi2_final,
             chi2_limit=chi2_limit,
             feasible=True,
-            success=bool(opt2.success),
+            # the optimizer's verdict alone is not enough: a method that
+            # ignores constraints (or runs out of iterations) can report
+            # success with the chi-squared limit violated
+            success=bool(opt2.success) and satisfied,
             message=str(opt2.message),
-            n_iterations=int(opt2.nit),
+            n_iterations=n_iter2,
             metadata=metadata,
         )
         return self._result
+
+    # ------------------------------------------------------------------
+    def _infeasibility_certified(self, w: np.ndarray, chi2_limit: float) -> bool:
+        """Whether a convexity bound proves no weights satisfy ``chi2_limit``.
+
+        Uses the Frank-Wolfe lower bound for a convex function ``f`` on the
+        simplex: ``min f >= f(w) + min_i g_i - g . w`` with ``g`` the
+        gradient at ``w``. For one group ``f`` is the (convex) group
+        chi-squared and the problem is infeasible if the bound exceeds the
+        limit; for several groups ``f`` is the total squared violation
+        ``sum_a max(chi2_a - limit, 0)^2`` (also convex), and the problem
+        is infeasible if its bound is positive.
+
+        Parameters
+        ----------
+        w : numpy.ndarray
+            A point on the simplex (the step-1 result).
+        chi2_limit : float
+            The chi-squared limit.
+
+        Returns
+        -------
+        bool
+            True if infeasibility is certified.
+        """
+        if len(self._group_indices) == 1:
+            f = self._chi2_sum_obj(w)
+            g = self._chi2_sum_grad(w)
+            lower_bound = f + float(np.min(g)) - float(g @ w)
+            return lower_bound > chi2_limit + FEASIBILITY_TOLERANCE
+        f = self._violation_obj(w, chi2_limit)
+        g = self._violation_grad(w, chi2_limit)
+        lower_bound = f + float(np.min(g)) - float(g @ w)
+        return lower_bound > 1e-12
 
     # ------------------------------------------------------------------
     def _fit_with_zero_prior_frames(
@@ -1342,6 +1548,7 @@ class COPER:
         log_scale: bool = True,
         method: str = "perpendicular",
         verbose: bool = False,
+        fit_kwargs: Optional[dict] = None,
     ) -> COPERScanResult:
         """Run a chi-squared-limit scan using this instance's data.
 
@@ -1349,6 +1556,9 @@ class COPER:
         ----------
         chi2_limits, n_points, log_scale, method, verbose
             See :func:`chi2_limit_scan`.
+        fit_kwargs : dict, optional
+            Extra keyword arguments forwarded to :meth:`fit` for each limit
+            (``max_iterations``, ``optimizer``).
 
         Returns
         -------
@@ -1364,6 +1574,7 @@ class COPER:
             initial_weights=self.initial_weights,
             method=method,
             verbose=verbose,
+            fit_kwargs=fit_kwargs,
         )
         self._scan_result = scan
         return scan
@@ -1490,8 +1701,14 @@ class iCOPER:
             Hard upper bound on each per-group chi-squared (passed to the
             inner :class:`COPER` step). Default 1.0.
         ftol : float, optional
-            Convergence tolerance on ``|delta chi-squared|`` between
-            iCOPER iterations. Default 0.01.
+            Convergence tolerance on the scale/offset update: iCOPER stops
+            once an iteration's regression gives ``|scale - 1| < ftol`` and
+            ``|offset| < ftol * s``, where ``s`` is the (weighted) spread of
+            the experimental values, i.e. once the weights and the
+            scale/offset are self-consistent. Default 0.01. (Prior to 2.0.6
+            this tested the change in chi-squared, which is pinned at the
+            limit whenever the constraint binds, so iCOPER stopped after two
+            iterations far from its fixed point.)
         max_icoper_iterations : int, optional
             Maximum number of scale/offset + COPER iterations. Default 50.
         fit_offset : bool, optional
@@ -1514,37 +1731,59 @@ class iCOPER:
             relative to the original input), the ``icoper_iterations``
             log, ``chi_squared_initial`` from the first iteration's
             pre-fit chi-squared, and ``phi`` computed against the original
-            prior.
+            prior. ``n_iterations`` is the number of iCOPER iterations, and
+            ``metadata['converged']`` records whether the ``ftol`` test was
+            met; a run that ends without converging has ``success=False``
+            and emits a warning.
 
         Raises
         ------
         SSException
-            If ``chi2_limit`` is not positive.
+            If ``chi2_limit`` is not finite and positive, if ``optimizer``
+            cannot handle nonlinear constraints, or if there are fewer
+            observables than fitted parameters (two with
+            ``fit_offset=True``).
         """
-        if chi2_limit <= 0:
-            raise SSException(f"chi2_limit must be positive, got {chi2_limit}")
-        if fit_offset and self.n_observables < 2:
+        _check_chi2_limit(chi2_limit)
+        _check_coper_optimizer(optimizer)
+        n_params = 2 if fit_offset else 1
+        if self.n_observables < n_params:
             raise SSException(
                 "iCOPER with fit_offset=True fits a scale and an offset, which "
                 f"needs at least two observables (got {self.n_observables}). "
-                "Use fit_offset=False for a scale-only fit, or use COPER."
+                "With a single observable use COPER (a scale-only iCOPER fit would "
+                "be exactly determined)."
             )
-        if fit_offset and self.n_observables == 2:
+        if self.n_observables == n_params:
+            what = "a scale and an offset" if fit_offset else "a scale"
             SSWarning(
-                "iCOPER with fit_offset=True and exactly two observables is exactly "
-                "determined: a scale and an offset map any two ensemble averages onto "
-                "the two targets, so chi-squared is zero for every weight vector and the "
-                "weights stay at the prior. Use more observables or fit_offset=False."
+                f"iCOPER with fit_offset={fit_offset} and exactly {n_params} "
+                f"observable(s) is exactly determined: {what} can map the ensemble "
+                "average(s) onto the target(s) for any weight vector, so chi-squared "
+                "is zero and the weights stay at the prior. Use more observables"
+                + (" or fit_offset=False." if fit_offset else ", or use COPER.")
             )
         self._chi2_limit = float(chi2_limit)
 
         w0 = self.initial_weights.copy()
         current_weights = w0.copy()
-        calc = self.calculated_values.copy()
+        # frames with zero prior weight never contribute; zero their values so
+        # a NaN there cannot poison the weighted averages
+        calc = np.where(
+            (w0 > 0)[:, np.newaxis], self.calculated_values.astype(np.float64), 0.0
+        )
         if lr_weights:
             lr_w = 1.0 / self._exp_sigma**2
         else:
             lr_w = np.ones(self.n_observables)
+
+        # scale for the offset part of the convergence test
+        exp_mean = np.sum(lr_w * self._exp_values) / np.sum(lr_w)
+        exp_spread = float(
+            np.sqrt(np.sum(lr_w * (self._exp_values - exp_mean) ** 2) / np.sum(lr_w))
+        )
+        if not exp_spread > 0:
+            exp_spread = max(float(np.max(np.abs(self._exp_values))), 1.0)
 
         net_scale = 1.0
         net_offset = 0.0
@@ -1553,7 +1792,7 @@ class iCOPER:
         chi2_initial = float("nan")
         chi2_old = float("nan")
         last_result: Optional[COPERResult] = None
-        it = 0
+        converged = False
 
         for it in range(max_icoper_iterations):
             calc_avg = np.sum(calc * current_weights[:, np.newaxis], axis=0)
@@ -1598,16 +1837,28 @@ class iCOPER:
                     f"feasible={res.feasible}  diff={diff:8.2e}"
                 )
 
-            if np.isfinite(diff) and diff < ftol:
+            # converged once the regression at the new weights would barely
+            # change the scale/offset (the fixed point). The first iteration's
+            # update starts from the prior, so it cannot count.
+            if it > 0 and abs(alpha - 1.0) < ftol and abs(beta) < ftol * exp_spread:
+                converged = True
                 if verbose:
                     print(
-                        f"iCOPER converged below tolerance {ftol:.2e} after "
-                        f"{it + 1} iterations"
+                        f"iCOPER converged (scale/offset update below {ftol:.2e}) "
+                        f"after {it + 1} iterations"
                     )
                 break
 
         if last_result is None:
             raise SSException("iCOPER: no iterations were run")
+
+        if last_result.success and not converged:
+            SSWarning(
+                f"iCOPER did not converge: the scale/offset update was still above "
+                f"ftol={ftol:g} after {len(iterations)} iteration(s) "
+                f"(max_icoper_iterations={max_icoper_iterations}). The result is "
+                "marked success=False; increase max_icoper_iterations or ftol."
+            )
 
         metadata = {
             "optimizer": optimizer,
@@ -1616,6 +1867,7 @@ class iCOPER:
             "ftol": ftol,
             "fit_offset": fit_offset,
             "lr_weights": lr_weights,
+            "converged": converged,
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         }
         # carry the inner COPER's bookkeeping through (zero-prior frames are
@@ -1646,8 +1898,8 @@ class iCOPER:
             delta_S=float(delta_S),
             mean_delta_G_kT=float(kl),
             phi=phi,
-            n_iterations=int(it + 1),
-            success=bool(last_result.success),
+            n_iterations=len(iterations),
+            success=bool(last_result.success) and converged,
             message=str(last_result.message),
             observables=self.observables,
             calculated_values=calc,

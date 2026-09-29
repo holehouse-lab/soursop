@@ -39,8 +39,9 @@ def test_interchain_distance_periodic_returns_ndarray(GMX_2CHAINS):
 
 
 def test_interchain_contact_map_atom_periodic(GMX_2CHAINS):
-    n1 = GMX_2CHAINS.proteinTrajectoryList[0].n_residues
-    n2 = GMX_2CHAINS.proteinTrajectoryList[1].n_residues
+    # rows/columns are the CA-bearing residues (2.0.6)
+    n1 = len(GMX_2CHAINS.proteinTrajectoryList[0].resid_with_CA)
+    n2 = len(GMX_2CHAINS.proteinTrajectoryList[1].resid_with_CA)
 
     cmap = GMX_2CHAINS.get_interchain_contact_map(0, 1, mode="atom", periodic=True)
     assert isinstance(cmap, np.ndarray)

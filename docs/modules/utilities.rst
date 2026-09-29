@@ -31,7 +31,7 @@ ssdata — reference data
     sigmas = get_cg_bead_sigmas('mpipi')
     print(sigmas['GLY'], sigmas['TRP'])       # 4.69511  7.066548
 
-Sigma is the model's diagonal (i,i) pair sigma — that is, the bead **diameter** — in Angstroms, so a Shrake–Rupley bead radius is ``sigma/2``. The Mpipi variants additionally define the RNA beads ``RPA`` / ``RPC`` / ``RPG`` / ``RPU``. Passing ``buried=True`` returns the sigmas of bead types 21–40, the roughly 30% weaker copies these models define for residues sequestered inside a folded domain::
+Sigma is the model's diagonal (i,i) pair sigma — that is, the bead **diameter** — in Angstroms, so a Shrake–Rupley bead radius is ``sigma/2``. ``mpipi`` and ``mpipi-gg`` additionally define the RNA beads ``RPA`` / ``RPC`` / ``RPG`` / ``RPU``; ``mpipi-recharged`` defines only ``RPU``. Passing ``buried=True`` returns the sigmas of the buried bead types (21–40) that the Mpipi variants define for residues sequestered inside a folded domain; those types interact more weakly, but their diameters are almost identical to the exposed ones. The HPS-family and KH tables have no buried types, so ``buried=True`` simply returns the exposed values for them::
 
     buried = get_cg_bead_sigmas('mpipi', buried=True)
 
@@ -146,12 +146,16 @@ SOURSOP raises a single exception type, :class:`~soursop.ssexceptions.SSExceptio
 
 Note that errors originating in mdtraj, NumPy, or SciPy propagate unchanged and are *not* wrapped in an ``SSException``.
 
-:func:`~soursop.ssexceptions.SSWarning` is a thin helper used internally to emit non-fatal advisories — for example ``sspre`` warning that a parameter looks far outside its normal range. Note it is a *function* that calls :func:`warnings.warn`, not a warning category, so it raises a plain :class:`UserWarning`. To escalate SOURSOP's advisories into errors, filter on ``UserWarning`` (optionally narrowed by module)::
+:func:`~soursop.ssexceptions.SSWarning` is a thin helper used internally to emit non-fatal advisories — for example ``sspre`` warning that a parameter looks far outside its normal range, or a warning that ``weights`` are being combined with a ``stride``. It is a *function* that calls :func:`warnings.warn` with the :class:`~soursop.ssexceptions.SoursopWarning` category, which subclasses :class:`UserWarning`. To escalate SOURSOP's advisories into errors, filter on that category::
 
     import warnings
+    from soursop.ssexceptions import SoursopWarning
 
-    warnings.filterwarnings('error', category=UserWarning, module='soursop')
+    warnings.filterwarnings('error', category=SoursopWarning)
+
+A small number of status messages (for example, progress output while a trajectory is read in) are still printed to standard output rather than emitted as warnings, so they are not affected by warning filters.
 
 .. autoclass:: soursop.ssexceptions.SSException
 .. autoclass:: soursop.ssexceptions.notYetImplementedException
+.. autoclass:: soursop.ssexceptions.SoursopWarning
 .. autofunction:: soursop.ssexceptions.SSWarning

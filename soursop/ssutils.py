@@ -147,12 +147,13 @@ def set_numpy_threads(num_threads):
     running many SOURSOP analyses in parallel (or sharing a node), so this
     helper provides a single place to clamp BLAS thread use.
 
-    Implementation differs across platforms:
-
-    * **Windows**: uses the ``mkl`` Python package (installed via conda).
-    * **macOS / Linux**: locates the MKL or OpenBLAS shared library inside
-      the current virtual environment (or conda env) and calls the C-level
-      thread-setter via ``ctypes``.
+    The limit is applied with ``threadpoolctl`` (a SOURSOP dependency),
+    which finds the BLAS libraries NumPy actually loaded - including the
+    symbol-suffixed OpenBLAS builds shipped in NumPy's pip wheels, which the
+    older ``ctypes`` lookup could not drive. If ``threadpoolctl`` finds no
+    BLAS library, SOURSOP falls back to its previous platform-specific
+    approach (the ``mkl`` package on Windows; a ``ctypes`` call into an MKL
+    or OpenBLAS library in the active environment elsewhere).
 
     Some BLAS backends (notably Apple's Accelerate framework) do not expose
     a thread-control API and will raise :class:`SSException` here.
@@ -174,8 +175,8 @@ def set_numpy_threads(num_threads):
     Raises
     ------
     SSException
-        If no MKL or OpenBLAS library can be found in the active
-        environment (typical of Apple Accelerate setups).
+        If ``num_threads`` is not a positive integer, or if no controllable
+        BLAS library can be found (typical of Apple Accelerate setups).
 
     Example
     -------
@@ -183,6 +184,34 @@ def set_numpy_threads(num_threads):
     >>> set_numpy_threads(2)
     (2, 'openblas')
     """
+    if (
+        isinstance(num_threads, bool)
+        or not isinstance(num_threads, (int, numpy.integer))
+        or num_threads < 1
+    ):
+        raise SSException(
+            f"num_threads must be a positive integer; received {num_threads!r}"
+        )
+    num_threads = int(num_threads)
+
+    # preferred route: threadpoolctl sees the BLAS NumPy actually loaded
+    try:
+        from threadpoolctl import threadpool_info, threadpool_limits
+    except ImportError:  # pragma: no cover - threadpoolctl is a dependency
+        threadpool_info = None
+
+    if threadpool_info is not None:
+        blas = [i for i in threadpool_info() if i.get("user_api") == "blas"]
+        if len(blas) > 0:
+            # called outside a with-block the limit stays in force
+            threadpool_limits(limits=num_threads, user_api="blas")
+            after = [i for i in threadpool_info() if i.get("user_api") == "blas"]
+            internal = after[0].get("internal_api", "unknown")
+            library = {"mkl": MKL_LIBRARY, "openblas": OPENBLAS_LIBRARY}.get(
+                internal, internal
+            )
+            return int(after[0].get("num_threads", num_threads)), library
+
     # Currently only MKL is supported on Windows as it's installed alongside
     # the other packages via conda. A "traditional" virtual environment requires
     # access to a compiler and other libraries for successful compilation.
@@ -328,11 +357,13 @@ def validate_weights(weights, n_frames, stride=1, etol=1e-7):
     3. all elements finite (no ``nan`` / ``inf``).
     4. exactly one weight per frame (``len == n_frames``).
     5. every element in the closed interval ``[0, 1]``.
-    6. if ``stride > 1``: the vector is subsampled (``weights[::stride]``)
-       and **renormalised to sum to 1** so the strided weighted average is
-       still a proper expectation (this fixes the historical behaviour
-       where strided weights silently no longer summed to 1).
-    7. ``|sum(weights) - 1| < etol`` (checked after any stride/renormalise).
+    6. ``|sum(weights) - 1| < etol``, checked on the full (unstrided)
+       vector so an invalid vector is rejected whatever the stride.
+    7. ``stride`` is validated with :func:`validate_stride`; if
+       ``stride > 1`` the vector is subsampled (``weights[::stride]``) and
+       **renormalised to sum to 1** so the strided weighted average is
+       still a proper expectation, and a
+       :class:`~soursop.ssexceptions.SoursopWarning` is emitted.
 
     Parameters
     ----------
@@ -355,7 +386,8 @@ def validate_weights(weights, n_frames, stride=1, etol=1e-7):
     Raises
     ------
     SSException
-        If any of the validation conditions above fail.
+        If any of the validation conditions above fail (including an
+        invalid ``stride`` when weights are passed).
 
     Example
     -------
@@ -399,14 +431,25 @@ def validate_weights(weights, n_frames, stride=1, etol=1e-7):
             f"(min={w.min():g}, max={w.max():g})"
         )
 
-    if stride > 1:
-        from soursop import ssio
+    abs_diff = abs(numpy.sum(w) - 1.0)
+    if abs_diff >= etol:
+        raise SSException(
+            "The passed weights do not sum to 1 within the specified floating "
+            f"point tolerance (etol={etol:g}). | sum(weights) - 1 | = {abs_diff:g}"
+        )
 
-        ssio.warning_message(
-            "WARNING: Using stride with weights is ALMOST certainly not a good "
-            "idea unless the weights are\ncalculated for every stride-th frame. "
-            "The strided weights will be renormalised to sum to 1.",
-            with_frills=True,
+    # validate the stride before it is used as a slice step; a float or
+    # string stride would otherwise raise a bare TypeError here
+    stride = validate_stride(stride, n_frames)
+
+    if stride > 1:
+        from soursop.ssexceptions import SSWarning
+
+        SSWarning(
+            "Using stride with weights is ALMOST certainly not a good idea "
+            "unless the weights are calculated for every stride-th frame. The "
+            "strided weights will be renormalised to sum to 1.",
+            stacklevel=3,
         )
         w = w[::stride]
         wsum = numpy.sum(w)
@@ -416,13 +459,6 @@ def validate_weights(weights, n_frames, stride=1, etol=1e-7):
                 f"{wsum:g} (<= 0); cannot renormalise"
             )
         w = w / wsum
-
-    abs_diff = abs(numpy.sum(w) - 1.0)
-    if abs_diff >= etol:
-        raise SSException(
-            "The passed weights do not sum to 1 within the specified floating "
-            f"point tolerance (etol={etol:g}). | sum(weights) - 1 | = {abs_diff:g}"
-        )
 
     return w
 
@@ -547,6 +583,14 @@ def weighted_corr(a, b, weights):
     float
         The weighted Pearson correlation coefficient of ``a`` and ``b``.
 
+    Raises
+    ------
+    SSException
+        If fewer than two frames carry non-zero weight (e.g. a one-hot
+        weight vector), or if either vector has zero weighted variance. In
+        both cases the correlation is undefined; previously ``nan`` was
+        returned with only a numpy ``RuntimeWarning``.
+
     Example
     -------
     >>> import numpy as np
@@ -554,8 +598,17 @@ def weighted_corr(a, b, weights):
     >>> round(float(weighted_corr(np.array([1.,2,3,4]), np.array([2.,4,6,8]), w)), 6)
     1.0
     """
+    n_support = int(numpy.count_nonzero(weights))
+    if n_support < 2:
+        raise SSException(
+            f"A weighted correlation needs at least two frames with non-zero weight, but only {n_support} frame(s) carry weight"
+        )
     cov = numpy.cov(numpy.vstack((a, b)), ddof=0, aweights=weights)
     denom = numpy.sqrt(cov[0, 0] * cov[1, 1])
+    if not denom > 0:
+        raise SSException(
+            "A weighted correlation is undefined because at least one of the two quantities has zero weighted variance"
+        )
     return cov[0, 1] / denom
 
 
@@ -623,6 +676,21 @@ class ExperimentalObservable:
     group: Optional[str] = None
 
     def __post_init__(self):
+        # "uncertainty <= 0" alone let nan through (nan comparisons are False)
+        try:
+            finite = bool(numpy.isfinite(self.value)) and bool(
+                numpy.isfinite(self.uncertainty)
+            )
+        except TypeError:
+            raise SSException(
+                f"value and uncertainty must be numbers, got {self.value!r} and "
+                f"{self.uncertainty!r}"
+            ) from None
+        if not finite:
+            raise SSException(
+                f"value and uncertainty must be finite, got {self.value} and "
+                f"{self.uncertainty}"
+            )
         if self.uncertainty <= 0:
             raise SSException(f"Uncertainty must be positive, got {self.uncertainty}")
 
@@ -707,21 +775,44 @@ def weighted_linear_regression(x, y, sample_weight, fit_intercept=True):
     tuple of float
         ``(slope, intercept)``. ``intercept`` is ``0.0`` when
         ``fit_intercept`` is False.
+
+    Raises
+    ------
+    SSException
+        If the regression is undefined: the weights sum to zero, or ``x``
+        has no (weighted) spread to regress on (every ``x`` identical when
+        fitting an intercept, or every ``x`` zero without one). Previously
+        this returned ``(nan, nan)`` with only a numpy RuntimeWarning.
     """
     x = numpy.asarray(x, dtype=numpy.float64).ravel()
     y = numpy.asarray(y, dtype=numpy.float64).ravel()
     s = numpy.asarray(sample_weight, dtype=numpy.float64).ravel()
 
+    sw = numpy.sum(s)
+    if not sw > 0:
+        raise SSException("weighted_linear_regression: the sample weights sum to zero")
+
     if fit_intercept:
-        sw = numpy.sum(s)
         x_mean = numpy.sum(s * x) / sw
         y_mean = numpy.sum(s * y) / sw
         cov_xy = numpy.sum(s * (x - x_mean) * (y - y_mean))
         var_x = numpy.sum(s * (x - x_mean) ** 2)
+        if not var_x > 0:
+            raise SSException(
+                "weighted_linear_regression: every x value is the same, so a slope "
+                "and intercept cannot both be fitted (the scale/offset fit is "
+                "undefined)"
+            )
         slope = cov_xy / var_x
         intercept = y_mean - slope * x_mean
     else:
-        slope = numpy.sum(s * x * y) / numpy.sum(s * x * x)
+        sxx = numpy.sum(s * x * x)
+        if not sxx > 0:
+            raise SSException(
+                "weighted_linear_regression: every x value is zero, so a scale "
+                "cannot be fitted"
+            )
+        slope = numpy.sum(s * x * y) / sxx
         intercept = 0.0
 
     return float(slope), float(intercept)
@@ -771,10 +862,80 @@ def _find_knee_curvature(x, y):
         c = numpy.linalg.norm(p1 - p0)
         if a * b * c > 1e-10:
             curvature[i] = 4 * area / (a * b * c)
+    # Curvature is only defined at interior points, so pick the knee among
+    # those. Prior to 2.0.6 the endpoints were given copies of their
+    # neighbours' curvature, so when the knee was at index 1 (always the
+    # case for three points) argmax returned the endpoint at index 0.
     if n > 2:
-        curvature[0] = curvature[1]
-        curvature[-1] = curvature[-2]
-    return int(numpy.argmax(curvature))
+        return 1 + int(numpy.argmax(curvature[1:-1]))
+    return 0
+
+
+# ........................................................................
+#
+def build_scan_grid(values, n_points, log_scale, name):
+    """Turn a scan specification into a 1D grid of positive values.
+
+    Shared by the BME ``theta`` scans and the COPER ``chi2_limit`` scans.
+    A 2-tuple ``(min, max)`` is expanded into ``n_points`` values (log- or
+    linearly spaced); anything else (a list or array) is taken as the
+    explicit values to scan. Prior to 2.0.6 a list was also read as a
+    ``(min, max)`` range, so ``[0.5, 1.0, 2.0, 4.0]`` silently scanned an
+    8-point grid between 0.5 and 1.0, and a 3-tuple silently used its first
+    two entries.
+
+    Parameters
+    ----------
+    values : tuple or array_like
+        ``(min, max)`` tuple, or the explicit values.
+    n_points : int
+        Number of grid points for a ``(min, max)`` tuple.
+    log_scale : bool
+        Space a ``(min, max)`` grid logarithmically if True.
+    name : str
+        Parameter name, used in error messages.
+
+    Returns
+    -------
+    numpy.ndarray
+        The 1D grid.
+
+    Raises
+    ------
+    SSException
+        If a tuple does not have exactly two entries, ``n_points`` < 1, a
+        log-scale range has non-positive endpoints, or the grid is empty,
+        not 1D, or contains non-finite or non-positive values.
+    """
+    if isinstance(values, tuple):
+        if len(values) != 2:
+            raise SSException(
+                f"{name} as a tuple must be (min, max); got {len(values)} entries. "
+                "Pass a list or array to scan explicit values."
+            )
+        if n_points < 1:
+            raise SSException(
+                f"n_points must be >= 1 for a tuple {name}, got {n_points}"
+            )
+        lo, hi = values
+        if log_scale and (lo <= 0 or hi <= 0):
+            raise SSException(
+                f"{name} endpoints must be positive when log_scale=True, got {values}"
+            )
+        if log_scale:
+            grid = numpy.logspace(numpy.log10(lo), numpy.log10(hi), n_points)
+        else:
+            grid = numpy.linspace(lo, hi, n_points)
+    else:
+        grid = numpy.asarray(values, dtype=numpy.float64)
+        if grid.ndim != 1:
+            raise SSException(f"{name} must be a (min, max) tuple or a 1D list/array")
+
+    if grid.size == 0:
+        raise SSException(f"{name} contains no values to scan")
+    if not numpy.all(numpy.isfinite(grid)) or numpy.any(grid <= 0):
+        raise SSException(f"every {name} value must be finite and positive")
+    return grid
 
 
 # ........................................................................
@@ -852,6 +1013,12 @@ def validate_reweighting_inputs(observables, calculated_values, initial_weights)
     if initial_weights is not None:
         if not isinstance(initial_weights, numpy.ndarray):
             raise SSException("initial_weights must be a numpy array")
+        # an (n, 1) column vector used to pass the length check and then fail
+        # with a raw broadcasting error inside the optimizer
+        if initial_weights.ndim != 1:
+            raise SSException(
+                f"initial_weights must be a 1D vector, got shape {initial_weights.shape}"
+            )
         if len(initial_weights) != calculated_values.shape[0]:
             raise SSException("initial_weights length must match number of frames")
         # a prior with negative or non-finite entries is not a distribution;
@@ -863,6 +1030,17 @@ def validate_reweighting_inputs(observables, calculated_values, initial_weights)
             raise SSException("initial_weights must be non-negative")
         if not numpy.sum(initial_weights) > 0:
             raise SSException("initial_weights must not all be zero")
+        support = initial_weights > 0
+    else:
+        support = numpy.ones(calculated_values.shape[0], dtype=bool)
+
+    # frames with zero prior weight never contribute, so only the rest
+    # need finite values (NaN there used to give an opaque "ABNORMAL"
+    # optimizer failure)
+    if not numpy.all(numpy.isfinite(calculated_values[support])):
+        raise SSException(
+            "calculated_values must be finite on every frame with non-zero prior weight"
+        )
 
 
 # ........................................................................

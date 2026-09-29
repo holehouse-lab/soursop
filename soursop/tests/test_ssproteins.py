@@ -640,10 +640,15 @@ def test_get_multiple_CA_index_invalid_residue_number_list(GS6_CP, NTL9_CP):
     for protein in proteins:
         max_residue = protein.n_residues
         residue_list = list(range(max_residue + 1, max_residue + protein.n_residues))
-        atoms_with_CA = protein.get_multiple_CA_index(resID_list=residue_list)
-
-        assert isinstance(atoms_with_CA, list)
-        assert len(atoms_with_CA) == 0
+        # indices outside the chain raise (they used to be skipped silently,
+        # with the error printed to stdout); a cap without a CA is still
+        # skipped quietly
+        with pytest.raises(SSException):
+            protein.get_multiple_CA_index(resID_list=residue_list)
+        with pytest.raises(SSException):
+            protein.get_multiple_CA_index(resID_list=[-1])
+        CA = protein.get_multiple_CA_index(resID_list=list(range(protein.n_residues)))
+        assert len(CA) == len(protein.resid_with_CA)
 
 
 def test_calculate_all_CA_distances_invalid_residue_number(GS6_CP, NTL9_CP):
@@ -651,10 +656,13 @@ def test_calculate_all_CA_distances_invalid_residue_number(GS6_CP, NTL9_CP):
     for protein in proteins:
         max_residue = protein.n_residues
         for residue_index in range(max_residue + 1, max_residue + protein.n_residues):
-            index = protein.calculate_all_CA_distances(residue_index)
-
-            # Invalid indices return -1
-            assert index == -1
+            # indices outside the chain raise (they used to return -1)
+            with pytest.raises(SSException):
+                protein.calculate_all_CA_distances(residue_index)
+        # a real residue without a CA (a cap) still returns -1
+        for r in range(protein.n_residues):
+            if r not in protein.resid_with_CA:
+                assert protein.calculate_all_CA_distances(r) == -1
 
 
 # == SSProtein._SSProtein__residue_atom_index
@@ -707,19 +715,23 @@ def test_get_distance_map_weights(GS6_CP, NTL9_CP):
                 expected_shape = (protein_residues, protein_residues)
 
                 assert distance_map.shape == expected_shape
-                # when weights are supplied there is no per-pair standard
-                # deviation defined, so the std map is returned as None (the
-                # documented contract); previously it was a NaN-filled array.
-                assert std_dev is None
+                # with weights the std map is the weighted population standard
+                # deviation (since 2.0.6; it used to be None), so it is a
+                # finite, upper-triangular array of the same shape
+                assert std_dev.shape == expected_shape
+                assert np.all(np.isfinite(std_dev))
 
                 # the mean map is upper-triangular either way
                 assert np.count_nonzero(np.tril(distance_map, -1)) == 0
 
-                # uniform weights must reproduce the unweighted map
-                unweighted, _ = protein.get_distance_map(
+                # uniform weights must reproduce the unweighted mean and std maps
+                unweighted, unweighted_std = protein.get_distance_map(
                     mode=mode, RMS=rms_option, verbose=False
                 )
                 np.testing.assert_allclose(distance_map, unweighted, rtol=1e-6)
+                np.testing.assert_allclose(
+                    std_dev, unweighted_std, rtol=1e-6, atol=1e-10
+                )
 
 
 def test_get_local_collapse_invalid_bins(GS6_CP, NTL9_CP):

@@ -480,7 +480,12 @@ class TestPreviouslyUntestedAPI:
         diag = scan.results[-1].diagnostics()
         assert diag["neff_entropy"] <= 400 + 1e-9
         scan.results[-1].print_diagnostics()
-        np.testing.assert_allclose(bc.predict(calc), scan.results[-1].weights @ calc)
+        # the scan leaves the object's own fit untouched (2.0.6), so predict
+        # from the scan's result rather than from the object
+        assert bc.result is None
+        np.testing.assert_allclose(
+            scan.results[-1].predict(calc), scan.results[-1].weights @ calc
+        )
 
     def test_get_distance_periodic_minimum_image(self):
         from soursop.sstools import chunks, get_distance_periodic
