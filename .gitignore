@@ -114,3 +114,7 @@ ENV/
 # mypy
 .mypy_cache/
 demo_examples/penguin/data/
+
+# PED ensembles downloaded by the demo notebooks (including the Colab
+# versions, if run locally from colab/)
+demo_examples/ped_examples/**/ped_cache/

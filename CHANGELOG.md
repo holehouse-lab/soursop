@@ -2,6 +2,17 @@
 
 All notable changes to SOURSOP are documented in this file.
 
+## 2.0.8 (to be released)
+
+### New features and improvements
+* New `soursop.ped` sub-package for the [Protein Ensemble Database](https://proteinensemble.org): search PED (`search`, `search_entries`), fetch entry metadata including each ensemble's chains, C-alpha-only flag and PED's own summary statistics (`get_entry`, `list_ensembles`), load an ensemble straight into an `SSTrajectory` (`load_ensemble`), download it (`download_ensemble`), fetch per-conformer weights for weighted ensembles (`get_ensemble_weights`), and access PED's own per-ensemble analyses (`get_ensemble_asset`, `download_all_data`). Uses only the standard library for HTTP (no new dependency).
+
+### Testing
+* `tests/test_ped.py`: the PED client against a fake PED server (offline), plus live tests against the real server when `SOURSOP_PED_LIVE=1`.
+
+### Documentation
+* `demo_examples/ped_examples/`: seven notebooks covering searching PED, loading ensembles, comparing methods for one protein, chain dimensions across PED, distance and contact maps, local structure and NMR observables, and weighted ensembles. Google Colab versions (with "Open in Colab" badges) are in `colab/`, generated from the originals by `colab/make_colab_notebooks.py`.
+
 ## 2.0.7 (September 2026)
 
 ### New features and improvements
