@@ -15,9 +15,9 @@
 
 ## Overview
 
-**SOURSOP** is a Python-based simulation analysis package built for the conformational analysis of intrinsically disordered regions (IDRs), unfolded states, and other flexible biopolymers. It is built on top of [MDTraj](https://mdtraj.org/), which handles trajectory I/O and the low-level atomic representation, and adds an analysis layer of polymer-physics-aware observables designed specifically for disordered ensembles.
+**SOURSOP** is a Python-based simulation analysis package built for the conformational analysis of intrinsically disordered regions (IDRs), unfolded states, and other flexible biopolymers. It builds on MDTraj, which handles trajectory I/O and low-level atomic representation, and adds an analysis layer of polymer-physics-aware observables designed specifically for disordered ensembles.
 
-SOURSOP was originally developed by Jared Lalmansingh in the [Pappu lab](https://pappulab.wustl.edu/) and Alex Holehouse in the [Holehouse Lab](https://www.holehouselab.com/) at Washington University in St. Louis. Since its original release in 2023, we have substantially expanded and extended the codebase.
+SOURSOP was originally developed by Jared Lalmansingh in the [Pappu lab](https://pappulab.wustl.edu/) and Alex Holehouse in the [Holehouse Lab](https://www.holehouselab.com/) at Washington University in St. Louis. Since its original release in 2023, we have substantially expanded and extended the codebase, and in the summer of 2026, SOURSOP 2.0 was released to minimal fanfare. SOURSOP 2.0 provides deep integrated support for ensemble reweighting, as well as improved performance and an expanded repertoire of analysis routines.
 
 ## Features
 
@@ -97,6 +97,7 @@ two new modules for deriving frame weights from experimental data (`ssbme`: BME 
 * **2.0.3** makes multi-model PDB files load ~2x faster and fixes a batch of correctness bugs from a package-wide review (a few of which change numerical output — notably `get_local_to_global_correlation`, coarse-grained/`COM`-mode strided distance maps, `get_clusters`, and DSSP fractions at termini). 
 * **2.0.4** adds first-class SASA support for one-bead-per-residue coarse-grained models, computed against each model's own bead sizes — a breaking change, in that SASA on a coarse-grained chain now requires the force field to be named (e.g.`forcefield='mpipi-gg'`) rather than silently treating every bead as a carbon atom. 
 * **2.0.5** and **2.0.6** are correctness and documentation releases that include a slew of minor updates and corrections. 
+* **2.0.7** is a TINY update so SOURSOP can read partially written XTC files.
 
 The full, versioned changelog is in [CHANGELOG.md](CHANGELOG.md).
 
