@@ -2,7 +2,15 @@
 
 All notable changes to SOURSOP are documented in this file.
 
-## 2.0.6 (September 2026 - to be released)
+## 2.0.7 (September 2026)
+
+### New features and improvements
+* `SSTrajectory` reads XTC files whose final frame is incomplete (a simulation still running, or one that stopped mid-write). mdtraj cannot read such a file at all; SOURSOP now reads the complete frames, drops the final one and emits a `SoursopWarning`. Damage anywhere else in the file still raises.
+
+### Testing
+* `tests/test_incomplete_xtc.py`: truncated and mid-file-damaged copies of the GS6 trajectory.
+
+## 2.0.6 (September 2026)
 
 A correctness release. Every module was checked against independent implementations (mdtraj/numpy from first principles, the Poulsen server's JavaScript, HDXer, the Pesce et al. Rh scripts, brute-force reweighting solves) and every fix has a regression test. Fixes that change numerical output are marked **Numerical change**.
 

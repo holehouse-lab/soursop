@@ -63,6 +63,127 @@ def lazy_loading_single_protein_trajectory(func):
     return wrapper
 
 
+def _is_xtc(filename):
+    """Return True if ``filename`` is a single path with an ``.xtc`` extension."""
+    return isinstance(filename, (str, os.PathLike)) and os.fspath(
+        filename
+    ).lower().endswith(".xtc")
+
+
+def _load_xtc_dropping_incomplete_final_frame(xtc_filename, top_filename, error):
+    """Read an XTC file whose final frame was only partly written.
+
+    A trajectory that is still being written (or whose run stopped
+    mid-write) usually ends part-way through a frame. mdtraj still counts
+    that frame from its header but cannot decompress its coordinates, so
+    ``md.load`` raises and none of the complete frames can be read. This
+    reads every frame except the incomplete final one, builds the
+    trajectory exactly as ``md.load`` would (coordinates, times and box
+    vectors from the XTC file, topology from ``top_filename``), and emits a
+    :class:`~soursop.ssexceptions.SoursopWarning` saying the final frame
+    was dropped.
+
+    Only a failure in the *final* frame is tolerated. If an earlier frame
+    cannot be read, or the final frame reads without error, the file is
+    corrupt in some other way and the original error is re-raised.
+
+    Parameters
+    ----------
+    xtc_filename : str or os.PathLike
+        Path to the XTC file.
+    top_filename : str or os.PathLike
+        Topology file (e.g. a PDB) matching the XTC file.
+    error : Exception
+        The error ``md.load`` raised, re-raised if the file cannot be
+        recovered this way.
+
+    Returns
+    -------
+    mdtraj.Trajectory
+        The complete frames of the trajectory.
+
+    Raises
+    ------
+    Exception
+        ``error``, if the failure is not confined to the final frame.
+    """
+    try:
+        with md.formats.XTCTrajectoryFile(os.fspath(xtc_filename)) as f:
+            n_counted = len(f)
+            if n_counted < 2:
+                raise error
+            xyz, time, _, box = f.read(n_frames=n_counted - 1)
+            final_frame_readable = True
+            try:
+                f.read(n_frames=1)
+            except RuntimeError:
+                final_frame_readable = False
+    except RuntimeError:
+        # an earlier frame (or the frame index itself) is unreadable
+        raise error from None
+
+    if final_frame_readable:
+        raise error
+
+    traj = md.Trajectory(xyz, md.load_topology(os.fspath(top_filename)), time=time)
+    traj.unitcell_vectors = box
+
+    SSWarning(
+        f"{os.fspath(xtc_filename)}: the final frame is incomplete (the file was "
+        "probably still being written, or the run stopped mid-write), so it was "
+        f"dropped and the {n_counted - 1} complete frames were read.",
+        stacklevel=4,
+    )
+    return traj
+
+
+def _load_trajectory_file(trajectory_filename, pdb_filename):
+    """Load a trajectory with ``md.load``, tolerating an incomplete final XTC frame.
+
+    Behaves exactly like ``md.load(trajectory_filename, top=pdb_filename)``
+    unless that fails while reading an XTC file, in which case the XTC file
+    is re-read without its incomplete final frame (see
+    :func:`_load_xtc_dropping_incomplete_final_frame`). A list of files is
+    handled file by file and then joined, as ``md.load`` does.
+
+    Parameters
+    ----------
+    trajectory_filename : str, os.PathLike, or list of these
+        Trajectory file(s).
+    pdb_filename : str or os.PathLike
+        Topology file.
+
+    Returns
+    -------
+    mdtraj.Trajectory
+        The loaded trajectory.
+    """
+    try:
+        return md.load(trajectory_filename, top=pdb_filename)
+    except RuntimeError as error:
+        if _is_xtc(trajectory_filename):
+            return _load_xtc_dropping_incomplete_final_frame(
+                trajectory_filename, pdb_filename, error
+            )
+        if isinstance(trajectory_filename, (list, tuple)) and any(
+            _is_xtc(f) for f in trajectory_filename
+        ):
+            trajs = []
+            for f in trajectory_filename:
+                try:
+                    trajs.append(md.load(f, top=pdb_filename))
+                except RuntimeError as file_error:
+                    if not _is_xtc(f):
+                        raise
+                    trajs.append(
+                        _load_xtc_dropping_incomplete_final_frame(
+                            f, pdb_filename, file_error
+                        )
+                    )
+            return md.join(trajs)
+        raise
+
+
 class SSTrajectory:
     # oxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxoxoxoxoxoxoxoxoxoxooxoxo
     #
@@ -152,7 +273,11 @@ class SSTrajectory:
         -------------
         trajectory_filename : str
             Filename which contains the trajectory file of interest. Normally
-            this is `__traj.xtc` or `__traj.dcd`.
+            this is `__traj.xtc` or `__traj.dcd`. If an XTC file ends in an
+            incomplete frame (because it is still being written, or the run
+            stopped mid-write), the complete frames are read, the final frame
+            is dropped, and a ``SoursopWarning`` says so; damage anywhere
+            else in the file still raises.
 
         pdb_filename : str
             Filename which contains the pdb file associated with the trajectory
@@ -555,10 +680,15 @@ class SSTrajectory:
         # parse (~2x wall-clock; e.g. 59 s -> 31 s for a 520 MB, 1000-model,
         # 6.4M-atom file). load_pdb() parses once and returns an identical
         # trajectory. Every other combination of inputs is unaffected.
+        #
+        # An XTC file whose final frame is incomplete (still being written, or
+        # the run stopped mid-write) makes md.load fail outright; in that case
+        # the complete frames are read and the final one is dropped with a
+        # warning (see _load_trajectory_file).
         if same_pdb:
             traj = md.load_pdb(trajectory_filename)
         else:
-            traj = md.load(trajectory_filename, top=pdb_filename)
+            traj = _load_trajectory_file(trajectory_filename, pdb_filename)
 
         # check unit cell lengths
         try:
