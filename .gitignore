@@ -118,3 +118,9 @@ demo_examples/penguin/data/
 # PED ensembles downloaded by the demo notebooks (including the Colab
 # versions, if run locally from colab/)
 demo_examples/ped_examples/**/ped_cache/
+
+# files written when the ped-resources notebooks are run locally
+ped-resources/ped_cache/
+ped-resources/reference_ensembles/
+ped-resources/figures/
+ped-resources/*_figures.zip
