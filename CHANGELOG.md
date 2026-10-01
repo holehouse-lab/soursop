@@ -12,7 +12,7 @@ All notable changes to SOURSOP are documented in this file.
 
 ### Documentation
 * `demo_examples/ped_examples/`: seven notebooks covering searching PED, loading ensembles, comparing methods for one protein, chain dimensions across PED, distance and contact maps, local structure and NMR observables, and weighted ensembles. Google Colab versions (with "Open in Colab" badges) are in `colab/`, generated from the originals by `colab/make_colab_notebooks.py`.
-* `ped-resources/ped_ensemble_characterisation.ipynb`: a Colab notebook that characterises any PED ensemble from its identifier (Rg and Re against SAW-ν models, DSSP helicity, distance and AFRC-normalised scaling maps, and Rg against asphericity over an AFRC ensemble), using SOURSOP and afrc.
+* `ped-resources/ped_ensemble_characterisation.ipynb`: a Colab notebook for novice users (all code hidden) that characterises any PED ensemble from its identifier: metapredict disorder prediction (warning about predicted folded regions), Rg and Re against SAW-ν models, DSSP helicity and β-strand content, distance and AFRC-normalised scaling maps with colour-scale sliders, the distance between any two residues, and Rg against asphericity over an AFRC ensemble. Uses SOURSOP, afrc and metapredict.
 
 ## 2.0.7 (September 2026)
 
